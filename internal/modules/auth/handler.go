@@ -2,6 +2,7 @@ package auth
 
 import (
 	"github.com/gin-gonic/gin"
+	_ "github.com/lallene/medcore-his/backend/internal/core/openapi"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
@@ -22,6 +23,18 @@ func NewHandler(db *gorm.DB, jwtSecret string) *Handler {
 	}
 }
 
+// Login godoc
+//
+//	@Summary		Connexion utilisateur
+//	@Description	Authentifie un utilisateur MedCore et retourne un JWT.
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		LoginRequest	true	"Identifiants utilisateur"
+//	@Success		200		{object}	openapi.SuccessResponse
+//	@Failure		400		{object}	openapi.ErrorResponse
+//	@Failure		401		{object}	openapi.ErrorResponse
+//	@Router			/auth/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	var req LoginRequest
 

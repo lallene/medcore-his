@@ -1,0 +1,456 @@
+{
+    "schemes": [
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "Modern Hospital Information System API\nModules disponibles : Auth, Patients, Insurance, Workflow, Audit.",
+        "title": "MedCore HIS API",
+        "contact": {
+            "name": "MedCore Team",
+            "email": "support@medcore.local"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "0.1.0"
+    },
+    "host": "medcore-his-api-latest.onrender.com",
+    "basePath": "/api",
+    "paths": {
+        "/auth/login": {
+            "post": {
+                "description": "Authentifie un utilisateur MedCore et retourne un JWT.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Connexion utilisateur",
+                "parameters": [
+                    {
+                        "description": "Identifiants utilisateur",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/auth.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/patients": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Crée un nouveau patient dans MedCore.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Patients"
+                ],
+                "summary": "Créer un patient",
+                "parameters": [
+                    {
+                        "description": "Données patient",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/patients.CreatePatientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/patients/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne les informations d’un patient par son ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Patients"
+                ],
+                "summary": "Détail patient",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID patient",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Met à jour les informations d’un patient existant.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Patients"
+                ],
+                "summary": "Modifier un patient",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID patient",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Données patient",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/patients.UpdatePatientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Supprime un patient par son ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Patients"
+                ],
+                "summary": "Supprimer un patient",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID patient",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "auth.LoginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 4
+                }
+            }
+        },
+        "openapi.ErrorDetail": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "details": {},
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/openapi.ErrorDetail"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.SuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "message": {
+                    "type": "string"
+                },
+                "meta": {},
+                "success": {
+                    "type": "boolean"
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "patients.CreatePatientRequest": {
+            "type": "object",
+            "required": [
+                "nom"
+            ],
+            "properties": {
+                "age": {
+                    "type": "integer",
+                    "maximum": 130,
+                    "minimum": 0
+                },
+                "dateNaissance": {
+                    "type": "string"
+                },
+                "isAssure": {
+                    "type": "boolean"
+                },
+                "matriculeAssure": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "nom": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 2
+                },
+                "personneContact": {
+                    "type": "string",
+                    "maxLength": 150
+                },
+                "prenoms": {
+                    "type": "string",
+                    "maxLength": 150
+                },
+                "quartier": {
+                    "type": "string",
+                    "maxLength": 150
+                },
+                "sexe": {
+                    "type": "string",
+                    "enum": [
+                        "M",
+                        "F"
+                    ]
+                },
+                "tauxCouverture": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0
+                },
+                "telephone": {
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 8
+                }
+            }
+        },
+        "patients.UpdatePatientRequest": {
+            "type": "object",
+            "properties": {
+                "age": {
+                    "type": "integer"
+                },
+                "dateNaissance": {
+                    "type": "string"
+                },
+                "isAssure": {
+                    "type": "boolean"
+                },
+                "matriculeAssure": {
+                    "type": "string"
+                },
+                "nom": {
+                    "type": "string"
+                },
+                "personneContact": {
+                    "type": "string"
+                },
+                "prenoms": {
+                    "type": "string"
+                },
+                "quartier": {
+                    "type": "string"
+                },
+                "sexe": {
+                    "type": "string"
+                },
+                "tauxCouverture": {
+                    "type": "number"
+                },
+                "telephone": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "JWT Bearer token. Exemple : Bearer {token}",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 
 	"github.com/lallene/medcore-his/backend/internal/config"
@@ -56,6 +58,11 @@ func New() *Application {
 }
 
 func (a *Application) registerCoreRoutes() {
+
+	a.Router.GET("/swagger/*any",
+		ginSwagger.WrapHandler(swaggerFiles.Handler),
+	)
+
 	a.Router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "MedCore HIS API",

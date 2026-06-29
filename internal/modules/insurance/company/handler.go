@@ -19,6 +19,17 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
+// List godoc
+//
+//	@Summary		Lister les compagnies d'assurance
+//	@Description	Retourne la liste des compagnies d'assurance.
+//	@Tags			Insurance Companies
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	openapi.SuccessResponse
+//	@Failure		401	{object}	openapi.ErrorResponse
+//	@Router			/insurance/companies [get]
 func (h *Handler) List(c *gin.Context) {
 	items, err := h.service.List()
 
@@ -30,6 +41,20 @@ func (h *Handler) List(c *gin.Context) {
 	response.Success(c, "Compagnies chargées", ToSummaryList(items))
 }
 
+// FindByID godoc
+//
+//	@Summary		Détail patient
+//	@Description	Retourne les informations d’un patient par son ID.
+//	@Tags			Patients
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		int	true	"ID patient"
+//	@Success		200	{object}	openapi.SuccessResponse
+//	@Failure		400	{object}	openapi.ErrorResponse
+//	@Failure		401	{object}	openapi.ErrorResponse
+//	@Failure		404	{object}	openapi.ErrorResponse
+//	@Router			/patients/{id} [get]
 func (h *Handler) FindByID(c *gin.Context) {
 	id, err := parseID(c.Param("id"))
 
@@ -48,6 +73,19 @@ func (h *Handler) FindByID(c *gin.Context) {
 	response.Success(c, "Compagnie trouvée", ToResponse(item))
 }
 
+// Create godoc
+//
+//	@Summary		Créer une compagnie d'assurance
+//	@Description	Crée une nouvelle compagnie d'assurance.
+//	@Tags			Insurance Companies
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			request	body		CreateCompanyRequest	true	"Données compagnie"
+//	@Success		201		{object}	openapi.SuccessResponse
+//	@Failure		400		{object}	openapi.ErrorResponse
+//	@Failure		401		{object}	openapi.ErrorResponse
+//	@Router			/insurance/companies [post]
 func (h *Handler) Create(c *gin.Context) {
 	var req CreateCompanyRequest
 
@@ -66,6 +104,21 @@ func (h *Handler) Create(c *gin.Context) {
 	response.Created(c, "Compagnie créée avec succès", ToResponse(item))
 }
 
+// Update godoc
+//
+//	@Summary		Modifier un patient
+//	@Description	Met à jour les informations d’un patient existant.
+//	@Tags			Patients
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		int						true	"ID patient"
+//	@Param			request	body		UpdatePatientRequest	true	"Données patient"
+//	@Success		200		{object}	openapi.SuccessResponse
+//	@Failure		400		{object}	openapi.ErrorResponse
+//	@Failure		401		{object}	openapi.ErrorResponse
+//	@Failure		404		{object}	openapi.ErrorResponse
+//	@Router			/patients/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
 	id, err := parseID(c.Param("id"))
 
@@ -91,6 +144,20 @@ func (h *Handler) Update(c *gin.Context) {
 	response.Success(c, "Compagnie modifiée avec succès", ToResponse(item))
 }
 
+// Delete godoc
+//
+//	@Summary		Supprimer un patient
+//	@Description	Supprime un patient par son ID.
+//	@Tags			Patients
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		int	true	"ID patient"
+//	@Success		200	{object}	openapi.SuccessResponse
+//	@Failure		400	{object}	openapi.ErrorResponse
+//	@Failure		401	{object}	openapi.ErrorResponse
+//	@Failure		404	{object}	openapi.ErrorResponse
+//	@Router			/patients/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
 	id, err := parseID(c.Param("id"))
 

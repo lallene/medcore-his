@@ -1,0 +1,304 @@
+basePath: /api
+definitions:
+  auth.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 4
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  openapi.ErrorDetail:
+    properties:
+      code:
+        type: string
+      details: {}
+      message:
+        type: string
+    type: object
+  openapi.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/openapi.ErrorDetail'
+      message:
+        type: string
+      success:
+        type: boolean
+      timestamp:
+        type: string
+    type: object
+  openapi.SuccessResponse:
+    properties:
+      data: {}
+      message:
+        type: string
+      meta: {}
+      success:
+        type: boolean
+      timestamp:
+        type: string
+    type: object
+  patients.CreatePatientRequest:
+    properties:
+      age:
+        maximum: 130
+        minimum: 0
+        type: integer
+      dateNaissance:
+        type: string
+      isAssure:
+        type: boolean
+      matriculeAssure:
+        maxLength: 100
+        type: string
+      nom:
+        maxLength: 100
+        minLength: 2
+        type: string
+      personneContact:
+        maxLength: 150
+        type: string
+      prenoms:
+        maxLength: 150
+        type: string
+      quartier:
+        maxLength: 150
+        type: string
+      sexe:
+        enum:
+        - M
+        - F
+        type: string
+      tauxCouverture:
+        maximum: 100
+        minimum: 0
+        type: number
+      telephone:
+        maxLength: 30
+        minLength: 8
+        type: string
+    required:
+    - nom
+    type: object
+  patients.UpdatePatientRequest:
+    properties:
+      age:
+        type: integer
+      dateNaissance:
+        type: string
+      isAssure:
+        type: boolean
+      matriculeAssure:
+        type: string
+      nom:
+        type: string
+      personneContact:
+        type: string
+      prenoms:
+        type: string
+      quartier:
+        type: string
+      sexe:
+        type: string
+      tauxCouverture:
+        type: number
+      telephone:
+        type: string
+    type: object
+host: medcore-his-api-latest.onrender.com
+info:
+  contact:
+    email: support@medcore.local
+    name: MedCore Team
+  description: |-
+    Modern Hospital Information System API
+    Modules disponibles : Auth, Patients, Insurance, Workflow, Audit.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: MedCore HIS API
+  version: 0.1.0
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authentifie un utilisateur MedCore et retourne un JWT.
+      parameters:
+      - description: Identifiants utilisateur
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/auth.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      summary: Connexion utilisateur
+      tags:
+      - Authentication
+  /patients:
+    post:
+      consumes:
+      - application/json
+      description: Crée un nouveau patient dans MedCore.
+      parameters:
+      - description: Données patient
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/patients.CreatePatientRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Créer un patient
+      tags:
+      - Patients
+  /patients/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Supprime un patient par son ID.
+      parameters:
+      - description: ID patient
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Supprimer un patient
+      tags:
+      - Patients
+    get:
+      consumes:
+      - application/json
+      description: Retourne les informations d’un patient par son ID.
+      parameters:
+      - description: ID patient
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Détail patient
+      tags:
+      - Patients
+    put:
+      consumes:
+      - application/json
+      description: Met à jour les informations d’un patient existant.
+      parameters:
+      - description: ID patient
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Données patient
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/patients.UpdatePatientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Modifier un patient
+      tags:
+      - Patients
+schemes:
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT Bearer token. Exemple : Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
