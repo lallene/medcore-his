@@ -1,0 +1,5 @@
+.env
+.git
+tmp
+node_modules
+.DS_Store
