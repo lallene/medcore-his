@@ -26,7 +26,12 @@ func NewRepository(db *gorm.DB) Repository {
 func (r *voucherRepository) FindByNumber(number string) (*InsuranceVoucher, error) {
 	var item InsuranceVoucher
 
-	if err := r.db.Where("voucher_number = ?", number).First(&item).Error; err != nil {
+	if err := r.db.
+		Preload("Patient").
+		Preload("Company").
+		Preload("Coverage").
+		Where("voucher_number = ?", number).
+		First(&item).Error; err != nil {
 		return nil, err
 	}
 

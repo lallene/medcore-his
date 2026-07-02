@@ -144,7 +144,12 @@ func (s *service) Delete(id uint) error {
 func (s *service) FindByID(id uint) (*InsuranceVoucher, error) {
 	item, err := s.repo.FindByID(
 		id,
-		coreRepo.Preload("Coverage", "Coverage.Patient", "Coverage.Company", "Coverage.Guarantor"),
+		coreRepo.Preload("Patient"),
+		coreRepo.Preload("Company"),
+		coreRepo.Preload("Coverage"),
+		coreRepo.Preload("Coverage.Patient"),
+		coreRepo.Preload("Coverage.Company"),
+		coreRepo.Preload("Coverage.Guarantor"),
 	)
 
 	if err != nil {
@@ -156,6 +161,12 @@ func (s *service) FindByID(id uint) (*InsuranceVoucher, error) {
 
 func (s *service) List() ([]InsuranceVoucher, error) {
 	return s.repo.FindAll(
+		coreRepo.Preload("Patient"),
+		coreRepo.Preload("Company"),
+		coreRepo.Preload("Coverage"),
+		coreRepo.Preload("Coverage.Patient"),
+		coreRepo.Preload("Coverage.Company"),
+		coreRepo.Preload("Coverage.Guarantor"),
 		coreRepo.OrderBy("id", "DESC"),
 	)
 }

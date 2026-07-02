@@ -5,7 +5,9 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/core/entity"
 	"github.com/lallene/medcore-his/backend/internal/core/workflow"
+	company "github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
+	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 )
 
 type InsuranceVoucher struct {
@@ -16,8 +18,12 @@ type InsuranceVoucher struct {
 	CoverageID uint                     `gorm:"index;not null" json:"coverageId"`
 	Coverage   coverage.PatientCoverage `gorm:"foreignKey:CoverageID" json:"coverage"`
 
-	PatientID   uint `gorm:"index;not null" json:"patientId"`
-	CompanyID   uint `gorm:"index;not null" json:"companyId"`
+	PatientID uint             `gorm:"index;not null" json:"patientId"`
+	Patient   patients.Patient `gorm:"foreignKey:PatientID" json:"patient"`
+
+	CompanyID uint                     `gorm:"index;not null" json:"companyId"`
+	Company   company.InsuranceCompany `gorm:"foreignKey:CompanyID" json:"company"`
+
 	GuarantorID uint `gorm:"index;not null" json:"guarantorId"`
 
 	ConsultationID *uint `gorm:"index" json:"consultationId"`

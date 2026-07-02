@@ -65,6 +65,259 @@
                 }
             }
         },
+        "/insurance/companies": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne la liste des compagnies d'assurance.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Insurance Companies"
+                ],
+                "summary": "Lister les compagnies d'assurance",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Crée une nouvelle compagnie d'assurance.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Insurance Companies"
+                ],
+                "summary": "Créer une compagnie d'assurance",
+                "parameters": [
+                    {
+                        "description": "Données compagnie",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/company.CreateCompanyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/insurance/companies/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne les informations d’une compagnie d'assurance par son ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Insurance Companies"
+                ],
+                "summary": "Détail compagnie d'assurance",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID compagnie d'assurance",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Met à jour les informations d’une compagnie d'assurance existante.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Insurance Companies"
+                ],
+                "summary": "Modifier une compagnie d'assurance",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID compagnie d'assurance",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Données compagnie d'assurance",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/company.UpdateCompanyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Supprime une compagnie d'assurance par son ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Insurance Companies"
+                ],
+                "summary": "Supprimer une compagnie d'assurance",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID compagnie d'assurance",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/patients": {
             "post": {
                 "security": [
@@ -301,6 +554,87 @@
                 "password": {
                     "type": "string",
                     "minLength": 4
+                }
+            }
+        },
+        "company.CreateCompanyRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "code": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 2
+                },
+                "country": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "description": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string",
+                    "maxLength": 150
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 150,
+                    "minLength": 2
+                },
+                "phone": {
+                    "type": "string",
+                    "maxLength": 50
+                }
+            }
+        },
+        "company.UpdateCompanyRequest": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "code": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 2
+                },
+                "country": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "description": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string",
+                    "maxLength": 150
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 150,
+                    "minLength": 2
+                },
+                "phone": {
+                    "type": "string",
+                    "maxLength": 50
                 }
             }
         },

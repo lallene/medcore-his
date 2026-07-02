@@ -150,6 +150,7 @@ func getUserID(c *gin.Context) uint {
 	}
 
 	userID, ok := value.(uint)
+
 	if !ok {
 		return 0
 	}
@@ -165,6 +166,7 @@ func getRole(c *gin.Context) string {
 	}
 
 	role, ok := value.(string)
+
 	if !ok {
 		return ""
 	}
@@ -180,6 +182,7 @@ func getPermissions(c *gin.Context) []string {
 	}
 
 	permissions, ok := value.([]string)
+
 	if !ok {
 		return []string{}
 	}

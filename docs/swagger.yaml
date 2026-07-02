@@ -11,6 +11,65 @@ definitions:
     - email
     - password
     type: object
+  company.CreateCompanyRequest:
+    properties:
+      address:
+        type: string
+      city:
+        maxLength: 100
+        type: string
+      code:
+        maxLength: 50
+        minLength: 2
+        type: string
+      country:
+        maxLength: 100
+        type: string
+      description:
+        type: string
+      email:
+        maxLength: 150
+        type: string
+      name:
+        maxLength: 150
+        minLength: 2
+        type: string
+      phone:
+        maxLength: 50
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  company.UpdateCompanyRequest:
+    properties:
+      address:
+        type: string
+      city:
+        maxLength: 100
+        type: string
+      code:
+        maxLength: 50
+        minLength: 2
+        type: string
+      country:
+        maxLength: 100
+        type: string
+      description:
+        type: string
+      email:
+        maxLength: 150
+        type: string
+      isActive:
+        type: boolean
+      name:
+        maxLength: 150
+        minLength: 2
+        type: string
+      phone:
+        maxLength: 50
+        type: string
+    type: object
   openapi.ErrorDetail:
     properties:
       code:
@@ -152,6 +211,167 @@ paths:
       summary: Connexion utilisateur
       tags:
       - Authentication
+  /insurance/companies:
+    get:
+      consumes:
+      - application/json
+      description: Retourne la liste des compagnies d'assurance.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Lister les compagnies d'assurance
+      tags:
+      - Insurance Companies
+    post:
+      consumes:
+      - application/json
+      description: Crée une nouvelle compagnie d'assurance.
+      parameters:
+      - description: Données compagnie
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/company.CreateCompanyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Créer une compagnie d'assurance
+      tags:
+      - Insurance Companies
+  /insurance/companies/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Supprime une compagnie d'assurance par son ID.
+      parameters:
+      - description: ID compagnie d'assurance
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Supprimer une compagnie d'assurance
+      tags:
+      - Insurance Companies
+    get:
+      consumes:
+      - application/json
+      description: Retourne les informations d’une compagnie d'assurance par son ID.
+      parameters:
+      - description: ID compagnie d'assurance
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Détail compagnie d'assurance
+      tags:
+      - Insurance Companies
+    put:
+      consumes:
+      - application/json
+      description: Met à jour les informations d’une compagnie d'assurance existante.
+      parameters:
+      - description: ID compagnie d'assurance
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Données compagnie d'assurance
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/company.UpdateCompanyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/openapi.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/openapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Modifier une compagnie d'assurance
+      tags:
+      - Insurance Companies
   /patients:
     post:
       consumes:
