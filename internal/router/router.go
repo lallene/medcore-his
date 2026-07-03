@@ -17,6 +17,6 @@ func Register(r *gin.Engine, db *gorm.DB) {
 	})
 
 	api := r.Group("/api")
-
 	patients.RegisterRoutes(api, db)
+
 }

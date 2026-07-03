@@ -5,6 +5,7 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/core/application"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/dashboard"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
@@ -32,6 +33,7 @@ func main() {
 	app.RegisterModule(patients.Module{})
 	app.RegisterModule(insurance.Module{})
 	app.RegisterModule(dashboard.Module{})
+	app.RegisterModule(consultations.Module{})
 
 	app.Run()
 }

@@ -65,6 +65,704 @@
                 }
             }
         },
+        "/consultations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Créer une consultation médicale",
+                "parameters": [
+                    {
+                        "description": "Consultation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.CreateConsultationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.Consultation"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/exams": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Liste des examens médicaux",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/consultations.MedicalExam"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations - Référentiels"
+                ],
+                "summary": "Créer un examen médical",
+                "parameters": [
+                    {
+                        "description": "Examen",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.CreateReferenceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.MedicalExam"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/exams/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Modifie les informations d'un examen médical du référentiel. Permission requise : consultations.references.manage.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations - Référentiels"
+                ],
+                "summary": "Modifier un examen médical",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID de l'examen",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Données de l'examen",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.UpdateReferenceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.MedicalExam"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Désactive un examen médical du référentiel. Permission requise : consultations.references.manage.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations - Référentiels"
+                ],
+                "summary": "Désactiver un examen médical",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID de l'examen",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/reasons": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Liste des motifs de consultation",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/consultations.ConsultationReason"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations - Référentiels"
+                ],
+                "summary": "Créer un motif de consultation",
+                "parameters": [
+                    {
+                        "description": "Motif",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.CreateReferenceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.ConsultationReason"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/reasons/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations - Référentiels"
+                ],
+                "summary": "Modifier un motif de consultation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID motif",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Motif",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.UpdateReferenceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations - Référentiels"
+                ],
+                "summary": "Désactiver un motif de consultation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID motif",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Détail d'une consultation médicale",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.Consultation"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Modifier une consultation médicale",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Consultation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.UpdateConsultationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.Consultation"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/{id}/exam-request/pdf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Documents médicaux"
+                ],
+                "summary": "Générer la demande d'examens",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/{id}/hospitalization/pdf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Documents médicaux"
+                ],
+                "summary": "Générer la fiche d'hospitalisation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/{id}/prescription/pdf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Documents médicaux"
+                ],
+                "summary": "Générer l'ordonnance",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/{id}/report/pdf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Documents médicaux"
+                ],
+                "summary": "Générer le compte rendu de consultation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/{id}/sick-leave/pdf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Génère la fiche PDF de repos maladie prescrite lors d'une consultation.",
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Documents médicaux"
+                ],
+                "summary": "Générer la fiche de repos maladie",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID de la consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/consultations/{id}/status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Changer le statut d'une consultation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Statut",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.UpdateConsultationStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.Consultation"
+                        }
+                    }
+                }
+            }
+        },
         "/insurance/companies": {
             "get": {
                 "security": [
@@ -538,6 +1236,97 @@
                     }
                 }
             }
+        },
+        "/patients/{id}/360": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Patient 360"
+                ],
+                "summary": "Vue Patient 360",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID patient",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.Patient360Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/patients/{id}/consultations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne toutes les consultations médicales du patient avec motifs, constantes, examens et prescriptions.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Patient 360"
+                ],
+                "summary": "Historique des consultations d'un patient",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du patient",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/consultations.Consultation"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -635,6 +1424,496 @@
                 "phone": {
                     "type": "string",
                     "maxLength": 50
+                }
+            }
+        },
+        "consultations.Consultation": {
+            "type": "object",
+            "properties": {
+                "cancellationReason": {
+                    "type": "string"
+                },
+                "cancelledAt": {
+                    "type": "string"
+                },
+                "completedAt": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "diagnosis": {
+                    "type": "string"
+                },
+                "doctorName": {
+                    "type": "string"
+                },
+                "exams": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.MedicalExam"
+                    }
+                },
+                "hospitalizationDuration": {
+                    "type": "integer"
+                },
+                "hospitalizationReason": {
+                    "type": "string"
+                },
+                "hospitalizationRequired": {
+                    "type": "boolean"
+                },
+                "hospitalizationType": {
+                    "description": "medicale / chirurgicale",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "observations": {
+                    "type": "string"
+                },
+                "patient": {
+                    "$ref": "#/definitions/patients.Patient"
+                },
+                "patientId": {
+                    "type": "integer"
+                },
+                "prescriptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.ConsultationPrescription"
+                    }
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.ConsultationReason"
+                    }
+                },
+                "service": {
+                    "type": "string"
+                },
+                "sickLeaveDays": {
+                    "type": "integer"
+                },
+                "sickLeaveEndDate": {
+                    "type": "string"
+                },
+                "sickLeaveRequired": {
+                    "type": "boolean"
+                },
+                "sickLeaveStartDate": {
+                    "type": "string"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "treatment": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "vitals": {
+                    "$ref": "#/definitions/consultations.ConsultationVitals"
+                }
+            }
+        },
+        "consultations.ConsultationPrescription": {
+            "type": "object",
+            "properties": {
+                "consultationId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dosage": {
+                    "type": "string"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instructions": {
+                    "type": "string"
+                },
+                "medicationName": {
+                    "type": "string"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.ConsultationReason": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.ConsultationVitals": {
+            "type": "object",
+            "properties": {
+                "bloodGlucose": {
+                    "type": "number"
+                },
+                "bloodPressureDiastolic": {
+                    "type": "integer"
+                },
+                "bloodPressureSystolic": {
+                    "type": "integer"
+                },
+                "consultationId": {
+                    "type": "integer"
+                },
+                "heartRate": {
+                    "type": "integer"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "oxygenSaturation": {
+                    "type": "integer"
+                },
+                "painScore": {
+                    "type": "integer"
+                },
+                "respiratoryRate": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "consultations.ConsultationVitalsRequest": {
+            "type": "object",
+            "properties": {
+                "bloodGlucose": {
+                    "type": "number"
+                },
+                "bloodPressureDiastolic": {
+                    "type": "integer"
+                },
+                "bloodPressureSystolic": {
+                    "type": "integer"
+                },
+                "heartRate": {
+                    "type": "integer"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "oxygenSaturation": {
+                    "type": "integer"
+                },
+                "painScore": {
+                    "type": "integer"
+                },
+                "respiratoryRate": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "consultations.CreateConsultationRequest": {
+            "type": "object",
+            "required": [
+                "doctorName",
+                "patientId"
+            ],
+            "properties": {
+                "diagnosis": {
+                    "type": "string"
+                },
+                "doctorName": {
+                    "type": "string"
+                },
+                "examIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "hospitalizationDuration": {
+                    "type": "integer"
+                },
+                "hospitalizationReason": {
+                    "type": "string"
+                },
+                "hospitalizationRequired": {
+                    "type": "boolean"
+                },
+                "hospitalizationType": {
+                    "type": "string"
+                },
+                "observations": {
+                    "type": "string"
+                },
+                "patientId": {
+                    "type": "integer"
+                },
+                "prescriptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.PrescriptionRequest"
+                    }
+                },
+                "reasonIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "service": {
+                    "type": "string"
+                },
+                "sickLeaveDays": {
+                    "type": "integer"
+                },
+                "sickLeaveRequired": {
+                    "type": "boolean"
+                },
+                "treatment": {
+                    "type": "string"
+                },
+                "vitals": {
+                    "$ref": "#/definitions/consultations.ConsultationVitalsRequest"
+                }
+            }
+        },
+        "consultations.CreateReferenceRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.MedicalExam": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.Patient360Response": {
+            "type": "object",
+            "properties": {
+                "consultations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.Consultation"
+                    }
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.PatientDocumentItem"
+                    }
+                },
+                "patientId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "consultations.PatientDocumentItem": {
+            "type": "object",
+            "properties": {
+                "consultationId": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.PrescriptionRequest": {
+            "type": "object",
+            "required": [
+                "medicationName"
+            ],
+            "properties": {
+                "dosage": {
+                    "type": "string"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "frequency": {
+                    "type": "string"
+                },
+                "instructions": {
+                    "type": "string"
+                },
+                "medicationName": {
+                    "type": "string"
+                },
+                "route": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.UpdateConsultationRequest": {
+            "type": "object",
+            "properties": {
+                "diagnosis": {
+                    "type": "string"
+                },
+                "doctorName": {
+                    "type": "string"
+                },
+                "examIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "hospitalizationDuration": {
+                    "type": "integer"
+                },
+                "hospitalizationReason": {
+                    "type": "string"
+                },
+                "hospitalizationRequired": {
+                    "type": "boolean"
+                },
+                "hospitalizationType": {
+                    "type": "string"
+                },
+                "observations": {
+                    "type": "string"
+                },
+                "prescriptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.PrescriptionRequest"
+                    }
+                },
+                "reasonIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "service": {
+                    "type": "string"
+                },
+                "sickLeaveDays": {
+                    "type": "integer"
+                },
+                "sickLeaveRequired": {
+                    "type": "boolean"
+                },
+                "treatment": {
+                    "type": "string"
+                },
+                "vitals": {
+                    "$ref": "#/definitions/consultations.ConsultationVitalsRequest"
+                }
+            }
+        },
+        "consultations.UpdateConsultationStatusRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "cancellationReason": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.UpdateReferenceRequest": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -737,6 +2016,71 @@
                     "type": "string",
                     "maxLength": 30,
                     "minLength": 8
+                }
+            }
+        },
+        "patients.Patient": {
+            "type": "object",
+            "properties": {
+                "age": {
+                    "type": "integer"
+                },
+                "codePatient": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "createdBy": {
+                    "type": "integer"
+                },
+                "dateNaissance": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isAssure": {
+                    "type": "boolean"
+                },
+                "matriculeAssure": {
+                    "type": "string"
+                },
+                "nom": {
+                    "type": "string"
+                },
+                "numeroDossier": {
+                    "type": "string"
+                },
+                "personneContact": {
+                    "type": "string"
+                },
+                "prenoms": {
+                    "type": "string"
+                },
+                "quartier": {
+                    "type": "string"
+                },
+                "sexe": {
+                    "type": "string"
+                },
+                "tauxCouverture": {
+                    "type": "number"
+                },
+                "telephone": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "updatedBy": {
+                    "type": "integer"
+                },
+                "uuid": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

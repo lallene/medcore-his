@@ -70,6 +70,329 @@ definitions:
         maxLength: 50
         type: string
     type: object
+  consultations.Consultation:
+    properties:
+      cancellationReason:
+        type: string
+      cancelledAt:
+        type: string
+      completedAt:
+        type: string
+      createdAt:
+        type: string
+      diagnosis:
+        type: string
+      doctorName:
+        type: string
+      exams:
+        items:
+          $ref: '#/definitions/consultations.MedicalExam'
+        type: array
+      hospitalizationDuration:
+        type: integer
+      hospitalizationReason:
+        type: string
+      hospitalizationRequired:
+        type: boolean
+      hospitalizationType:
+        description: medicale / chirurgicale
+        type: string
+      id:
+        type: integer
+      observations:
+        type: string
+      patient:
+        $ref: '#/definitions/patients.Patient'
+      patientId:
+        type: integer
+      prescriptions:
+        items:
+          $ref: '#/definitions/consultations.ConsultationPrescription'
+        type: array
+      reasons:
+        items:
+          $ref: '#/definitions/consultations.ConsultationReason'
+        type: array
+      service:
+        type: string
+      sickLeaveDays:
+        type: integer
+      sickLeaveEndDate:
+        type: string
+      sickLeaveRequired:
+        type: boolean
+      sickLeaveStartDate:
+        type: string
+      startedAt:
+        type: string
+      status:
+        type: string
+      treatment:
+        type: string
+      updatedAt:
+        type: string
+      vitals:
+        $ref: '#/definitions/consultations.ConsultationVitals'
+    type: object
+  consultations.ConsultationPrescription:
+    properties:
+      consultationId:
+        type: integer
+      createdAt:
+        type: string
+      dosage:
+        type: string
+      duration:
+        type: string
+      form:
+        type: string
+      frequency:
+        type: string
+      id:
+        type: integer
+      instructions:
+        type: string
+      medicationName:
+        type: string
+      route:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  consultations.ConsultationReason:
+    properties:
+      category:
+        type: string
+      code:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      name:
+        type: string
+    type: object
+  consultations.ConsultationVitals:
+    properties:
+      bloodGlucose:
+        type: number
+      bloodPressureDiastolic:
+        type: integer
+      bloodPressureSystolic:
+        type: integer
+      consultationId:
+        type: integer
+      heartRate:
+        type: integer
+      height:
+        type: number
+      id:
+        type: integer
+      oxygenSaturation:
+        type: integer
+      painScore:
+        type: integer
+      respiratoryRate:
+        type: integer
+      temperature:
+        type: number
+      weight:
+        type: number
+    type: object
+  consultations.ConsultationVitalsRequest:
+    properties:
+      bloodGlucose:
+        type: number
+      bloodPressureDiastolic:
+        type: integer
+      bloodPressureSystolic:
+        type: integer
+      heartRate:
+        type: integer
+      height:
+        type: number
+      oxygenSaturation:
+        type: integer
+      painScore:
+        type: integer
+      respiratoryRate:
+        type: integer
+      temperature:
+        type: number
+      weight:
+        type: number
+    type: object
+  consultations.CreateConsultationRequest:
+    properties:
+      diagnosis:
+        type: string
+      doctorName:
+        type: string
+      examIds:
+        items:
+          type: integer
+        type: array
+      hospitalizationDuration:
+        type: integer
+      hospitalizationReason:
+        type: string
+      hospitalizationRequired:
+        type: boolean
+      hospitalizationType:
+        type: string
+      observations:
+        type: string
+      patientId:
+        type: integer
+      prescriptions:
+        items:
+          $ref: '#/definitions/consultations.PrescriptionRequest'
+        type: array
+      reasonIds:
+        items:
+          type: integer
+        type: array
+      service:
+        type: string
+      sickLeaveDays:
+        type: integer
+      sickLeaveRequired:
+        type: boolean
+      treatment:
+        type: string
+      vitals:
+        $ref: '#/definitions/consultations.ConsultationVitalsRequest'
+    required:
+    - doctorName
+    - patientId
+    type: object
+  consultations.CreateReferenceRequest:
+    properties:
+      category:
+        type: string
+      code:
+        type: string
+      name:
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  consultations.MedicalExam:
+    properties:
+      category:
+        type: string
+      code:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      name:
+        type: string
+    type: object
+  consultations.Patient360Response:
+    properties:
+      consultations:
+        items:
+          $ref: '#/definitions/consultations.Consultation'
+        type: array
+      documents:
+        items:
+          $ref: '#/definitions/consultations.PatientDocumentItem'
+        type: array
+      patientId:
+        type: integer
+    type: object
+  consultations.PatientDocumentItem:
+    properties:
+      consultationId:
+        type: integer
+      label:
+        type: string
+      type:
+        type: string
+      url:
+        type: string
+    type: object
+  consultations.PrescriptionRequest:
+    properties:
+      dosage:
+        type: string
+      duration:
+        type: string
+      form:
+        type: string
+      frequency:
+        type: string
+      instructions:
+        type: string
+      medicationName:
+        type: string
+      route:
+        type: string
+    required:
+    - medicationName
+    type: object
+  consultations.UpdateConsultationRequest:
+    properties:
+      diagnosis:
+        type: string
+      doctorName:
+        type: string
+      examIds:
+        items:
+          type: integer
+        type: array
+      hospitalizationDuration:
+        type: integer
+      hospitalizationReason:
+        type: string
+      hospitalizationRequired:
+        type: boolean
+      hospitalizationType:
+        type: string
+      observations:
+        type: string
+      prescriptions:
+        items:
+          $ref: '#/definitions/consultations.PrescriptionRequest'
+        type: array
+      reasonIds:
+        items:
+          type: integer
+        type: array
+      service:
+        type: string
+      sickLeaveDays:
+        type: integer
+      sickLeaveRequired:
+        type: boolean
+      treatment:
+        type: string
+      vitals:
+        $ref: '#/definitions/consultations.ConsultationVitalsRequest'
+    type: object
+  consultations.UpdateConsultationStatusRequest:
+    properties:
+      cancellationReason:
+        type: string
+      status:
+        type: string
+    required:
+    - status
+    type: object
+  consultations.UpdateReferenceRequest:
+    properties:
+      category:
+        type: string
+      code:
+        type: string
+      isActive:
+        type: boolean
+      name:
+        type: string
+    type: object
   openapi.ErrorDetail:
     properties:
       code:
@@ -142,6 +465,49 @@ definitions:
     required:
     - nom
     type: object
+  patients.Patient:
+    properties:
+      age:
+        type: integer
+      codePatient:
+        type: string
+      createdAt:
+        type: string
+      createdBy:
+        type: integer
+      dateNaissance:
+        type: string
+      id:
+        type: integer
+      isAssure:
+        type: boolean
+      matriculeAssure:
+        type: string
+      nom:
+        type: string
+      numeroDossier:
+        type: string
+      personneContact:
+        type: string
+      prenoms:
+        type: string
+      quartier:
+        type: string
+      sexe:
+        type: string
+      tauxCouverture:
+        type: number
+      telephone:
+        type: string
+      updatedAt:
+        type: string
+      updatedBy:
+        type: integer
+      uuid:
+        type: string
+      version:
+        type: integer
+    type: object
   patients.UpdatePatientRequest:
     properties:
       age:
@@ -211,6 +577,445 @@ paths:
       summary: Connexion utilisateur
       tags:
       - Authentication
+  /consultations:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Consultation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.CreateConsultationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/consultations.Consultation'
+      security:
+      - BearerAuth: []
+      summary: Créer une consultation médicale
+      tags:
+      - Consultations
+  /consultations/{id}:
+    get:
+      parameters:
+      - description: ID consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/consultations.Consultation'
+      security:
+      - BearerAuth: []
+      summary: Détail d'une consultation médicale
+      tags:
+      - Consultations
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Consultation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.UpdateConsultationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/consultations.Consultation'
+      security:
+      - BearerAuth: []
+      summary: Modifier une consultation médicale
+      tags:
+      - Consultations
+  /consultations/{id}/exam-request/pdf:
+    get:
+      parameters:
+      - description: ID consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: Générer la demande d'examens
+      tags:
+      - Documents médicaux
+  /consultations/{id}/hospitalization/pdf:
+    get:
+      parameters:
+      - description: ID consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: Générer la fiche d'hospitalisation
+      tags:
+      - Documents médicaux
+  /consultations/{id}/prescription/pdf:
+    get:
+      parameters:
+      - description: ID consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: Générer l'ordonnance
+      tags:
+      - Documents médicaux
+  /consultations/{id}/report/pdf:
+    get:
+      parameters:
+      - description: ID consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: Générer le compte rendu de consultation
+      tags:
+      - Documents médicaux
+  /consultations/{id}/sick-leave/pdf:
+    get:
+      description: Génère la fiche PDF de repos maladie prescrite lors d'une consultation.
+      parameters:
+      - description: ID de la consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Générer la fiche de repos maladie
+      tags:
+      - Documents médicaux
+  /consultations/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Statut
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.UpdateConsultationStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/consultations.Consultation'
+      security:
+      - BearerAuth: []
+      summary: Changer le statut d'une consultation
+      tags:
+      - Consultations
+  /consultations/exams:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/consultations.MedicalExam'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des examens médicaux
+      tags:
+      - Consultations
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Examen
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.CreateReferenceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/consultations.MedicalExam'
+      security:
+      - BearerAuth: []
+      summary: Créer un examen médical
+      tags:
+      - Consultations - Référentiels
+  /consultations/exams/{id}:
+    delete:
+      description: 'Désactive un examen médical du référentiel. Permission requise
+        : consultations.references.manage.'
+      parameters:
+      - description: ID de l'examen
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Désactiver un examen médical
+      tags:
+      - Consultations - Référentiels
+    put:
+      consumes:
+      - application/json
+      description: 'Modifie les informations d''un examen médical du référentiel.
+        Permission requise : consultations.references.manage.'
+      parameters:
+      - description: ID de l'examen
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Données de l'examen
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.UpdateReferenceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/consultations.MedicalExam'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Modifier un examen médical
+      tags:
+      - Consultations - Référentiels
+  /consultations/reasons:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/consultations.ConsultationReason'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des motifs de consultation
+      tags:
+      - Consultations
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Motif
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.CreateReferenceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/consultations.ConsultationReason'
+      security:
+      - BearerAuth: []
+      summary: Créer un motif de consultation
+      tags:
+      - Consultations - Référentiels
+  /consultations/reasons/{id}:
+    delete:
+      parameters:
+      - description: ID motif
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Désactiver un motif de consultation
+      tags:
+      - Consultations - Référentiels
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID motif
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Motif
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.UpdateReferenceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Modifier un motif de consultation
+      tags:
+      - Consultations - Référentiels
   /insurance/companies:
     get:
       consumes:
@@ -513,6 +1318,65 @@ paths:
       summary: Modifier un patient
       tags:
       - Patients
+  /patients/{id}/360:
+    get:
+      parameters:
+      - description: ID patient
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/consultations.Patient360Response'
+      security:
+      - BearerAuth: []
+      summary: Vue Patient 360
+      tags:
+      - Patient 360
+  /patients/{id}/consultations:
+    get:
+      description: Retourne toutes les consultations médicales du patient avec motifs,
+        constantes, examens et prescriptions.
+      parameters:
+      - description: ID du patient
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/consultations.Consultation'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Historique des consultations d'un patient
+      tags:
+      - Patient 360
 schemes:
 - https
 securityDefinitions:
