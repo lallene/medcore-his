@@ -154,6 +154,10 @@ definitions:
         type: string
       medicationName:
         type: string
+      presentationId:
+        type: integer
+      quantity:
+        type: number
       route:
         type: string
       updatedAt:
@@ -317,22 +321,19 @@ definitions:
     type: object
   consultations.PrescriptionRequest:
     properties:
-      dosage:
-        type: string
       duration:
-        type: string
-      form:
-        type: string
-      frequency:
         type: string
       instructions:
         type: string
-      medicationName:
-        type: string
-      route:
-        type: string
+      presentationId:
+        type: integer
+      quantity:
+        type: number
     required:
-    - medicationName
+    - duration
+    - instructions
+    - presentationId
+    - quantity
     type: object
   consultations.UpdateConsultationRequest:
     properties:
@@ -532,6 +533,409 @@ definitions:
         type: number
       telephone:
         type: string
+    type: object
+  pharmacy.CreateDispensationRequest:
+    properties:
+      notes:
+        type: string
+      patientId:
+        type: integer
+      prescriptionId:
+        type: integer
+      presentationId:
+        type: integer
+      quantity:
+        type: number
+    required:
+    - presentationId
+    - quantity
+    type: object
+  pharmacy.CreateMedicationFamilyRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  pharmacy.CreateMedicationPresentationRequest:
+    properties:
+      code:
+        type: string
+      dosage:
+        type: string
+      form:
+        type: string
+      medicationId:
+        type: integer
+      route:
+        type: string
+      unit:
+        type: string
+    required:
+    - code
+    - dosage
+    - form
+    - medicationId
+    - route
+    type: object
+  pharmacy.CreateMedicationRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      familyId:
+        type: integer
+      name:
+        type: string
+    required:
+    - code
+    - familyId
+    - name
+    type: object
+  pharmacy.CreatePharmacyBatchRequest:
+    properties:
+      batchNumber:
+        type: string
+      expirationDate:
+        type: string
+      presentationId:
+        type: integer
+      purchasePrice:
+        type: number
+      quantityReceived:
+        type: number
+      supplier:
+        type: string
+    required:
+    - batchNumber
+    - presentationId
+    - quantityReceived
+    type: object
+  pharmacy.CreatePharmacyStockRequest:
+    properties:
+      alertThreshold:
+        minimum: 0
+        type: number
+      isStockManaged:
+        type: boolean
+      presentationId:
+        type: integer
+      quantityAvailable:
+        minimum: 0
+        type: number
+    required:
+    - presentationId
+    type: object
+  pharmacy.Medication:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      family:
+        $ref: '#/definitions/pharmacy.MedicationFamily'
+      familyId:
+        type: integer
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      name:
+        type: string
+    type: object
+  pharmacy.MedicationFamily:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      name:
+        type: string
+    type: object
+  pharmacy.MedicationPresentation:
+    properties:
+      code:
+        type: string
+      createdAt:
+        type: string
+      dosage:
+        type: string
+      form:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      medication:
+        $ref: '#/definitions/pharmacy.Medication'
+      medicationId:
+        type: integer
+      route:
+        type: string
+      unit:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  pharmacy.PharmacyBatch:
+    properties:
+      batchNumber:
+        type: string
+      createdAt:
+        type: string
+      expirationDate:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      presentation:
+        $ref: '#/definitions/pharmacy.MedicationPresentation'
+      presentationId:
+        type: integer
+      purchasePrice:
+        type: number
+      quantityReceived:
+        type: number
+      quantityRemaining:
+        type: number
+      supplier:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  pharmacy.PharmacyBatchResponse:
+    properties:
+      batchNumber:
+        type: string
+      createdAt:
+        type: string
+      expirationDate:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      presentation:
+        $ref: '#/definitions/pharmacy.MedicationPresentation'
+      presentationId:
+        type: integer
+      purchasePrice:
+        type: number
+      quantityReceived:
+        type: number
+      quantityRemaining:
+        type: number
+      supplier:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  pharmacy.PharmacyDispensation:
+    properties:
+      createdAt:
+        type: string
+      dispensedById:
+        type: integer
+      dispensedByName:
+        type: string
+      id:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/pharmacy.PharmacyDispensationItem'
+        type: array
+      notes:
+        type: string
+      patientId:
+        type: integer
+      presentation:
+        $ref: '#/definitions/pharmacy.MedicationPresentation'
+      presentationId:
+        type: integer
+      quantity:
+        type: number
+      referenceId:
+        type: integer
+      referenceType:
+        type: string
+      status:
+        type: string
+    type: object
+  pharmacy.PharmacyDispensationItem:
+    properties:
+      batch:
+        $ref: '#/definitions/pharmacy.PharmacyBatch'
+      batchId:
+        type: integer
+      createdAt:
+        type: string
+      dispensationId:
+        type: integer
+      id:
+        type: integer
+      quantity:
+        type: number
+    type: object
+  pharmacy.PharmacyPrescriptionQueueItem:
+    properties:
+      consultationId:
+        type: integer
+      dispensedQuantity:
+        type: number
+      dosage:
+        type: string
+      duration:
+        type: string
+      form:
+        type: string
+      instructions:
+        type: string
+      medicationName:
+        type: string
+      prescribedQuantity:
+        type: number
+      prescriptionId:
+        type: integer
+      presentationId:
+        type: integer
+      remainingQuantity:
+        type: number
+      route:
+        type: string
+      status:
+        type: string
+    type: object
+  pharmacy.PharmacyStockResponse:
+    properties:
+      alertThreshold:
+        type: number
+      createdAt:
+        type: string
+      id:
+        type: integer
+      isStockManaged:
+        type: boolean
+      presentation:
+        $ref: '#/definitions/pharmacy.MedicationPresentation'
+      presentationId:
+        type: integer
+      quantityAvailable:
+        type: number
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  pharmacy.PrescriptionDispensationStatusResponse:
+    properties:
+      dispensedQuantity:
+        type: number
+      isFullyDispensed:
+        type: boolean
+      prescribedQuantity:
+        type: number
+      prescriptionId:
+        type: integer
+      presentationId:
+        type: integer
+      remainingQuantity:
+        type: number
+    type: object
+  pharmacy.StockMovement:
+    properties:
+      batch:
+        $ref: '#/definitions/pharmacy.PharmacyBatch'
+      batchId:
+        type: integer
+      createdAt:
+        type: string
+      id:
+        type: integer
+      performedById:
+        type: integer
+      performedByName:
+        type: string
+      presentation:
+        $ref: '#/definitions/pharmacy.MedicationPresentation'
+      presentationId:
+        type: integer
+      quantity:
+        type: number
+      reason:
+        type: string
+      referenceId:
+        type: integer
+      referenceType:
+        type: string
+      stockAfter:
+        type: number
+      stockBefore:
+        type: number
+      type:
+        type: string
+    type: object
+  pharmacy.UpdateMedicationFamilyRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      isActive:
+        type: boolean
+      name:
+        type: string
+    type: object
+  pharmacy.UpdateMedicationPresentationRequest:
+    properties:
+      code:
+        type: string
+      dosage:
+        type: string
+      form:
+        type: string
+      isActive:
+        type: boolean
+      medicationId:
+        type: integer
+      route:
+        type: string
+      unit:
+        type: string
+    type: object
+  pharmacy.UpdateMedicationRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      familyId:
+        type: integer
+      isActive:
+        type: boolean
+      name:
+        type: string
+    type: object
+  pharmacy.UpdatePharmacyStockRequest:
+    properties:
+      alertThreshold:
+        minimum: 0
+        type: number
+      isStockManaged:
+        type: boolean
+      quantityAvailable:
+        minimum: 0
+        type: number
     type: object
 host: medcore-his-api-latest.onrender.com
 info:
@@ -1377,6 +1781,497 @@ paths:
       summary: Historique des consultations d'un patient
       tags:
       - Patient 360
+  /pharmacy/batches:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.PharmacyBatchResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des lots pharmacie
+      tags:
+      - Pharmacy - Lots
+    post:
+      consumes:
+      - application/json
+      description: La création d'un lot augmente le stock et crée un mouvement BATCH_ENTRY.
+      parameters:
+      - description: Lot pharmacie
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.CreatePharmacyBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pharmacy.PharmacyBatchResponse'
+      security:
+      - BearerAuth: []
+      summary: Créer un lot pharmacie
+      tags:
+      - Pharmacy - Lots
+  /pharmacy/dispensations:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.PharmacyDispensation'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des délivrances pharmacie
+      tags:
+      - Pharmacy - Délivrance
+    post:
+      consumes:
+      - application/json
+      description: Seule la délivrance pharmacie diminue le stock. La consultation
+        et la prescription ne diminuent jamais le stock.
+      parameters:
+      - description: Délivrance
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.CreateDispensationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pharmacy.PharmacyDispensation'
+      security:
+      - BearerAuth: []
+      summary: Créer une délivrance pharmacie
+      tags:
+      - Pharmacy - Délivrance
+  /pharmacy/families:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.MedicationFamily'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des familles thérapeutiques
+      tags:
+      - Pharmacy - Référentiels
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Famille thérapeutique
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.CreateMedicationFamilyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pharmacy.MedicationFamily'
+      security:
+      - BearerAuth: []
+      summary: Créer une famille thérapeutique
+      tags:
+      - Pharmacy - Référentiels
+  /pharmacy/families/{id}:
+    delete:
+      parameters:
+      - description: ID famille
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Désactiver une famille thérapeutique
+      tags:
+      - Pharmacy - Référentiels
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID famille
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Famille thérapeutique
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.UpdateMedicationFamilyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pharmacy.MedicationFamily'
+      security:
+      - BearerAuth: []
+      summary: Modifier une famille thérapeutique
+      tags:
+      - Pharmacy - Référentiels
+  /pharmacy/medications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.Medication'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des médicaments
+      tags:
+      - Pharmacy - Médicaments
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Médicament
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.CreateMedicationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pharmacy.Medication'
+      security:
+      - BearerAuth: []
+      summary: Créer un médicament
+      tags:
+      - Pharmacy - Médicaments
+  /pharmacy/medications/{id}:
+    delete:
+      parameters:
+      - description: ID médicament
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Désactiver un médicament
+      tags:
+      - Pharmacy - Médicaments
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID médicament
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Médicament
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.UpdateMedicationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pharmacy.Medication'
+      security:
+      - BearerAuth: []
+      summary: Modifier un médicament
+      tags:
+      - Pharmacy - Médicaments
+  /pharmacy/prescriptions/{id}/dispensation-status:
+    get:
+      parameters:
+      - description: ID prescription
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pharmacy.PrescriptionDispensationStatusResponse'
+      security:
+      - BearerAuth: []
+      summary: Statut de délivrance d'une prescription
+      tags:
+      - Pharmacy - Ordonnances
+  /pharmacy/prescriptions/pending:
+    get:
+      description: Retourne les prescriptions à délivrer avec filtre optionnel status=PENDING,
+        PARTIAL ou COMPLETED.
+      parameters:
+      - description: Filtre statut
+        enum:
+        - PENDING
+        - PARTIAL
+        - COMPLETED
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.PharmacyPrescriptionQueueItem'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: File pharmacie des prescriptions
+      tags:
+      - Pharmacy - Ordonnances
+  /pharmacy/presentations:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.MedicationPresentation'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des présentations pharmaceutiques
+      tags:
+      - Pharmacy - Présentations
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Présentation pharmaceutique
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.CreateMedicationPresentationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pharmacy.MedicationPresentation'
+      security:
+      - BearerAuth: []
+      summary: Créer une présentation pharmaceutique
+      tags:
+      - Pharmacy - Présentations
+  /pharmacy/presentations/{id}:
+    delete:
+      parameters:
+      - description: ID présentation
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Désactiver une présentation pharmaceutique
+      tags:
+      - Pharmacy - Présentations
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID présentation
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Présentation pharmaceutique
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.UpdateMedicationPresentationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pharmacy.MedicationPresentation'
+      security:
+      - BearerAuth: []
+      summary: Modifier une présentation pharmaceutique
+      tags:
+      - Pharmacy - Présentations
+  /pharmacy/presentations/{presentationId}/stock-movements:
+    get:
+      parameters:
+      - description: ID présentation
+        in: path
+        name: presentationId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.StockMovement'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Historique des mouvements d'une présentation
+      tags:
+      - Pharmacy - Mouvements
+  /pharmacy/stock-movements:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.StockMovement'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Historique des mouvements de stock
+      tags:
+      - Pharmacy - Mouvements
+  /pharmacy/stocks:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/pharmacy.PharmacyStockResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Liste des stocks pharmacie
+      tags:
+      - Pharmacy - Stock
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stock
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.CreatePharmacyStockRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pharmacy.PharmacyStockResponse'
+      security:
+      - BearerAuth: []
+      summary: Créer un stock pour une présentation
+      tags:
+      - Pharmacy - Stock
+  /pharmacy/stocks/{id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID stock
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Stock
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pharmacy.UpdatePharmacyStockRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pharmacy.PharmacyStockResponse'
+      security:
+      - BearerAuth: []
+      summary: Modifier un stock pharmacie
+      tags:
+      - Pharmacy - Stock
 schemes:
 - https
 securityDefinitions:

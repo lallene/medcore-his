@@ -79,16 +79,6 @@ type UpdateConsultationRequest struct {
 	SickLeaveDays     *int  `json:"sickLeaveDays"`
 }
 
-type PrescriptionRequest struct {
-	MedicationName string `json:"medicationName" binding:"required"`
-	Dosage         string `json:"dosage"`
-	Form           string `json:"form"`
-	Frequency      string `json:"frequency"`
-	Duration       string `json:"duration"`
-	Route          string `json:"route"`
-	Instructions   string `json:"instructions"`
-}
-
 type Patient360Response struct {
 	PatientID     uint                  `json:"patientId"`
 	Consultations []Consultation        `json:"consultations"`
@@ -100,4 +90,32 @@ type PatientDocumentItem struct {
 	Type           string `json:"type"`
 	Label          string `json:"label"`
 	URL            string `json:"url"`
+}
+
+type ConsultationPrescriptionRequest struct {
+	PresentationID uint `json:"presentationId" binding:"required"`
+
+	Quantity float64 `json:"quantity" binding:"required,gt=0"`
+
+	Duration string `json:"duration" binding:"required"`
+
+	Instructions string `json:"instructions" binding:"required"`
+}
+
+type CreateDispensationRequest struct {
+	PresentationID uint    `json:"presentationId" binding:"required"`
+	Quantity       float64 `json:"quantity" binding:"required,gt=0"`
+
+	PatientID *uint `json:"patientId"`
+
+	PrescriptionID *uint `json:"prescriptionId"`
+
+	Notes string `json:"notes"`
+}
+
+type PrescriptionRequest struct {
+	PresentationID uint    `json:"presentationId" binding:"required"`
+	Quantity       float64 `json:"quantity" binding:"required,gt=0"`
+	Duration       string  `json:"duration" binding:"required"`
+	Instructions   string  `json:"instructions" binding:"required"`
 }

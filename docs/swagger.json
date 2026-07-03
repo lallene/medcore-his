@@ -1327,6 +1327,805 @@
                     }
                 }
             }
+        },
+        "/pharmacy/batches": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Lots"
+                ],
+                "summary": "Liste des lots pharmacie",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.PharmacyBatchResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "La création d'un lot augmente le stock et crée un mouvement BATCH_ENTRY.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Lots"
+                ],
+                "summary": "Créer un lot pharmacie",
+                "parameters": [
+                    {
+                        "description": "Lot pharmacie",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.CreatePharmacyBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.PharmacyBatchResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/dispensations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Délivrance"
+                ],
+                "summary": "Liste des délivrances pharmacie",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.PharmacyDispensation"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Seule la délivrance pharmacie diminue le stock. La consultation et la prescription ne diminuent jamais le stock.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Délivrance"
+                ],
+                "summary": "Créer une délivrance pharmacie",
+                "parameters": [
+                    {
+                        "description": "Délivrance",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.CreateDispensationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.PharmacyDispensation"
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/families": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Référentiels"
+                ],
+                "summary": "Liste des familles thérapeutiques",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.MedicationFamily"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Référentiels"
+                ],
+                "summary": "Créer une famille thérapeutique",
+                "parameters": [
+                    {
+                        "description": "Famille thérapeutique",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.CreateMedicationFamilyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.MedicationFamily"
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/families/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Référentiels"
+                ],
+                "summary": "Modifier une famille thérapeutique",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID famille",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Famille thérapeutique",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.UpdateMedicationFamilyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.MedicationFamily"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Référentiels"
+                ],
+                "summary": "Désactiver une famille thérapeutique",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID famille",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/medications": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Médicaments"
+                ],
+                "summary": "Liste des médicaments",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.Medication"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Médicaments"
+                ],
+                "summary": "Créer un médicament",
+                "parameters": [
+                    {
+                        "description": "Médicament",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.CreateMedicationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.Medication"
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/medications/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Médicaments"
+                ],
+                "summary": "Modifier un médicament",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID médicament",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Médicament",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.UpdateMedicationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.Medication"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Médicaments"
+                ],
+                "summary": "Désactiver un médicament",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID médicament",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/prescriptions/pending": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne les prescriptions à délivrer avec filtre optionnel status=PENDING, PARTIAL ou COMPLETED.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Ordonnances"
+                ],
+                "summary": "File pharmacie des prescriptions",
+                "parameters": [
+                    {
+                        "enum": [
+                            "PENDING",
+                            "PARTIAL",
+                            "COMPLETED"
+                        ],
+                        "type": "string",
+                        "description": "Filtre statut",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.PharmacyPrescriptionQueueItem"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/prescriptions/{id}/dispensation-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Ordonnances"
+                ],
+                "summary": "Statut de délivrance d'une prescription",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID prescription",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.PrescriptionDispensationStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/presentations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Présentations"
+                ],
+                "summary": "Liste des présentations pharmaceutiques",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Présentations"
+                ],
+                "summary": "Créer une présentation pharmaceutique",
+                "parameters": [
+                    {
+                        "description": "Présentation pharmaceutique",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.CreateMedicationPresentationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/presentations/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Présentations"
+                ],
+                "summary": "Modifier une présentation pharmaceutique",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID présentation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Présentation pharmaceutique",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.UpdateMedicationPresentationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Présentations"
+                ],
+                "summary": "Désactiver une présentation pharmaceutique",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID présentation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/presentations/{presentationId}/stock-movements": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Mouvements"
+                ],
+                "summary": "Historique des mouvements d'une présentation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID présentation",
+                        "name": "presentationId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.StockMovement"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/stock-movements": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Mouvements"
+                ],
+                "summary": "Historique des mouvements de stock",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.StockMovement"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/stocks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Stock"
+                ],
+                "summary": "Liste des stocks pharmacie",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/pharmacy.PharmacyStockResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Stock"
+                ],
+                "summary": "Créer un stock pour une présentation",
+                "parameters": [
+                    {
+                        "description": "Stock",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.CreatePharmacyStockRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.PharmacyStockResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pharmacy/stocks/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pharmacy - Stock"
+                ],
+                "summary": "Modifier un stock pharmacie",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID stock",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Stock",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.UpdatePharmacyStockRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pharmacy.PharmacyStockResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1552,6 +2351,12 @@
                 },
                 "medicationName": {
                     "type": "string"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
                 },
                 "route": {
                     "type": "string"
@@ -1801,29 +2606,23 @@
         "consultations.PrescriptionRequest": {
             "type": "object",
             "required": [
-                "medicationName"
+                "duration",
+                "instructions",
+                "presentationId",
+                "quantity"
             ],
             "properties": {
-                "dosage": {
-                    "type": "string"
-                },
                 "duration": {
-                    "type": "string"
-                },
-                "form": {
-                    "type": "string"
-                },
-                "frequency": {
                     "type": "string"
                 },
                 "instructions": {
                     "type": "string"
                 },
-                "medicationName": {
-                    "type": "string"
+                "presentationId": {
+                    "type": "integer"
                 },
-                "route": {
-                    "type": "string"
+                "quantity": {
+                    "type": "number"
                 }
             }
         },
@@ -2119,6 +2918,614 @@
                 },
                 "telephone": {
                     "type": "string"
+                }
+            }
+        },
+        "pharmacy.CreateDispensationRequest": {
+            "type": "object",
+            "required": [
+                "presentationId",
+                "quantity"
+            ],
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "patientId": {
+                    "type": "integer"
+                },
+                "prescriptionId": {
+                    "type": "integer"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
+        "pharmacy.CreateMedicationFamilyRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.CreateMedicationPresentationRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "dosage",
+                "form",
+                "medicationId",
+                "route"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "dosage": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "medicationId": {
+                    "type": "integer"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.CreateMedicationRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "familyId",
+                "name"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "familyId": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.CreatePharmacyBatchRequest": {
+            "type": "object",
+            "required": [
+                "batchNumber",
+                "presentationId",
+                "quantityReceived"
+            ],
+            "properties": {
+                "batchNumber": {
+                    "type": "string"
+                },
+                "expirationDate": {
+                    "type": "string"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "purchasePrice": {
+                    "type": "number"
+                },
+                "quantityReceived": {
+                    "type": "number"
+                },
+                "supplier": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.CreatePharmacyStockRequest": {
+            "type": "object",
+            "required": [
+                "presentationId"
+            ],
+            "properties": {
+                "alertThreshold": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "isStockManaged": {
+                    "type": "boolean"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "quantityAvailable": {
+                    "type": "number",
+                    "minimum": 0
+                }
+            }
+        },
+        "pharmacy.Medication": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "family": {
+                    "$ref": "#/definitions/pharmacy.MedicationFamily"
+                },
+                "familyId": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.MedicationFamily": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.MedicationPresentation": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dosage": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "medication": {
+                    "$ref": "#/definitions/pharmacy.Medication"
+                },
+                "medicationId": {
+                    "type": "integer"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.PharmacyBatch": {
+            "type": "object",
+            "properties": {
+                "batchNumber": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "expirationDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "presentation": {
+                    "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "purchasePrice": {
+                    "type": "number"
+                },
+                "quantityReceived": {
+                    "type": "number"
+                },
+                "quantityRemaining": {
+                    "type": "number"
+                },
+                "supplier": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.PharmacyBatchResponse": {
+            "type": "object",
+            "properties": {
+                "batchNumber": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "expirationDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "presentation": {
+                    "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "purchasePrice": {
+                    "type": "number"
+                },
+                "quantityReceived": {
+                    "type": "number"
+                },
+                "quantityRemaining": {
+                    "type": "number"
+                },
+                "supplier": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.PharmacyDispensation": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "dispensedById": {
+                    "type": "integer"
+                },
+                "dispensedByName": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pharmacy.PharmacyDispensationItem"
+                    }
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "patientId": {
+                    "type": "integer"
+                },
+                "presentation": {
+                    "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "referenceId": {
+                    "type": "integer"
+                },
+                "referenceType": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.PharmacyDispensationItem": {
+            "type": "object",
+            "properties": {
+                "batch": {
+                    "$ref": "#/definitions/pharmacy.PharmacyBatch"
+                },
+                "batchId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dispensationId": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
+        "pharmacy.PharmacyPrescriptionQueueItem": {
+            "type": "object",
+            "properties": {
+                "consultationId": {
+                    "type": "integer"
+                },
+                "dispensedQuantity": {
+                    "type": "number"
+                },
+                "dosage": {
+                    "type": "string"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "instructions": {
+                    "type": "string"
+                },
+                "medicationName": {
+                    "type": "string"
+                },
+                "prescribedQuantity": {
+                    "type": "number"
+                },
+                "prescriptionId": {
+                    "type": "integer"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "remainingQuantity": {
+                    "type": "number"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.PharmacyStockResponse": {
+            "type": "object",
+            "properties": {
+                "alertThreshold": {
+                    "type": "number"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isStockManaged": {
+                    "type": "boolean"
+                },
+                "presentation": {
+                    "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "quantityAvailable": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.PrescriptionDispensationStatusResponse": {
+            "type": "object",
+            "properties": {
+                "dispensedQuantity": {
+                    "type": "number"
+                },
+                "isFullyDispensed": {
+                    "type": "boolean"
+                },
+                "prescribedQuantity": {
+                    "type": "number"
+                },
+                "prescriptionId": {
+                    "type": "integer"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "remainingQuantity": {
+                    "type": "number"
+                }
+            }
+        },
+        "pharmacy.StockMovement": {
+            "type": "object",
+            "properties": {
+                "batch": {
+                    "$ref": "#/definitions/pharmacy.PharmacyBatch"
+                },
+                "batchId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "performedById": {
+                    "type": "integer"
+                },
+                "performedByName": {
+                    "type": "string"
+                },
+                "presentation": {
+                    "$ref": "#/definitions/pharmacy.MedicationPresentation"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "referenceId": {
+                    "type": "integer"
+                },
+                "referenceType": {
+                    "type": "string"
+                },
+                "stockAfter": {
+                    "type": "number"
+                },
+                "stockBefore": {
+                    "type": "number"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.UpdateMedicationFamilyRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.UpdateMedicationPresentationRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "dosage": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "medicationId": {
+                    "type": "integer"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.UpdateMedicationRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "familyId": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "pharmacy.UpdatePharmacyStockRequest": {
+            "type": "object",
+            "properties": {
+                "alertThreshold": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "isStockManaged": {
+                    "type": "boolean"
+                },
+                "quantityAvailable": {
+                    "type": "number",
+                    "minimum": 0
                 }
             }
         }

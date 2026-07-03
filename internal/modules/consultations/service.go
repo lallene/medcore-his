@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -34,6 +36,9 @@ var (
 	ErrInvalidExamIDs = errors.New(
 		"un ou plusieurs examens sont invalides ou inactifs",
 	)
+
+	ErrInvalidPresentationID = errors.New("présentation pharmaceutique invalide")
+	ErrInactivePresentation  = errors.New("présentation pharmaceutique inactive")
 )
 
 type Service struct {
@@ -77,14 +82,33 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 	prescriptions := make([]ConsultationPrescription, 0)
 
 	for _, item := range req.Prescriptions {
+		presentation, err := s.repo.FindMedicationPresentationByID(item.PresentationID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrInvalidPresentationID
+			}
+
+			return nil, err
+		}
+
+		if !presentation.IsActive || !presentation.Medication.IsActive {
+			return nil, ErrInactivePresentation
+		}
+
+		presentationID := presentation.ID
+
 		prescriptions = append(prescriptions, ConsultationPrescription{
-			MedicationName: item.MedicationName,
-			Dosage:         item.Dosage,
-			Form:           item.Form,
-			Frequency:      item.Frequency,
-			Duration:       item.Duration,
-			Route:          item.Route,
-			Instructions:   item.Instructions,
+			PresentationID: &presentationID,
+
+			MedicationName: presentation.Medication.Name,
+			Dosage:         presentation.Dosage,
+			Form:           presentation.Form,
+			Route:          presentation.Route,
+
+			Quantity: item.Quantity,
+
+			Duration:     item.Duration,
+			Instructions: item.Instructions,
 		})
 	}
 
@@ -334,15 +358,39 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 
 	if updatePrescriptions {
 		for _, item := range *req.Prescriptions {
-			prescriptions = append(prescriptions, ConsultationPrescription{
-				MedicationName: item.MedicationName,
-				Dosage:         item.Dosage,
-				Form:           item.Form,
-				Frequency:      item.Frequency,
-				Duration:       item.Duration,
-				Route:          item.Route,
-				Instructions:   item.Instructions,
-			})
+			presentation, err := s.repo.FindMedicationPresentationByID(
+				item.PresentationID,
+			)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, ErrInvalidPresentationID
+				}
+
+				return nil, err
+			}
+
+			if !presentation.IsActive || !presentation.Medication.IsActive {
+				return nil, ErrInactivePresentation
+			}
+
+			presentationID := presentation.ID
+
+			prescriptions = append(
+				prescriptions,
+				ConsultationPrescription{
+					PresentationID: &presentationID,
+
+					MedicationName: presentation.Medication.Name,
+					Dosage:         presentation.Dosage,
+					Form:           presentation.Form,
+					Route:          presentation.Route,
+
+					Quantity: item.Quantity,
+
+					Duration:     item.Duration,
+					Instructions: item.Instructions,
+				},
+			)
 		}
 	}
 

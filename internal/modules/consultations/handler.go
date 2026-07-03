@@ -387,6 +387,17 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
+		case errors.Is(err, ErrInvalidPresentationID):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+
+		case errors.Is(err, ErrInactivePresentation):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": err.Error(),
+			})
+			return
 
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{

@@ -1,6 +1,9 @@
 package consultations
 
-import "gorm.io/gorm"
+import (
+	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
+	"gorm.io/gorm"
+)
 
 type Repository struct {
 	db *gorm.DB
@@ -262,4 +265,19 @@ func (r *Repository) UpdateConsultation(
 
 		return nil
 	})
+}
+
+func (r *Repository) FindMedicationPresentationByID(
+	id uint,
+) (*pharmacy.MedicationPresentation, error) {
+	var presentation pharmacy.MedicationPresentation
+
+	if err := r.db.
+		Preload("Medication").
+		Preload("Medication.Family").
+		First(&presentation, id).Error; err != nil {
+		return nil, err
+	}
+
+	return &presentation, nil
 }

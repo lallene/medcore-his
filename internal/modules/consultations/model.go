@@ -88,16 +88,22 @@ type ConsultationExamRequest struct {
 }
 
 type ConsultationPrescription struct {
-	ID             uint `gorm:"primaryKey" json:"id"`
+	ID uint `gorm:"primaryKey" json:"id"`
+
 	ConsultationID uint `gorm:"not null;index" json:"consultationId"`
 
-	MedicationName string `gorm:"not null" json:"medicationName"`
-	Dosage         string `json:"dosage"`
-	Form           string `json:"form"`
-	Frequency      string `json:"frequency"`
-	Duration       string `json:"duration"`
-	Route          string `json:"route"`
-	Instructions   string `gorm:"type:text" json:"instructions"`
+	PresentationID *uint `gorm:"index" json:"presentationId"`
+
+	MedicationName string `gorm:"size:200;not null" json:"medicationName"`
+	Dosage         string `gorm:"size:100" json:"dosage"`
+	Form           string `gorm:"size:100" json:"form"`
+	Route          string `gorm:"size:100" json:"route"`
+
+	Quantity float64 `gorm:"type:decimal(12,2);default:0" json:"quantity"`
+
+	Frequency    string `gorm:"size:200" json:"frequency"`
+	Duration     string `gorm:"size:100" json:"duration"`
+	Instructions string `gorm:"type:text" json:"instructions"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

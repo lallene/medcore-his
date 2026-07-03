@@ -9,6 +9,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/dashboard"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 )
 
 // @title MedCore HIS API
@@ -34,6 +35,7 @@ func main() {
 	app.RegisterModule(insurance.Module{})
 	app.RegisterModule(dashboard.Module{})
 	app.RegisterModule(consultations.Module{})
+	app.RegisterModule(pharmacy.Module{})
 
 	app.Run()
 }
