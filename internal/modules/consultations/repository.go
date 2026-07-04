@@ -37,6 +37,9 @@ func (r *Repository) FindByID(id uint) (*Consultation, error) {
 		Preload("Reasons").
 		Preload("Exams").
 		Preload("Prescriptions").
+		Preload("Antecedent").
+		Preload("PhysicalExams").
+		Preload("AdministeredTreatments").
 		First(&consultation, id).Error
 
 	return &consultation, err
@@ -51,6 +54,9 @@ func (r *Repository) FindByPatientID(patientID uint) ([]Consultation, error) {
 		Preload("Reasons").
 		Preload("Exams").
 		Preload("Prescriptions").
+		Preload("Antecedent").
+		Preload("PhysicalExams").
+		Preload("AdministeredTreatments").
 		Where("patient_id = ?", patientID).
 		Order("created_at DESC").
 		Find(&consultations).Error
@@ -150,6 +156,9 @@ func (r *Repository) UpdateConsultation(
 	updateExams bool,
 	prescriptions []ConsultationPrescription,
 	updatePrescriptions bool,
+	antecedent *ConsultationAntecedent,
+	physicalExams *[]ConsultationPhysicalExam,
+	administeredTreatments *[]ConsultationAdministeredTreatment,
 ) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 
@@ -263,6 +272,56 @@ func (r *Repository) UpdateConsultation(
 			}
 		}
 
+		if antecedent != nil {
+			if err := tx.
+				Where("consultation_id = ?", id).
+				Delete(&ConsultationAntecedent{}).Error; err != nil {
+				return err
+			}
+
+			antecedent.ConsultationID = id
+
+			if err := tx.Create(antecedent).Error; err != nil {
+				return err
+			}
+		}
+
+		if physicalExams != nil {
+			if err := tx.
+				Where("consultation_id = ?", id).
+				Delete(&ConsultationPhysicalExam{}).Error; err != nil {
+				return err
+			}
+
+			for i := range *physicalExams {
+				(*physicalExams)[i].ConsultationID = id
+			}
+
+			if len(*physicalExams) > 0 {
+				if err := tx.Create(physicalExams).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		if administeredTreatments != nil {
+			if err := tx.
+				Where("consultation_id = ?", id).
+				Delete(&ConsultationAdministeredTreatment{}).Error; err != nil {
+				return err
+			}
+
+			for i := range *administeredTreatments {
+				(*administeredTreatments)[i].ConsultationID = id
+			}
+
+			if len(*administeredTreatments) > 0 {
+				if err := tx.Create(administeredTreatments).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		return nil
 	})
 }
@@ -280,4 +339,65 @@ func (r *Repository) FindMedicationPresentationByID(
 	}
 
 	return &presentation, nil
+}
+
+func (r *Repository) ReplaceClinicalBlocks(
+	consultationID uint,
+	antecedent *ConsultationAntecedent,
+	physicalExams *[]ConsultationPhysicalExam,
+	administeredTreatments *[]ConsultationAdministeredTreatment,
+) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if antecedent != nil {
+			if err := tx.
+				Where("consultation_id = ?", consultationID).
+				Delete(&ConsultationAntecedent{}).Error; err != nil {
+				return err
+			}
+
+			antecedent.ConsultationID = consultationID
+
+			if err := tx.Create(antecedent).Error; err != nil {
+				return err
+			}
+		}
+
+		if physicalExams != nil {
+			if err := tx.
+				Where("consultation_id = ?", consultationID).
+				Delete(&ConsultationPhysicalExam{}).Error; err != nil {
+				return err
+			}
+
+			for i := range *physicalExams {
+				(*physicalExams)[i].ConsultationID = consultationID
+			}
+
+			if len(*physicalExams) > 0 {
+				if err := tx.Create(physicalExams).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		if administeredTreatments != nil {
+			if err := tx.
+				Where("consultation_id = ?", consultationID).
+				Delete(&ConsultationAdministeredTreatment{}).Error; err != nil {
+				return err
+			}
+
+			for i := range *administeredTreatments {
+				(*administeredTreatments)[i].ConsultationID = consultationID
+			}
+
+			if len(*administeredTreatments) > 0 {
+				if err := tx.Create(administeredTreatments).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
 }

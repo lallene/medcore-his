@@ -19,8 +19,11 @@ type CreateConsultationRequest struct {
 	Observations string `json:"observations"`
 	Treatment    string `json:"treatment"`
 
-	SickLeaveRequired bool `json:"sickLeaveRequired"`
-	SickLeaveDays     int  `json:"sickLeaveDays"`
+	SickLeaveRequired      bool                           `json:"sickLeaveRequired"`
+	SickLeaveDays          int                            `json:"sickLeaveDays"`
+	Antecedent             *AntecedentRequest             `json:"antecedent"`
+	PhysicalExams          []PhysicalExamRequest          `json:"physicalExams"`
+	AdministeredTreatments []AdministeredTreatmentRequest `json:"administeredTreatments"`
 
 	ExamIDs []uint `json:"examIds"`
 }
@@ -75,6 +78,10 @@ type UpdateConsultationRequest struct {
 	Observations *string `json:"observations"`
 	Treatment    *string `json:"treatment"`
 
+	Antecedent             *AntecedentRequest              `json:"antecedent"`
+	PhysicalExams          *[]PhysicalExamRequest          `json:"physicalExams"`
+	AdministeredTreatments *[]AdministeredTreatmentRequest `json:"administeredTreatments"`
+
 	SickLeaveRequired *bool `json:"sickLeaveRequired"`
 	SickLeaveDays     *int  `json:"sickLeaveDays"`
 }
@@ -118,4 +125,35 @@ type PrescriptionRequest struct {
 	Quantity       float64 `json:"quantity" binding:"required,gt=0"`
 	Duration       string  `json:"duration" binding:"required"`
 	Instructions   string  `json:"instructions" binding:"required"`
+}
+
+type AntecedentRequest struct {
+	PreviousMedication string `json:"previousMedication" example:"Metformine 500 mg"`
+	HasHTA             *bool  `json:"hasHta" example:"false"`
+	HasDiabetes        *bool  `json:"hasDiabetes" example:"true"`
+	OtherMedical       string `json:"otherMedical" example:"Diabète de type 2 connu"`
+	SurgicalHistory    string `json:"surgicalHistory" example:"Appendicectomie en 2020"`
+
+	GynecoObstetricHistory string `json:"gynecoObstetricHistory" example:"G2P2"`
+	DDR                    string `json:"ddr" example:"2026-06-10"`
+	PregnancyOngoing       *bool  `json:"pregnancyOngoing" example:"false"`
+
+	Tobacco *bool `json:"tobacco" example:"false"`
+	Alcohol *bool `json:"alcohol" example:"false"`
+
+	VisitType string `json:"visitType" example:"CONTROLE"`
+}
+
+type PhysicalExamRequest struct {
+	Organ string `json:"organ" binding:"required" example:"Appareil cardiovasculaire"`
+
+	Observation string `json:"observation" example:"Rythme régulier, absence de souffle"`
+}
+
+type AdministeredTreatmentRequest struct {
+	PresentationID uint `json:"presentationId" binding:"required" example:"1"`
+
+	Quantity float64 `json:"quantity" binding:"required,gt=0" example:"2"`
+
+	Instructions string `json:"instructions" example:"2 comprimés administrés sur place"`
 }

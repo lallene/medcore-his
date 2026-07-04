@@ -44,6 +44,10 @@ type Consultation struct {
 	HospitalizationType     string                     `gorm:"size:50" json:"hospitalizationType"` // medicale / chirurgicale
 	HospitalizationDuration int                        `json:"hospitalizationDuration"`
 
+	Antecedent             ConsultationAntecedent              `gorm:"constraint:OnDelete:CASCADE;" json:"antecedent"`
+	PhysicalExams          []ConsultationPhysicalExam          `gorm:"constraint:OnDelete:CASCADE;" json:"physicalExams"`
+	AdministeredTreatments []ConsultationAdministeredTreatment `gorm:"constraint:OnDelete:CASCADE;" json:"administeredTreatments"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -104,6 +108,60 @@ type ConsultationPrescription struct {
 	Frequency    string `gorm:"size:200" json:"frequency"`
 	Duration     string `gorm:"size:100" json:"duration"`
 	Instructions string `gorm:"type:text" json:"instructions"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type ConsultationAntecedent struct {
+	ID             uint `gorm:"primaryKey" json:"id"`
+	ConsultationID uint `gorm:"not null;index" json:"consultationId"`
+
+	PreviousMedication string `json:"previousMedication"`
+
+	HasHTA       *bool  `json:"hasHta"`
+	HasDiabetes  *bool  `json:"hasDiabetes"`
+	OtherMedical string `json:"otherMedical"`
+
+	SurgicalHistory string `json:"surgicalHistory"`
+
+	GynecoObstetricHistory string `json:"gynecoObstetricHistory"`
+	DDR                    string `json:"ddr"`
+	PregnancyOngoing       *bool  `json:"pregnancyOngoing"`
+
+	Tobacco *bool `json:"tobacco"`
+	Alcohol *bool `json:"alcohol"`
+
+	VisitType string `json:"visitType"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type ConsultationPhysicalExam struct {
+	ID             uint `gorm:"primaryKey" json:"id"`
+	ConsultationID uint `gorm:"not null;index" json:"consultationId"`
+
+	Organ       string `gorm:"not null" json:"organ"`
+	Observation string `gorm:"type:text" json:"observation"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type ConsultationAdministeredTreatment struct {
+	ID             uint `gorm:"primaryKey" json:"id"`
+	ConsultationID uint `gorm:"not null;index" json:"consultationId"`
+
+	PresentationID *uint `json:"presentationId"`
+
+	MedicationName string `gorm:"not null" json:"medicationName"`
+	Dosage         string `json:"dosage"`
+	Form           string `json:"form"`
+	Route          string `json:"route"`
+
+	Quantity     float64 `json:"quantity"`
+	Instructions string  `gorm:"type:text" json:"instructions"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

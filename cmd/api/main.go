@@ -12,21 +12,21 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 )
 
-// @title MedCore HIS API
-// @version 0.1.0
-// @description Modern Hospital Information System API
-// @description Modules disponibles : Auth, Patients, Insurance, Workflow, Audit.
-// @contact.name MedCore Team
-// @contact.email support@medcore.local
-// @license.name MIT
-// @license.url https://opensource.org/licenses/MIT
-// @host medcore-his-api-latest.onrender.com
-// @BasePath /api
-// @schemes https
-// @securityDefinitions.apikey BearerAuth
-// @in header
-// @name Authorization
-// @description JWT Bearer token. Exemple : Bearer {token}
+// @title						MedCore HIS API
+// @version					0.1.0
+// @description				Modern Hospital Information System API
+// @description				Modules disponibles : Auth, Patients, Insurance, Workflow, Audit.
+// @contact.name				MedCore Team
+// @contact.email				support@medcore.local
+// @license.name				MIT
+// @license.url				https://opensource.org/licenses/MIT
+// @host						medcore-his-api-latest.onrender.com
+// @BasePath					/api
+// @schemes					https
+// @securityDefinitions.apikey	BearerAuth
+// @in							header
+// @name						Authorization
+// @description				JWT Bearer token. Exemple : Bearer {token}
 func main() {
 	app := application.New()
 

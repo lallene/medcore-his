@@ -19,6 +19,80 @@
     "host": "medcore-his-api-latest.onrender.com",
     "basePath": "/api",
     "paths": {
+        "/api/consultations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Crée une consultation médicale avec motifs, constantes vitales, antécédents, examens physiques par organe, examens demandés, ordonnance structurée, traitements administrés sur place, repos maladie et hospitalisation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Créer une consultation",
+                "parameters": [
+                    {
+                        "description": "Consultation à créer",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.CreateConsultationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.Consultation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authentifie un utilisateur MedCore et retourne un JWT.",
@@ -60,44 +134,6 @@
                         "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/openapi.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/consultations": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consultations"
-                ],
-                "summary": "Créer une consultation médicale",
-                "parameters": [
-                    {
-                        "description": "Consultation",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/consultations.CreateConsultationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/consultations.Consultation"
                         }
                     }
                 }
@@ -2226,9 +2262,88 @@
                 }
             }
         },
+        "consultations.AdministeredTreatmentRequest": {
+            "type": "object",
+            "required": [
+                "presentationId",
+                "quantity"
+            ],
+            "properties": {
+                "instructions": {
+                    "type": "string",
+                    "example": "2 comprimés administrés sur place"
+                },
+                "presentationId": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 2
+                }
+            }
+        },
+        "consultations.AntecedentRequest": {
+            "type": "object",
+            "properties": {
+                "alcohol": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "ddr": {
+                    "type": "string",
+                    "example": "2026-06-10"
+                },
+                "gynecoObstetricHistory": {
+                    "type": "string",
+                    "example": "G2P2"
+                },
+                "hasDiabetes": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "hasHta": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "otherMedical": {
+                    "type": "string",
+                    "example": "Diabète de type 2 connu"
+                },
+                "pregnancyOngoing": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "previousMedication": {
+                    "type": "string",
+                    "example": "Metformine 500 mg"
+                },
+                "surgicalHistory": {
+                    "type": "string",
+                    "example": "Appendicectomie en 2020"
+                },
+                "tobacco": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "visitType": {
+                    "type": "string",
+                    "example": "CONTROLE"
+                }
+            }
+        },
         "consultations.Consultation": {
             "type": "object",
             "properties": {
+                "administeredTreatments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.ConsultationAdministeredTreatment"
+                    }
+                },
+                "antecedent": {
+                    "$ref": "#/definitions/consultations.ConsultationAntecedent"
+                },
                 "cancellationReason": {
                     "type": "string"
                 },
@@ -2278,6 +2393,12 @@
                 "patientId": {
                     "type": "integer"
                 },
+                "physicalExams": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.ConsultationPhysicalExam"
+                    }
+                },
                 "prescriptions": {
                     "type": "array",
                     "items": {
@@ -2319,6 +2440,117 @@
                 },
                 "vitals": {
                     "$ref": "#/definitions/consultations.ConsultationVitals"
+                }
+            }
+        },
+        "consultations.ConsultationAdministeredTreatment": {
+            "type": "object",
+            "properties": {
+                "consultationId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dosage": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instructions": {
+                    "type": "string"
+                },
+                "medicationName": {
+                    "type": "string"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.ConsultationAntecedent": {
+            "type": "object",
+            "properties": {
+                "alcohol": {
+                    "type": "boolean"
+                },
+                "consultationId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "ddr": {
+                    "type": "string"
+                },
+                "gynecoObstetricHistory": {
+                    "type": "string"
+                },
+                "hasDiabetes": {
+                    "type": "boolean"
+                },
+                "hasHta": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "otherMedical": {
+                    "type": "string"
+                },
+                "pregnancyOngoing": {
+                    "type": "boolean"
+                },
+                "previousMedication": {
+                    "type": "string"
+                },
+                "surgicalHistory": {
+                    "type": "string"
+                },
+                "tobacco": {
+                    "type": "boolean"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "visitType": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.ConsultationPhysicalExam": {
+            "type": "object",
+            "properties": {
+                "consultationId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "observation": {
+                    "type": "string"
+                },
+                "organ": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
                 }
             }
         },
@@ -2469,6 +2701,15 @@
                 "patientId"
             ],
             "properties": {
+                "administeredTreatments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.AdministeredTreatmentRequest"
+                    }
+                },
+                "antecedent": {
+                    "$ref": "#/definitions/consultations.AntecedentRequest"
+                },
                 "diagnosis": {
                     "type": "string"
                 },
@@ -2498,6 +2739,12 @@
                 },
                 "patientId": {
                     "type": "integer"
+                },
+                "physicalExams": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.PhysicalExamRequest"
+                    }
                 },
                 "prescriptions": {
                     "type": "array",
@@ -2603,6 +2850,22 @@
                 }
             }
         },
+        "consultations.PhysicalExamRequest": {
+            "type": "object",
+            "required": [
+                "organ"
+            ],
+            "properties": {
+                "observation": {
+                    "type": "string",
+                    "example": "Rythme régulier, absence de souffle"
+                },
+                "organ": {
+                    "type": "string",
+                    "example": "Appareil cardiovasculaire"
+                }
+            }
+        },
         "consultations.PrescriptionRequest": {
             "type": "object",
             "required": [
@@ -2629,6 +2892,15 @@
         "consultations.UpdateConsultationRequest": {
             "type": "object",
             "properties": {
+                "administeredTreatments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.AdministeredTreatmentRequest"
+                    }
+                },
+                "antecedent": {
+                    "$ref": "#/definitions/consultations.AntecedentRequest"
+                },
                 "diagnosis": {
                     "type": "string"
                 },
@@ -2655,6 +2927,12 @@
                 },
                 "observations": {
                     "type": "string"
+                },
+                "physicalExams": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.PhysicalExamRequest"
+                    }
                 },
                 "prescriptions": {
                     "type": "array",

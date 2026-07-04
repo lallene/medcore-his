@@ -18,6 +18,9 @@ func (Module) Register(app *application.Application) {
 		&ConsultationVitals{},
 		&ConsultationExamRequest{},
 		&ConsultationPrescription{},
+		&ConsultationAntecedent{},
+		&ConsultationPhysicalExam{},
+		&ConsultationAdministeredTreatment{},
 	)
 
 	SeedConsultationReferences(app.DB)

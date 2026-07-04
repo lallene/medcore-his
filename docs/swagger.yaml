@@ -70,8 +70,65 @@ definitions:
         maxLength: 50
         type: string
     type: object
+  consultations.AdministeredTreatmentRequest:
+    properties:
+      instructions:
+        example: 2 comprimés administrés sur place
+        type: string
+      presentationId:
+        example: 1
+        type: integer
+      quantity:
+        example: 2
+        type: number
+    required:
+    - presentationId
+    - quantity
+    type: object
+  consultations.AntecedentRequest:
+    properties:
+      alcohol:
+        example: false
+        type: boolean
+      ddr:
+        example: "2026-06-10"
+        type: string
+      gynecoObstetricHistory:
+        example: G2P2
+        type: string
+      hasDiabetes:
+        example: true
+        type: boolean
+      hasHta:
+        example: false
+        type: boolean
+      otherMedical:
+        example: Diabète de type 2 connu
+        type: string
+      pregnancyOngoing:
+        example: false
+        type: boolean
+      previousMedication:
+        example: Metformine 500 mg
+        type: string
+      surgicalHistory:
+        example: Appendicectomie en 2020
+        type: string
+      tobacco:
+        example: false
+        type: boolean
+      visitType:
+        example: CONTROLE
+        type: string
+    type: object
   consultations.Consultation:
     properties:
+      administeredTreatments:
+        items:
+          $ref: '#/definitions/consultations.ConsultationAdministeredTreatment'
+        type: array
+      antecedent:
+        $ref: '#/definitions/consultations.ConsultationAntecedent'
       cancellationReason:
         type: string
       cancelledAt:
@@ -105,6 +162,10 @@ definitions:
         $ref: '#/definitions/patients.Patient'
       patientId:
         type: integer
+      physicalExams:
+        items:
+          $ref: '#/definitions/consultations.ConsultationPhysicalExam'
+        type: array
       prescriptions:
         items:
           $ref: '#/definitions/consultations.ConsultationPrescription'
@@ -133,6 +194,79 @@ definitions:
         type: string
       vitals:
         $ref: '#/definitions/consultations.ConsultationVitals'
+    type: object
+  consultations.ConsultationAdministeredTreatment:
+    properties:
+      consultationId:
+        type: integer
+      createdAt:
+        type: string
+      dosage:
+        type: string
+      form:
+        type: string
+      id:
+        type: integer
+      instructions:
+        type: string
+      medicationName:
+        type: string
+      presentationId:
+        type: integer
+      quantity:
+        type: number
+      route:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  consultations.ConsultationAntecedent:
+    properties:
+      alcohol:
+        type: boolean
+      consultationId:
+        type: integer
+      createdAt:
+        type: string
+      ddr:
+        type: string
+      gynecoObstetricHistory:
+        type: string
+      hasDiabetes:
+        type: boolean
+      hasHta:
+        type: boolean
+      id:
+        type: integer
+      otherMedical:
+        type: string
+      pregnancyOngoing:
+        type: boolean
+      previousMedication:
+        type: string
+      surgicalHistory:
+        type: string
+      tobacco:
+        type: boolean
+      updatedAt:
+        type: string
+      visitType:
+        type: string
+    type: object
+  consultations.ConsultationPhysicalExam:
+    properties:
+      consultationId:
+        type: integer
+      createdAt:
+        type: string
+      id:
+        type: integer
+      observation:
+        type: string
+      organ:
+        type: string
+      updatedAt:
+        type: string
     type: object
   consultations.ConsultationPrescription:
     properties:
@@ -228,6 +362,12 @@ definitions:
     type: object
   consultations.CreateConsultationRequest:
     properties:
+      administeredTreatments:
+        items:
+          $ref: '#/definitions/consultations.AdministeredTreatmentRequest'
+        type: array
+      antecedent:
+        $ref: '#/definitions/consultations.AntecedentRequest'
       diagnosis:
         type: string
       doctorName:
@@ -248,6 +388,10 @@ definitions:
         type: string
       patientId:
         type: integer
+      physicalExams:
+        items:
+          $ref: '#/definitions/consultations.PhysicalExamRequest'
+        type: array
       prescriptions:
         items:
           $ref: '#/definitions/consultations.PrescriptionRequest'
@@ -319,6 +463,17 @@ definitions:
       url:
         type: string
     type: object
+  consultations.PhysicalExamRequest:
+    properties:
+      observation:
+        example: Rythme régulier, absence de souffle
+        type: string
+      organ:
+        example: Appareil cardiovasculaire
+        type: string
+    required:
+    - organ
+    type: object
   consultations.PrescriptionRequest:
     properties:
       duration:
@@ -337,6 +492,12 @@ definitions:
     type: object
   consultations.UpdateConsultationRequest:
     properties:
+      administeredTreatments:
+        items:
+          $ref: '#/definitions/consultations.AdministeredTreatmentRequest'
+        type: array
+      antecedent:
+        $ref: '#/definitions/consultations.AntecedentRequest'
       diagnosis:
         type: string
       doctorName:
@@ -355,6 +516,10 @@ definitions:
         type: string
       observations:
         type: string
+      physicalExams:
+        items:
+          $ref: '#/definitions/consultations.PhysicalExamRequest'
+        type: array
       prescriptions:
         items:
           $ref: '#/definitions/consultations.PrescriptionRequest'
@@ -951,6 +1116,57 @@ info:
   title: MedCore HIS API
   version: 0.1.0
 paths:
+  /api/consultations:
+    post:
+      consumes:
+      - application/json
+      description: Crée une consultation médicale avec motifs, constantes vitales,
+        antécédents, examens physiques par organe, examens demandés, ordonnance structurée,
+        traitements administrés sur place, repos maladie et hospitalisation.
+      parameters:
+      - description: Consultation à créer
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.CreateConsultationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/consultations.Consultation'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Créer une consultation
+      tags:
+      - Consultations
   /auth/login:
     post:
       consumes:
@@ -981,29 +1197,6 @@ paths:
       summary: Connexion utilisateur
       tags:
       - Authentication
-  /consultations:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Consultation
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/consultations.CreateConsultationRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/consultations.Consultation'
-      security:
-      - BearerAuth: []
-      summary: Créer une consultation médicale
-      tags:
-      - Consultations
   /consultations/{id}:
     get:
       parameters:

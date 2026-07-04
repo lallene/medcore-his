@@ -149,6 +149,62 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 		},
 	}
 
+	if req.Antecedent != nil {
+		consultation.Antecedent = ConsultationAntecedent{
+			PreviousMedication:     req.Antecedent.PreviousMedication,
+			HasHTA:                 req.Antecedent.HasHTA,
+			HasDiabetes:            req.Antecedent.HasDiabetes,
+			OtherMedical:           req.Antecedent.OtherMedical,
+			SurgicalHistory:        req.Antecedent.SurgicalHistory,
+			GynecoObstetricHistory: req.Antecedent.GynecoObstetricHistory,
+			DDR:                    req.Antecedent.DDR,
+			PregnancyOngoing:       req.Antecedent.PregnancyOngoing,
+			Tobacco:                req.Antecedent.Tobacco,
+			Alcohol:                req.Antecedent.Alcohol,
+			VisitType:              req.Antecedent.VisitType,
+		}
+	}
+
+	for _, item := range req.PhysicalExams {
+		consultation.PhysicalExams = append(
+			consultation.PhysicalExams,
+			ConsultationPhysicalExam{
+				Organ:       item.Organ,
+				Observation: item.Observation,
+			},
+		)
+	}
+
+	for _, item := range req.AdministeredTreatments {
+		presentation, err := s.repo.FindMedicationPresentationByID(item.PresentationID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrInvalidPresentationID
+			}
+
+			return nil, err
+		}
+
+		if !presentation.IsActive || !presentation.Medication.IsActive {
+			return nil, ErrInactivePresentation
+		}
+
+		presentationID := presentation.ID
+
+		consultation.AdministeredTreatments = append(
+			consultation.AdministeredTreatments,
+			ConsultationAdministeredTreatment{
+				PresentationID: &presentationID,
+				MedicationName: presentation.Medication.Name,
+				Dosage:         presentation.Dosage,
+				Form:           presentation.Form,
+				Route:          presentation.Route,
+				Quantity:       item.Quantity,
+				Instructions:   item.Instructions,
+			},
+		)
+	}
+
 	err = s.repo.Create(consultation)
 	if err != nil {
 		return nil, err
@@ -268,6 +324,10 @@ func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest) (*C
 }
 
 func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*Consultation, error) {
+
+	var antecedent *ConsultationAntecedent
+	var physicalExams *[]ConsultationPhysicalExam
+	var administeredTreatments *[]ConsultationAdministeredTreatment
 
 	consultation, err := s.repo.FindByID(id)
 	if err != nil {
@@ -416,6 +476,68 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 		updates["hospitalization_duration"] = *req.HospitalizationDuration
 	}
 
+	if req.Antecedent != nil {
+		antecedent = &ConsultationAntecedent{
+			PreviousMedication:     req.Antecedent.PreviousMedication,
+			HasHTA:                 req.Antecedent.HasHTA,
+			HasDiabetes:            req.Antecedent.HasDiabetes,
+			OtherMedical:           req.Antecedent.OtherMedical,
+			SurgicalHistory:        req.Antecedent.SurgicalHistory,
+			GynecoObstetricHistory: req.Antecedent.GynecoObstetricHistory,
+			DDR:                    req.Antecedent.DDR,
+			PregnancyOngoing:       req.Antecedent.PregnancyOngoing,
+			Tobacco:                req.Antecedent.Tobacco,
+			Alcohol:                req.Antecedent.Alcohol,
+			VisitType:              req.Antecedent.VisitType,
+		}
+	}
+
+	if req.PhysicalExams != nil {
+		items := make([]ConsultationPhysicalExam, 0, len(*req.PhysicalExams))
+
+		for _, item := range *req.PhysicalExams {
+			items = append(items, ConsultationPhysicalExam{
+				Organ:       item.Organ,
+				Observation: item.Observation,
+			})
+		}
+
+		physicalExams = &items
+	}
+
+	if req.AdministeredTreatments != nil {
+		items := make([]ConsultationAdministeredTreatment, 0, len(*req.AdministeredTreatments))
+
+		for _, item := range *req.AdministeredTreatments {
+			presentation, err := s.repo.FindMedicationPresentationByID(item.PresentationID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, ErrInvalidPresentationID
+				}
+
+				return nil, err
+			}
+
+			if !presentation.IsActive || !presentation.Medication.IsActive {
+				return nil, ErrInactivePresentation
+			}
+
+			presentationID := presentation.ID
+
+			items = append(items, ConsultationAdministeredTreatment{
+				PresentationID: &presentationID,
+				MedicationName: presentation.Medication.Name,
+				Dosage:         presentation.Dosage,
+				Form:           presentation.Form,
+				Route:          presentation.Route,
+				Quantity:       item.Quantity,
+				Instructions:   item.Instructions,
+			})
+		}
+
+		administeredTreatments = &items
+	}
+
 	err = s.repo.UpdateConsultation(
 		id,
 		updates,
@@ -426,6 +548,9 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 		updateExams,
 		prescriptions,
 		updatePrescriptions,
+		antecedent,
+		physicalExams,
+		administeredTreatments,
 	)
 
 	if err != nil {
