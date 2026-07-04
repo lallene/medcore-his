@@ -18,13 +18,12 @@ func NewHandler(service *Service) *Handler {
 }
 
 // GetReasons godoc
-//
-//	@Summary	Liste des motifs de consultation
-//	@Tags		Consultations
-//	@Security	BearerAuth
-//	@Produce	json
-//	@Success	200	{array}	ConsultationReason
-//	@Router		/consultations/reasons [get]
+// @Summary Liste des motifs de consultation
+// @Tags Consultations
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} ConsultationReason
+// @Router /consultations/reasons [get]
 func (h *Handler) GetReasons(c *gin.Context) {
 	reasons, err := h.service.GetReasons()
 	if err != nil {
@@ -36,13 +35,12 @@ func (h *Handler) GetReasons(c *gin.Context) {
 }
 
 // GetExams godoc
-//
-//	@Summary	Liste des examens médicaux
-//	@Tags		Consultations
-//	@Security	BearerAuth
-//	@Produce	json
-//	@Success	200	{array}	MedicalExam
-//	@Router		/consultations/exams [get]
+// @Summary Liste des examens médicaux
+// @Tags Consultations
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} MedicalExam
+// @Router /consultations/exams [get]
 func (h *Handler) GetExams(c *gin.Context) {
 	exams, err := h.service.GetExams()
 	if err != nil {
@@ -79,7 +77,23 @@ func (h *Handler) CreateConsultation(c *gin.Context) {
 
 	consultation, err := h.service.CreateConsultation(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		switch {
+		case errors.Is(err, ErrPhysicalExamAreaNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+
+		case errors.Is(err, ErrInactivePhysicalExamArea):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+
+		case errors.Is(err, ErrInvalidPresentationID):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+		case errors.Is(err, ErrInactivePresentation):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+
 		return
 	}
 
@@ -87,14 +101,13 @@ func (h *Handler) CreateConsultation(c *gin.Context) {
 }
 
 // GetConsultation godoc
-//
-//	@Summary	Détail d'une consultation médicale
-//	@Tags		Consultations
-//	@Security	BearerAuth
-//	@Produce	json
-//	@Param		id	path		int	true	"ID consultation"
-//	@Success	200	{object}	Consultation
-//	@Router		/consultations/{id} [get]
+// @Summary Détail d'une consultation médicale
+// @Tags Consultations
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID consultation"
+// @Success 200 {object} Consultation
+// @Router /consultations/{id} [get]
 func (h *Handler) GetConsultation(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -108,18 +121,17 @@ func (h *Handler) GetConsultation(c *gin.Context) {
 }
 
 // GetPatientConsultations godoc
-//
-//	@Summary		Historique des consultations d'un patient
-//	@Description	Retourne toutes les consultations médicales du patient avec motifs, constantes, examens et prescriptions.
-//	@Tags			Patient 360
-//	@Security		BearerAuth
-//	@Produce		json
-//	@Param			id	path		int	true	"ID du patient"
-//	@Success		200	{array}		Consultation
-//	@Failure		400	{object}	map[string]interface{}
-//	@Failure		401	{object}	map[string]interface{}
-//	@Failure		404	{object}	map[string]interface{}
-//	@Router			/patients/{id}/consultations [get]
+// @Summary Historique des consultations d'un patient
+// @Description Retourne toutes les consultations médicales du patient avec motifs, constantes, examens et prescriptions.
+// @Tags Patient 360
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID du patient"
+// @Success 200 {array} Consultation
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Router /patients/{id}/consultations [get]
 func (h *Handler) GetPatientConsultations(c *gin.Context) {
 	patientID, _ := strconv.Atoi(c.Param("id"))
 
@@ -133,15 +145,14 @@ func (h *Handler) GetPatientConsultations(c *gin.Context) {
 }
 
 // CreateReason godoc
-//
-//	@Summary	Créer un motif de consultation
-//	@Tags		Consultations - Référentiels
-//	@Security	BearerAuth
-//	@Accept		json
-//	@Produce	json
-//	@Param		request	body		CreateReferenceRequest	true	"Motif"
-//	@Success	201		{object}	ConsultationReason
-//	@Router		/consultations/reasons [post]
+// @Summary Créer un motif de consultation
+// @Tags Consultations - Référentiels
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body CreateReferenceRequest true "Motif"
+// @Success 201 {object} ConsultationReason
+// @Router /consultations/reasons [post]
 func (h *Handler) CreateReason(c *gin.Context) {
 	var req CreateReferenceRequest
 
@@ -160,16 +171,15 @@ func (h *Handler) CreateReason(c *gin.Context) {
 }
 
 // UpdateReason godoc
-//
-//	@Summary	Modifier un motif de consultation
-//	@Tags		Consultations - Référentiels
-//	@Security	BearerAuth
-//	@Accept		json
-//	@Produce	json
-//	@Param		id		path		int						true	"ID motif"
-//	@Param		request	body		UpdateReferenceRequest	true	"Motif"
-//	@Success	200		{object}	map[string]string
-//	@Router		/consultations/reasons/{id} [put]
+// @Summary Modifier un motif de consultation
+// @Tags Consultations - Référentiels
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "ID motif"
+// @Param request body UpdateReferenceRequest true "Motif"
+// @Success 200 {object} map[string]string
+// @Router /consultations/reasons/{id} [put]
 func (h *Handler) UpdateReason(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -188,14 +198,13 @@ func (h *Handler) UpdateReason(c *gin.Context) {
 }
 
 // DeleteReason godoc
-//
-//	@Summary	Désactiver un motif de consultation
-//	@Tags		Consultations - Référentiels
-//	@Security	BearerAuth
-//	@Produce	json
-//	@Param		id	path		int	true	"ID motif"
-//	@Success	200	{object}	map[string]string
-//	@Router		/consultations/reasons/{id} [delete]
+// @Summary Désactiver un motif de consultation
+// @Tags Consultations - Référentiels
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID motif"
+// @Success 200 {object} map[string]string
+// @Router /consultations/reasons/{id} [delete]
 func (h *Handler) DeleteReason(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -208,15 +217,14 @@ func (h *Handler) DeleteReason(c *gin.Context) {
 }
 
 // CreateExam godoc
-//
-//	@Summary	Créer un examen médical
-//	@Tags		Consultations - Référentiels
-//	@Security	BearerAuth
-//	@Accept		json
-//	@Produce	json
-//	@Param		request	body		CreateReferenceRequest	true	"Examen"
-//	@Success	201		{object}	MedicalExam
-//	@Router		/consultations/exams [post]
+// @Summary Créer un examen médical
+// @Tags Consultations - Référentiels
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body CreateReferenceRequest true "Examen"
+// @Success 201 {object} MedicalExam
+// @Router /consultations/exams [post]
 func (h *Handler) CreateExam(c *gin.Context) {
 	var req CreateReferenceRequest
 
@@ -235,21 +243,20 @@ func (h *Handler) CreateExam(c *gin.Context) {
 }
 
 // UpdateExam godoc
-//
-//	@Summary		Modifier un examen médical
-//	@Description	Modifie les informations d'un examen médical du référentiel. Permission requise : consultations.references.manage.
-//	@Tags			Consultations - Référentiels
-//	@Security		BearerAuth
-//	@Accept			json
-//	@Produce		json
-//	@Param			id		path		int						true	"ID de l'examen"
-//	@Param			request	body		UpdateReferenceRequest	true	"Données de l'examen"
-//	@Success		200		{object}	MedicalExam
-//	@Failure		400		{object}	map[string]interface{}
-//	@Failure		401		{object}	map[string]interface{}
-//	@Failure		403		{object}	map[string]interface{}
-//	@Failure		404		{object}	map[string]interface{}
-//	@Router			/consultations/exams/{id} [put]
+// @Summary Modifier un examen médical
+// @Description Modifie les informations d'un examen médical du référentiel. Permission requise : consultations.references.manage.
+// @Tags Consultations - Référentiels
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "ID de l'examen"
+// @Param request body UpdateReferenceRequest true "Données de l'examen"
+// @Success 200 {object} MedicalExam
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Router /consultations/exams/{id} [put]
 func (h *Handler) UpdateExam(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -268,19 +275,18 @@ func (h *Handler) UpdateExam(c *gin.Context) {
 }
 
 // DeleteExam godoc
-//
-//	@Summary		Désactiver un examen médical
-//	@Description	Désactive un examen médical du référentiel. Permission requise : consultations.references.manage.
-//	@Tags			Consultations - Référentiels
-//	@Security		BearerAuth
-//	@Produce		json
-//	@Param			id	path		int	true	"ID de l'examen"
-//	@Success		200	{object}	map[string]string
-//	@Failure		400	{object}	map[string]interface{}
-//	@Failure		401	{object}	map[string]interface{}
-//	@Failure		403	{object}	map[string]interface{}
-//	@Failure		404	{object}	map[string]interface{}
-//	@Router			/consultations/exams/{id} [delete]
+// @Summary Désactiver un examen médical
+// @Description Désactive un examen médical du référentiel. Permission requise : consultations.references.manage.
+// @Tags Consultations - Référentiels
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID de l'examen"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Router /consultations/exams/{id} [delete]
 func (h *Handler) DeleteExam(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -293,16 +299,15 @@ func (h *Handler) DeleteExam(c *gin.Context) {
 }
 
 // UpdateStatus godoc
-//
-//	@Summary	Changer le statut d'une consultation
-//	@Tags		Consultations
-//	@Security	BearerAuth
-//	@Accept		json
-//	@Produce	json
-//	@Param		id		path		int								true	"ID consultation"
-//	@Param		request	body		UpdateConsultationStatusRequest	true	"Statut"
-//	@Success	200		{object}	Consultation
-//	@Router		/consultations/{id}/status [patch]
+// @Summary Changer le statut d'une consultation
+// @Tags Consultations
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "ID consultation"
+// @Param request body UpdateConsultationStatusRequest true "Statut"
+// @Success 200 {object} Consultation
+// @Router /consultations/{id}/status [patch]
 func (h *Handler) UpdateStatus(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -354,15 +359,21 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 
 // UpdateConsultation godoc
 //
-//	@Summary	Modifier une consultation médicale
-//	@Tags		Consultations
-//	@Security	BearerAuth
-//	@Accept		json
-//	@Produce	json
-//	@Param		id		path		int							true	"ID consultation"
-//	@Param		request	body		UpdateConsultationRequest	true	"Consultation"
-//	@Success	200		{object}	Consultation
-//	@Router		/consultations/{id} [put]
+//	@Summary		Modifier une consultation
+//	@Description	Met à jour une consultation non terminée. Les antécédents peuvent être remplacés. Les examens physiques et traitements administrés sont remplacés uniquement lorsqu'ils sont présents dans la requête ; un tableau vide supprime les éléments existants.
+//	@Tags			Consultations
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		int							true	"ID de la consultation"
+//	@Param			request	body		UpdateConsultationRequest	true	"Données à modifier"
+//	@Success		200		{object}	Consultation
+//	@Failure		400		{object}	map[string]interface{}
+//	@Failure		401		{object}	map[string]interface{}
+//	@Failure		404		{object}	map[string]interface{}
+//	@Failure		409		{object}	map[string]interface{}
+//	@Failure		500		{object}	map[string]interface{}
+//	@Router			/api/consultations/{id} [put]
 func (h *Handler) UpdateConsultation(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -418,6 +429,14 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 			})
 			return
 
+		case errors.Is(err, ErrPhysicalExamAreaNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+
+		case errors.Is(err, ErrInactivePhysicalExamArea):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
@@ -431,19 +450,18 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 }
 
 // GenerateSickLeavePDF godoc
-//
-//	@Summary		Générer la fiche de repos maladie
-//	@Description	Génère la fiche PDF de repos maladie prescrite lors d'une consultation.
-//	@Tags			Documents médicaux
-//	@Security		BearerAuth
-//	@Produce		application/pdf
-//	@Param			id	path		int	true	"ID de la consultation"
-//	@Success		200	{file}		file
-//	@Failure		400	{object}	map[string]interface{}
-//	@Failure		401	{object}	map[string]interface{}
-//	@Failure		404	{object}	map[string]interface{}
-//	@Failure		500	{object}	map[string]interface{}
-//	@Router			/consultations/{id}/sick-leave/pdf [get]
+// @Summary Générer la fiche de repos maladie
+// @Description Génère la fiche PDF de repos maladie prescrite lors d'une consultation.
+// @Tags Documents médicaux
+// @Security BearerAuth
+// @Produce application/pdf
+// @Param id path int true "ID de la consultation"
+// @Success 200 {file} file
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /consultations/{id}/sick-leave/pdf [get]
 func (h *Handler) GenerateSickLeavePDF(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -466,14 +484,13 @@ func (h *Handler) GenerateSickLeavePDF(c *gin.Context) {
 }
 
 // GenerateExamRequestPDF godoc
-//
-//	@Summary	Générer la demande d'examens
-//	@Tags		Documents médicaux
-//	@Security	BearerAuth
-//	@Produce	application/pdf
-//	@Param		id	path	int	true	"ID consultation"
-//	@Success	200	{file}	file
-//	@Router		/consultations/{id}/exam-request/pdf [get]
+// @Summary Générer la demande d'examens
+// @Tags Documents médicaux
+// @Security BearerAuth
+// @Produce application/pdf
+// @Param id path int true "ID consultation"
+// @Success 200 {file} file
+// @Router /consultations/{id}/exam-request/pdf [get]
 func (h *Handler) GenerateExamRequestPDF(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -496,14 +513,13 @@ func (h *Handler) GenerateExamRequestPDF(c *gin.Context) {
 }
 
 // GeneratePrescriptionPDF godoc
-//
-//	@Summary	Générer l'ordonnance
-//	@Tags		Documents médicaux
-//	@Security	BearerAuth
-//	@Produce	application/pdf
-//	@Param		id	path	int	true	"ID consultation"
-//	@Success	200	{file}	file
-//	@Router		/consultations/{id}/prescription/pdf [get]
+// @Summary Générer l'ordonnance
+// @Tags Documents médicaux
+// @Security BearerAuth
+// @Produce application/pdf
+// @Param id path int true "ID consultation"
+// @Success 200 {file} file
+// @Router /consultations/{id}/prescription/pdf [get]
 func (h *Handler) GeneratePrescriptionPDF(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -547,14 +563,13 @@ func (h *Handler) GeneratePrescriptionPDF(c *gin.Context) {
 }
 
 // GenerateConsultationReportPDF godoc
-//
-//	@Summary	Générer le compte rendu de consultation
-//	@Tags		Documents médicaux
-//	@Security	BearerAuth
-//	@Produce	application/pdf
-//	@Param		id	path	int	true	"ID consultation"
-//	@Success	200	{file}	file
-//	@Router		/consultations/{id}/report/pdf [get]
+// @Summary Générer le compte rendu de consultation
+// @Tags Documents médicaux
+// @Security BearerAuth
+// @Produce application/pdf
+// @Param id path int true "ID consultation"
+// @Success 200 {file} file
+// @Router /consultations/{id}/report/pdf [get]
 func (h *Handler) GenerateConsultationReportPDF(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -598,14 +613,13 @@ func (h *Handler) GenerateConsultationReportPDF(c *gin.Context) {
 }
 
 // GenerateHospitalizationPDF godoc
-//
-//	@Summary	Générer la fiche d'hospitalisation
-//	@Tags		Documents médicaux
-//	@Security	BearerAuth
-//	@Produce	application/pdf
-//	@Param		id	path	int	true	"ID consultation"
-//	@Success	200	{file}	file
-//	@Router		/consultations/{id}/hospitalization/pdf [get]
+// @Summary Générer la fiche d'hospitalisation
+// @Tags Documents médicaux
+// @Security BearerAuth
+// @Produce application/pdf
+// @Param id path int true "ID consultation"
+// @Success 200 {file} file
+// @Router /consultations/{id}/hospitalization/pdf [get]
 func (h *Handler) GenerateHospitalizationPDF(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -632,14 +646,13 @@ func (h *Handler) GenerateHospitalizationPDF(c *gin.Context) {
 }
 
 // GetPatient360 godoc
-//
-//	@Summary	Vue Patient 360
-//	@Tags		Patient 360
-//	@Security	BearerAuth
-//	@Produce	json
-//	@Param		id	path		int	true	"ID patient"
-//	@Success	200	{object}	Patient360Response
-//	@Router		/patients/{id}/360 [get]
+// @Summary Vue Patient 360
+// @Tags Patient 360
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID patient"
+// @Success 200 {object} Patient360Response
+// @Router /patients/{id}/360 [get]
 func (h *Handler) GetPatient360(c *gin.Context) {
 	patientID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -658,4 +671,26 @@ func (h *Handler) GetPatient360(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// GetPhysicalExamAreas godoc
+//
+//	@Summary		Liste des zones d'examen physique
+//	@Description	Retourne le référentiel des systèmes, appareils, organes et zones utilisables dans l'examen physique.
+//	@Tags			Consultations - Référentiels
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{array}		PhysicalExamArea
+//	@Failure		500	{object}	map[string]interface{}
+//	@Router			/api/consultations/physical-exam-areas [get]
+func (h *Handler) GetPhysicalExamAreas(c *gin.Context) {
+	areas, err := h.service.GetPhysicalExamAreas()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, areas)
 }

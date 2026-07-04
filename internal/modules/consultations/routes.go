@@ -29,6 +29,7 @@ func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 		consultations.GET("/:id/prescription/pdf", handler.GeneratePrescriptionPDF)
 		consultations.GET("/:id/report/pdf", handler.GenerateConsultationReportPDF)
 		consultations.GET("/:id/hospitalization/pdf", handler.GenerateHospitalizationPDF)
+		consultations.GET("/physical-exam-areas", handler.GetPhysicalExamAreas)
 	}
 
 	router.GET("/patients/:id/consultations", handler.GetPatientConsultations)

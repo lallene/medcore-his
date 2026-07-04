@@ -31,6 +31,7 @@ func (r *Repository) Create(consultation *Consultation) error {
 
 func (r *Repository) FindByID(id uint) (*Consultation, error) {
 	var consultation Consultation
+
 	err := r.db.
 		Preload("Patient").
 		Preload("Vitals").
@@ -39,6 +40,7 @@ func (r *Repository) FindByID(id uint) (*Consultation, error) {
 		Preload("Prescriptions").
 		Preload("Antecedent").
 		Preload("PhysicalExams").
+		Preload("PhysicalExams.Area").
 		Preload("AdministeredTreatments").
 		First(&consultation, id).Error
 
@@ -400,4 +402,26 @@ func (r *Repository) ReplaceClinicalBlocks(
 
 		return nil
 	})
+}
+
+func (r *Repository) FindPhysicalExamAreas() ([]PhysicalExamArea, error) {
+	var areas []PhysicalExamArea
+
+	err := r.db.
+		Where("is_active = ?", true).
+		Order("category ASC").
+		Order("name ASC").
+		Find(&areas).Error
+
+	return areas, err
+}
+
+func (r *Repository) FindPhysicalExamAreaByID(id uint) (*PhysicalExamArea, error) {
+	var area PhysicalExamArea
+
+	if err := r.db.First(&area, id).Error; err != nil {
+		return nil, err
+	}
+
+	return &area, nil
 }

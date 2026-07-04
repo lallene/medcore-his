@@ -19,11 +19,14 @@ func (Module) Register(app *application.Application) {
 		&ConsultationExamRequest{},
 		&ConsultationPrescription{},
 		&ConsultationAntecedent{},
+		&PhysicalExamArea{},
+		&ConsultationPhysicalExam{},
 		&ConsultationPhysicalExam{},
 		&ConsultationAdministeredTreatment{},
 	)
 
 	SeedConsultationReferences(app.DB)
+	SeedPhysicalExamAreas(app.DB)
 
 	repository := NewRepository(app.DB)
 	service := NewService(repository)

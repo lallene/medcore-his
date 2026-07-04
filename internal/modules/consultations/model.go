@@ -142,7 +142,9 @@ type ConsultationPhysicalExam struct {
 	ID             uint `gorm:"primaryKey" json:"id"`
 	ConsultationID uint `gorm:"not null;index" json:"consultationId"`
 
-	Organ       string `gorm:"not null" json:"organ"`
+	AreaID uint             `gorm:"not null;index" json:"areaId"`
+	Area   PhysicalExamArea `gorm:"foreignKey:AreaID" json:"area"`
+
 	Observation string `gorm:"type:text" json:"observation"`
 
 	CreatedAt time.Time `json:"createdAt"`
@@ -162,6 +164,19 @@ type ConsultationAdministeredTreatment struct {
 
 	Quantity     float64 `json:"quantity"`
 	Instructions string  `gorm:"type:text" json:"instructions"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type PhysicalExamArea struct {
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	Code     string `gorm:"size:100;uniqueIndex;not null" json:"code"`
+	Category string `gorm:"size:150;index;not null" json:"category"`
+	Name     string `gorm:"size:150;index;not null" json:"name"`
+
+	IsActive bool `gorm:"not null;default:true" json:"isActive"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

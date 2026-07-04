@@ -37,8 +37,10 @@ var (
 		"un ou plusieurs examens sont invalides ou inactifs",
 	)
 
-	ErrInvalidPresentationID = errors.New("présentation pharmaceutique invalide")
-	ErrInactivePresentation  = errors.New("présentation pharmaceutique inactive")
+	ErrInvalidPresentationID    = errors.New("présentation pharmaceutique invalide")
+	ErrInactivePresentation     = errors.New("présentation pharmaceutique inactive")
+	ErrPhysicalExamAreaNotFound = errors.New("zone d'examen physique introuvable")
+	ErrInactivePhysicalExamArea = errors.New("zone d'examen physique inactive")
 )
 
 type Service struct {
@@ -166,10 +168,23 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 	}
 
 	for _, item := range req.PhysicalExams {
+		area, err := s.repo.FindPhysicalExamAreaByID(item.AreaID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrPhysicalExamAreaNotFound
+			}
+
+			return nil, err
+		}
+
+		if !area.IsActive {
+			return nil, ErrInactivePhysicalExamArea
+		}
+
 		consultation.PhysicalExams = append(
 			consultation.PhysicalExams,
 			ConsultationPhysicalExam{
-				Organ:       item.Organ,
+				AreaID:      area.ID,
 				Observation: item.Observation,
 			},
 		)
@@ -210,7 +225,7 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 		return nil, err
 	}
 
-	return consultation, nil
+	return s.repo.FindByID(consultation.ID)
 }
 
 func (s *Service) GetConsultation(id uint) (*Consultation, error) {
@@ -496,8 +511,21 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 		items := make([]ConsultationPhysicalExam, 0, len(*req.PhysicalExams))
 
 		for _, item := range *req.PhysicalExams {
+			area, err := s.repo.FindPhysicalExamAreaByID(item.AreaID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, ErrPhysicalExamAreaNotFound
+				}
+
+				return nil, err
+			}
+
+			if !area.IsActive {
+				return nil, ErrInactivePhysicalExamArea
+			}
+
 			items = append(items, ConsultationPhysicalExam{
-				Organ:       item.Organ,
+				AreaID:      area.ID,
 				Observation: item.Observation,
 			})
 		}
@@ -630,4 +658,7 @@ func (s *Service) GetPatient360(patientID uint) (*Patient360Response, error) {
 		Consultations: consultations,
 		Documents:     documents,
 	}, nil
+}
+func (s *Service) GetPhysicalExamAreas() ([]PhysicalExamArea, error) {
+	return s.repo.FindPhysicalExamAreas()
 }

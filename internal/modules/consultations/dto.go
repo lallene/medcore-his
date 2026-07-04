@@ -145,9 +145,8 @@ type AntecedentRequest struct {
 }
 
 type PhysicalExamRequest struct {
-	Organ string `json:"organ" binding:"required" example:"Appareil cardiovasculaire"`
-
-	Observation string `json:"observation" example:"Rythme régulier, absence de souffle"`
+	AreaID      uint   `json:"areaId" binding:"required"`
+	Observation string `json:"observation"`
 }
 
 type AdministeredTreatmentRequest struct {
