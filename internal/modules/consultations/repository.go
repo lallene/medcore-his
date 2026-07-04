@@ -42,6 +42,12 @@ func (r *Repository) FindByID(id uint) (*Consultation, error) {
 		Preload("PhysicalExams").
 		Preload("PhysicalExams.Area").
 		Preload("AdministeredTreatments").
+		Preload("PreviousMedications").
+		Preload("SurgicalHistories").
+		Preload("GynecoObstetricHistories").
+		Preload("PreviousMedications").
+		Preload("SurgicalHistories").
+		Preload("GynecoObstetricHistories").
 		First(&consultation, id).Error
 
 	return &consultation, err
@@ -161,6 +167,9 @@ func (r *Repository) UpdateConsultation(
 	antecedent *ConsultationAntecedent,
 	physicalExams *[]ConsultationPhysicalExam,
 	administeredTreatments *[]ConsultationAdministeredTreatment,
+	previousMedications *[]ConsultationPreviousMedication,
+	surgicalHistories *[]ConsultationSurgicalHistory,
+	gynecoObstetricHistories *[]ConsultationGynecoObstetricHistory,
 ) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 
@@ -301,6 +310,60 @@ func (r *Repository) UpdateConsultation(
 
 			if len(*physicalExams) > 0 {
 				if err := tx.Create(physicalExams).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		if previousMedications != nil {
+			if err := tx.
+				Where("consultation_id = ?", id).
+				Delete(&ConsultationPreviousMedication{}).Error; err != nil {
+				return err
+			}
+
+			for i := range *previousMedications {
+				(*previousMedications)[i].ConsultationID = id
+			}
+
+			if len(*previousMedications) > 0 {
+				if err := tx.Create(previousMedications).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		if surgicalHistories != nil {
+			if err := tx.
+				Where("consultation_id = ?", id).
+				Delete(&ConsultationSurgicalHistory{}).Error; err != nil {
+				return err
+			}
+
+			for i := range *surgicalHistories {
+				(*surgicalHistories)[i].ConsultationID = id
+			}
+
+			if len(*surgicalHistories) > 0 {
+				if err := tx.Create(surgicalHistories).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		if gynecoObstetricHistories != nil {
+			if err := tx.
+				Where("consultation_id = ?", id).
+				Delete(&ConsultationGynecoObstetricHistory{}).Error; err != nil {
+				return err
+			}
+
+			for i := range *gynecoObstetricHistories {
+				(*gynecoObstetricHistories)[i].ConsultationID = id
+			}
+
+			if len(*gynecoObstetricHistories) > 0 {
+				if err := tx.Create(gynecoObstetricHistories).Error; err != nil {
 					return err
 				}
 			}

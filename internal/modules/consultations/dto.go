@@ -19,11 +19,14 @@ type CreateConsultationRequest struct {
 	Observations string `json:"observations"`
 	Treatment    string `json:"treatment"`
 
-	SickLeaveRequired      bool                           `json:"sickLeaveRequired"`
-	SickLeaveDays          int                            `json:"sickLeaveDays"`
-	Antecedent             *AntecedentRequest             `json:"antecedent"`
-	PhysicalExams          []PhysicalExamRequest          `json:"physicalExams"`
-	AdministeredTreatments []AdministeredTreatmentRequest `json:"administeredTreatments"`
+	SickLeaveRequired        bool                            `json:"sickLeaveRequired"`
+	SickLeaveDays            int                             `json:"sickLeaveDays"`
+	Antecedent               *AntecedentRequest              `json:"antecedent"`
+	PhysicalExams            []PhysicalExamRequest           `json:"physicalExams"`
+	AdministeredTreatments   []AdministeredTreatmentRequest  `json:"administeredTreatments"`
+	PreviousMedications      []PreviousMedicationRequest     `json:"previousMedications"`
+	SurgicalHistories        []SurgicalHistoryRequest        `json:"surgicalHistories"`
+	GynecoObstetricHistories []GynecoObstetricHistoryRequest `json:"gynecoObstetricHistories"`
 
 	ExamIDs []uint `json:"examIds"`
 }
@@ -78,9 +81,12 @@ type UpdateConsultationRequest struct {
 	Observations *string `json:"observations"`
 	Treatment    *string `json:"treatment"`
 
-	Antecedent             *AntecedentRequest              `json:"antecedent"`
-	PhysicalExams          *[]PhysicalExamRequest          `json:"physicalExams"`
-	AdministeredTreatments *[]AdministeredTreatmentRequest `json:"administeredTreatments"`
+	Antecedent               *AntecedentRequest               `json:"antecedent"`
+	PhysicalExams            *[]PhysicalExamRequest           `json:"physicalExams"`
+	AdministeredTreatments   *[]AdministeredTreatmentRequest  `json:"administeredTreatments"`
+	PreviousMedications      *[]PreviousMedicationRequest     `json:"previousMedications"`
+	SurgicalHistories        *[]SurgicalHistoryRequest        `json:"surgicalHistories"`
+	GynecoObstetricHistories *[]GynecoObstetricHistoryRequest `json:"gynecoObstetricHistories"`
 
 	SickLeaveRequired *bool `json:"sickLeaveRequired"`
 	SickLeaveDays     *int  `json:"sickLeaveDays"`
@@ -155,4 +161,25 @@ type AdministeredTreatmentRequest struct {
 	Quantity float64 `json:"quantity" binding:"required,gt=0" example:"2"`
 
 	Instructions string `json:"instructions" example:"2 comprimés administrés sur place"`
+}
+
+type PreviousMedicationRequest struct {
+	PresentationID uint   `json:"presentationId" binding:"required"`
+	Instructions   string `json:"instructions"`
+	Status         string `json:"status"`
+}
+
+type SurgicalHistoryRequest struct {
+	ProcedureName string `json:"procedureName" binding:"required"`
+	ProcedureDate string `json:"procedureDate"`
+	Indication    string `json:"indication"`
+	Complications string `json:"complications"`
+	Notes         string `json:"notes"`
+}
+
+type GynecoObstetricHistoryRequest struct {
+	EventType string `json:"eventType" binding:"required"`
+	EventDate string `json:"eventDate"`
+	Outcome   string `json:"outcome"`
+	Notes     string `json:"notes"`
 }

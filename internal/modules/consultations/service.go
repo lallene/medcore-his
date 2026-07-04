@@ -220,6 +220,43 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 		)
 	}
 
+	for _, item := range req.PreviousMedications {
+		previousMedication, err := s.buildPreviousMedication(item)
+		if err != nil {
+			return nil, err
+		}
+
+		consultation.PreviousMedications = append(
+			consultation.PreviousMedications,
+			*previousMedication,
+		)
+	}
+
+	for _, item := range req.SurgicalHistories {
+		consultation.SurgicalHistories = append(
+			consultation.SurgicalHistories,
+			ConsultationSurgicalHistory{
+				ProcedureName: item.ProcedureName,
+				ProcedureDate: item.ProcedureDate,
+				Indication:    item.Indication,
+				Complications: item.Complications,
+				Notes:         item.Notes,
+			},
+		)
+	}
+
+	for _, item := range req.GynecoObstetricHistories {
+		consultation.GynecoObstetricHistories = append(
+			consultation.GynecoObstetricHistories,
+			ConsultationGynecoObstetricHistory{
+				EventType: item.EventType,
+				EventDate: item.EventDate,
+				Outcome:   item.Outcome,
+				Notes:     item.Notes,
+			},
+		)
+	}
+
 	err = s.repo.Create(consultation)
 	if err != nil {
 		return nil, err
@@ -343,6 +380,9 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 	var antecedent *ConsultationAntecedent
 	var physicalExams *[]ConsultationPhysicalExam
 	var administeredTreatments *[]ConsultationAdministeredTreatment
+	var previousMedications *[]ConsultationPreviousMedication
+	var surgicalHistories *[]ConsultationSurgicalHistory
+	var gynecoObstetricHistories *[]ConsultationGynecoObstetricHistory
 
 	consultation, err := s.repo.FindByID(id)
 	if err != nil {
@@ -566,6 +606,64 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 		administeredTreatments = &items
 	}
 
+	if req.PreviousMedications != nil {
+		items := make(
+			[]ConsultationPreviousMedication,
+			0,
+			len(*req.PreviousMedications),
+		)
+
+		for _, item := range *req.PreviousMedications {
+			previousMedication, err := s.buildPreviousMedication(item)
+			if err != nil {
+				return nil, err
+			}
+
+			items = append(items, *previousMedication)
+		}
+
+		previousMedications = &items
+	}
+
+	if req.SurgicalHistories != nil {
+		items := make(
+			[]ConsultationSurgicalHistory,
+			0,
+			len(*req.SurgicalHistories),
+		)
+
+		for _, item := range *req.SurgicalHistories {
+			items = append(items, ConsultationSurgicalHistory{
+				ProcedureName: item.ProcedureName,
+				ProcedureDate: item.ProcedureDate,
+				Indication:    item.Indication,
+				Complications: item.Complications,
+				Notes:         item.Notes,
+			})
+		}
+
+		surgicalHistories = &items
+	}
+
+	if req.GynecoObstetricHistories != nil {
+		items := make(
+			[]ConsultationGynecoObstetricHistory,
+			0,
+			len(*req.GynecoObstetricHistories),
+		)
+
+		for _, item := range *req.GynecoObstetricHistories {
+			items = append(items, ConsultationGynecoObstetricHistory{
+				EventType: item.EventType,
+				EventDate: item.EventDate,
+				Outcome:   item.Outcome,
+				Notes:     item.Notes,
+			})
+		}
+
+		gynecoObstetricHistories = &items
+	}
+
 	err = s.repo.UpdateConsultation(
 		id,
 		updates,
@@ -579,6 +677,9 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 		antecedent,
 		physicalExams,
 		administeredTreatments,
+		previousMedications,
+		surgicalHistories,
+		gynecoObstetricHistories,
 	)
 
 	if err != nil {
@@ -661,4 +762,38 @@ func (s *Service) GetPatient360(patientID uint) (*Patient360Response, error) {
 }
 func (s *Service) GetPhysicalExamAreas() ([]PhysicalExamArea, error) {
 	return s.repo.FindPhysicalExamAreas()
+}
+
+func (s *Service) buildPreviousMedication(
+	item PreviousMedicationRequest,
+) (*ConsultationPreviousMedication, error) {
+	presentation, err := s.repo.FindMedicationPresentationByID(item.PresentationID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidPresentationID
+		}
+
+		return nil, err
+	}
+
+	if !presentation.IsActive || !presentation.Medication.IsActive {
+		return nil, ErrInactivePresentation
+	}
+
+	presentationID := presentation.ID
+
+	status := item.Status
+	if status == "" {
+		status = "ONGOING"
+	}
+
+	return &ConsultationPreviousMedication{
+		PresentationID: &presentationID,
+		MedicationName: presentation.Medication.Name,
+		Dosage:         presentation.Dosage,
+		Form:           presentation.Form,
+		Route:          presentation.Route,
+		Instructions:   item.Instructions,
+		Status:         status,
+	}, nil
 }
