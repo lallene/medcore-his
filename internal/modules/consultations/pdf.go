@@ -177,12 +177,12 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(10, 10, 10)
 	pdf.SetAutoPageBreak(true, 28)
+
 	pdf.SetHeaderFunc(func() {
 		drawClinicWatermark(pdf)
 	})
 
 	pdf.AddPage()
-	drawClinicWatermark(pdf)
 
 	reference := branding.DocumentReference(
 		branding.DocumentTypePrescription,
