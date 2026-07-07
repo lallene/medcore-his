@@ -22,6 +22,7 @@ type Repository interface {
 
 	CreateTimelineEvent(event *MedicalTimelineEvent) error
 	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
+	ListRecentTimelineEvents(recordID uint, limit int) ([]MedicalTimelineEvent, error)
 }
 
 type repository struct {
@@ -130,6 +131,18 @@ func (r *repository) ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, 
 	err := r.db.
 		Where("medical_record_id = ?", recordID).
 		Order("event_date DESC, id DESC").
+		Find(&events).Error
+
+	return events, err
+}
+
+func (r *repository) ListRecentTimelineEvents(recordID uint, limit int) ([]MedicalTimelineEvent, error) {
+	var events []MedicalTimelineEvent
+
+	err := r.db.
+		Where("medical_record_id = ?", recordID).
+		Order("event_date DESC, id DESC").
+		Limit(limit).
 		Find(&events).Error
 
 	return events, err

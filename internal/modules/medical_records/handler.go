@@ -170,3 +170,19 @@ func (h *Handler) ListTimelineEvents(c *gin.Context) {
 
 	c.JSON(http.StatusOK, events)
 }
+
+func (h *Handler) GetPatientMedicalSummary(c *gin.Context) {
+	patientID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id patient invalide"})
+		return
+	}
+
+	summary, err := h.service.GetPatientMedicalSummary(uint(patientID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, summary)
+}

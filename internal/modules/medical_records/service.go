@@ -24,6 +24,7 @@ type Service interface {
 	RecordConsultationStatusChanged(patientID uint, consultationID uint, oldStatus string, newStatus string) error
 	RecordExamRequested(patientID uint, consultationID uint, examName string, service string) error
 	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string) error
+	GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error)
 }
 
 type service struct {
@@ -480,4 +481,36 @@ func (s *service) RecordMedicationPrescribed(
 		"info",
 		0,
 	)
+}
+
+func (s *service) GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error) {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return nil, err
+	}
+
+	alerts, _ := s.repo.ListAlerts(record.ID)
+	allergies, _ := s.repo.ListAllergies(record.ID)
+	histories, _ := s.repo.ListMedicalHistories(record.ID)
+
+	lastVital, err := s.repo.GetLastVitalSign(record.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		lastVital = nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	timeline, err := s.repo.ListRecentTimelineEvents(record.ID, 20)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PatientMedicalSummaryResponse{
+		MedicalRecord:    *record,
+		Alerts:           alerts,
+		Allergies:        allergies,
+		MedicalHistories: histories,
+		LastVitalSigns:   lastVital,
+		Timeline:         timeline,
+	}, nil
 }

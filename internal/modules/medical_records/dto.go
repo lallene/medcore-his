@@ -62,3 +62,12 @@ type CreateVitalSignRequest struct {
 	MeasuredBy uint       `json:"measured_by"`
 	MeasuredAt *time.Time `json:"measured_at"`
 }
+
+type PatientMedicalSummaryResponse struct {
+	MedicalRecord    MedicalRecord          `json:"medical_record"`
+	Alerts           []MedicalAlert         `json:"alerts"`
+	Allergies        []Allergy              `json:"allergies"`
+	MedicalHistories []MedicalHistory       `json:"medical_histories"`
+	LastVitalSigns   *VitalSign             `json:"last_vital_signs"`
+	Timeline         []MedicalTimelineEvent `json:"timeline"`
+}
