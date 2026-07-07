@@ -22,6 +22,7 @@ type Service interface {
 	ListVitalSigns(recordID uint) ([]VitalSign, error)
 	RecordConsultationCreated(patientID uint, consultationID uint, department string, doctorName string) error
 	RecordConsultationStatusChanged(patientID uint, consultationID uint, oldStatus string, newStatus string) error
+	RecordExamRequested(patientID uint, consultationID uint, examName string, service string) error
 }
 
 type service struct {
@@ -399,6 +400,40 @@ func (s *service) RecordConsultationStatusChanged(
 		"consultation_status_changed",
 		"consultation",
 		"Statut de consultation modifié",
+		description,
+		"consultation",
+		consultationID,
+		"info",
+		0,
+	)
+}
+
+func (s *service) RecordExamRequested(
+	patientID uint,
+	consultationID uint,
+	examName string,
+	service string,
+) error {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return err
+	}
+
+	description := fmt.Sprintf("Examen demandé : %s", examName)
+
+	if service != "" {
+		description = fmt.Sprintf(
+			"Examen demandé : %s — Service : %s",
+			examName,
+			service,
+		)
+	}
+
+	return s.createTimelineEvent(
+		record,
+		"exam_requested",
+		"exam",
+		"Examen prescrit",
 		description,
 		"consultation",
 		consultationID,

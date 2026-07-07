@@ -282,6 +282,17 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 		}
 	}
 
+	if s.medicalRecordsService != nil {
+		for _, exam := range exams {
+			_ = s.medicalRecordsService.RecordExamRequested(
+				consultation.PatientID,
+				consultation.ID,
+				exam.Name,
+				consultation.Service,
+			)
+		}
+	}
+
 	return s.repo.FindByID(consultation.ID)
 }
 
