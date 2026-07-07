@@ -246,6 +246,7 @@ func drawSignatureArea(
 func drawClinicFooter(pdf *gofpdf.Fpdf) {
 	clinic := branding.Clinic
 
+	pdf.SetAutoPageBreak(false, 0)
 	pdf.SetY(-24)
 
 	pdf.SetDrawColor(
@@ -266,7 +267,7 @@ func drawClinicFooter(pdf *gofpdf.Fpdf) {
 	)
 
 	legal := fmt.Sprintf(
-		"%s au capital de %s • RCCM : %s",
+		"%s au capital de %s - RCCM : %s",
 		clinic.LegalForm,
 		clinic.Capital,
 		clinic.RCCM,

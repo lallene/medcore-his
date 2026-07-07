@@ -27,7 +27,7 @@ type ClinicBranding struct {
 var Clinic = ClinicBranding{
 	Name:      "Clinique Médicale Saint Raphaël Archange",
 	LegalName: "Clinique Médicale Saint Raphaël Archange",
-	Tagline:   "Excellence • Compassion • Santé",
+	Tagline:   "Excellence - Compassion - Santé",
 	Signature: "Humanité et expertise au service de la vie",
 
 	Address: "Séguéla, quartier Résidentiel, 100 m avant l'Église Foursquare, lot 1738, îlot 191",
