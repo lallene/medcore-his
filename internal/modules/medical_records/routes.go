@@ -1,0 +1,16 @@
+package medical_records
+
+import "github.com/gin-gonic/gin"
+
+func RegisterRoutes(router *gin.RouterGroup, handler *Handler) {
+	router.GET("/patients/:id/medical-record", handler.GetOrCreateByPatientID)
+
+	router.GET("/medical-records/:recordId/overview", handler.GetOverview)
+
+	router.POST("/medical-records/:recordId/alerts", handler.AddAlert)
+	router.POST("/medical-records/:recordId/allergies", handler.AddAllergy)
+	router.POST("/medical-records/:recordId/histories", handler.AddMedicalHistory)
+
+	router.POST("/medical-records/:recordId/vital-signs", handler.AddVitalSign)
+	router.GET("/medical-records/:recordId/vital-signs", handler.ListVitalSigns)
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/voucher"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 )
 
@@ -32,6 +33,11 @@ func main() {
 		&guarantor.InsuranceGuarantor{},
 		&coverage.PatientCoverage{},
 		&voucher.InsuranceVoucher{},
+		&medical_records.MedicalRecord{},
+		&medical_records.MedicalAlert{},
+		&medical_records.Allergy{},
+		&medical_records.MedicalHistory{},
+		&medical_records.VitalSign{},
 	)
 
 	if err != nil {
