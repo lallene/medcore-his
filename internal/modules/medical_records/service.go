@@ -505,12 +505,33 @@ func (s *service) GetPatientMedicalSummary(patientID uint) (*PatientMedicalSumma
 		return nil, err
 	}
 
+	recentConsultations, err := s.repo.ListRecentConsultations(patientID, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	documents := make([]MedicalSummaryDocumentItem, 0)
+
+	for _, consultation := range recentConsultations {
+		base := "/api/consultations/" + fmt.Sprintf("%d", consultation.ID)
+
+		documents = append(documents, MedicalSummaryDocumentItem{
+			ConsultationID: consultation.ID,
+			Type:           "report",
+			Label:          "Compte rendu de consultation",
+			URL:            base + "/report/pdf",
+		})
+	}
+
 	return &PatientMedicalSummaryResponse{
-		MedicalRecord:    *record,
-		Alerts:           alerts,
-		Allergies:        allergies,
-		MedicalHistories: histories,
-		LastVitalSigns:   lastVital,
-		Timeline:         timeline,
+		PatientID:           patientID,
+		MedicalRecord:       *record,
+		Alerts:              alerts,
+		Allergies:           allergies,
+		MedicalHistories:    histories,
+		LastVitalSigns:      lastVital,
+		Timeline:            timeline,
+		RecentConsultations: recentConsultations,
+		Documents:           documents,
 	}, nil
 }

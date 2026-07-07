@@ -63,11 +63,35 @@ type CreateVitalSignRequest struct {
 	MeasuredAt *time.Time `json:"measured_at"`
 }
 
+type MedicalSummaryConsultationItem struct {
+	ID           uint      `json:"id"`
+	PatientID    uint      `json:"patient_id"`
+	DoctorName   string    `json:"doctor_name"`
+	Service      string    `json:"service"`
+	Status       string    `json:"status"`
+	Diagnosis    string    `json:"diagnosis"`
+	Observations string    `json:"observations"`
+	Treatment    string    `json:"treatment"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type MedicalSummaryDocumentItem struct {
+	ConsultationID uint   `json:"consultation_id"`
+	Type           string `json:"type"`
+	Label          string `json:"label"`
+	URL            string `json:"url"`
+}
+
 type PatientMedicalSummaryResponse struct {
+	PatientID uint `json:"patient_id"`
+
 	MedicalRecord    MedicalRecord          `json:"medical_record"`
 	Alerts           []MedicalAlert         `json:"alerts"`
 	Allergies        []Allergy              `json:"allergies"`
 	MedicalHistories []MedicalHistory       `json:"medical_histories"`
 	LastVitalSigns   *VitalSign             `json:"last_vital_signs"`
 	Timeline         []MedicalTimelineEvent `json:"timeline"`
+
+	RecentConsultations []MedicalSummaryConsultationItem `json:"recent_consultations"`
+	Documents           []MedicalSummaryDocumentItem     `json:"documents"`
 }

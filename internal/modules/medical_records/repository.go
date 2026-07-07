@@ -1,6 +1,8 @@
 package medical_records
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+)
 
 type Repository interface {
 	CreateMedicalRecord(record *MedicalRecord) error
@@ -23,6 +25,7 @@ type Repository interface {
 	CreateTimelineEvent(event *MedicalTimelineEvent) error
 	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
 	ListRecentTimelineEvents(recordID uint, limit int) ([]MedicalTimelineEvent, error)
+	ListRecentConsultations(patientID uint, limit int) ([]MedicalSummaryConsultationItem, error)
 }
 
 type repository struct {
@@ -146,4 +149,31 @@ func (r *repository) ListRecentTimelineEvents(recordID uint, limit int) ([]Medic
 		Find(&events).Error
 
 	return events, err
+}
+
+func (r *repository) ListRecentConsultations(
+	patientID uint,
+	limit int,
+) ([]MedicalSummaryConsultationItem, error) {
+	var items []MedicalSummaryConsultationItem
+
+	err := r.db.
+		Table("consultations").
+		Select(`
+			id,
+			patient_id,
+			doctor_name,
+			service,
+			status,
+			diagnosis,
+			observations,
+			treatment,
+			created_at
+		`).
+		Where("patient_id = ?", patientID).
+		Order("created_at DESC").
+		Limit(limit).
+		Scan(&items).Error
+
+	return items, err
 }
