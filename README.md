@@ -16,3 +16,12 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
     "status": "cancelled",
     "cancellationReason": "Patient absent après appel"
   }' | jq
+
+
+
+/**
+git status
+git add .
+git commit -m "feat: enrich patient medical summary with consultations and documents"
+git push origin main
+**/

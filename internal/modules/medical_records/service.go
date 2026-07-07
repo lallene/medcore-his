@@ -521,6 +521,42 @@ func (s *service) GetPatientMedicalSummary(patientID uint) (*PatientMedicalSumma
 			Label:          "Compte rendu de consultation",
 			URL:            base + "/report/pdf",
 		})
+
+		if consultation.HasPrescriptions {
+			documents = append(documents, MedicalSummaryDocumentItem{
+				ConsultationID: consultation.ID,
+				Type:           "prescription",
+				Label:          "Ordonnance",
+				URL:            base + "/prescription/pdf",
+			})
+		}
+
+		if consultation.HasExams {
+			documents = append(documents, MedicalSummaryDocumentItem{
+				ConsultationID: consultation.ID,
+				Type:           "exam_request",
+				Label:          "Demande / autorisation d'examens",
+				URL:            base + "/exam-request/pdf",
+			})
+		}
+
+		if consultation.SickLeaveRequired {
+			documents = append(documents, MedicalSummaryDocumentItem{
+				ConsultationID: consultation.ID,
+				Type:           "sick_leave",
+				Label:          "Fiche de repos maladie",
+				URL:            base + "/sick-leave/pdf",
+			})
+		}
+
+		if consultation.HospitalizationRequired {
+			documents = append(documents, MedicalSummaryDocumentItem{
+				ConsultationID: consultation.ID,
+				Type:           "hospitalization",
+				Label:          "Fiche d'hospitalisation",
+				URL:            base + "/hospitalization/pdf",
+			})
+		}
 	}
 
 	return &PatientMedicalSummaryResponse{

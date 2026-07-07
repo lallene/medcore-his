@@ -158,20 +158,32 @@ func (r *repository) ListRecentConsultations(
 	var items []MedicalSummaryConsultationItem
 
 	err := r.db.
-		Table("consultations").
+		Table("consultations c").
 		Select(`
-			id,
-			patient_id,
-			doctor_name,
-			service,
-			status,
-			diagnosis,
-			observations,
-			treatment,
-			created_at
+			c.id,
+			c.patient_id,
+			c.doctor_name,
+			c.service,
+			c.status,
+			c.diagnosis,
+			c.observations,
+			c.treatment,
+			c.created_at,
+			c.sick_leave_required,
+			c.hospitalization_required,
+			EXISTS (
+				SELECT 1
+				FROM consultation_exam_requests cer
+				WHERE cer.consultation_id = c.id
+			) AS has_exams,
+			EXISTS (
+				SELECT 1
+				FROM consultation_prescriptions cp
+				WHERE cp.consultation_id = c.id
+			) AS has_prescriptions
 		`).
-		Where("patient_id = ?", patientID).
-		Order("created_at DESC").
+		Where("c.patient_id = ?", patientID).
+		Order("c.created_at DESC").
 		Limit(limit).
 		Scan(&items).Error
 

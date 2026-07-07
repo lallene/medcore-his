@@ -73,6 +73,11 @@ type MedicalSummaryConsultationItem struct {
 	Observations string    `json:"observations"`
 	Treatment    string    `json:"treatment"`
 	CreatedAt    time.Time `json:"created_at"`
+
+	HasExams                bool `json:"has_exams"`
+	HasPrescriptions        bool `json:"has_prescriptions"`
+	SickLeaveRequired       bool `json:"sick_leave_required"`
+	HospitalizationRequired bool `json:"hospitalization_required"`
 }
 
 type MedicalSummaryDocumentItem struct {
