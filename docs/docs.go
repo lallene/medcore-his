@@ -96,6 +96,122 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/consultations/physical-exam-areas": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne le référentiel des systèmes, appareils, organes et zones utilisables dans l'examen physique.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations - Référentiels"
+                ],
+                "summary": "Liste des zones d'examen physique",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/consultations.PhysicalExamArea"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/consultations/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Met à jour une consultation non terminée. Les antécédents peuvent être remplacés. Les examens physiques et traitements administrés sont remplacés uniquement lorsqu'ils sont présents dans la requête ; un tableau vide supprime les éléments existants.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Consultations"
+                ],
+                "summary": "Modifier une consultation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID de la consultation",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Données à modifier",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/consultations.UpdateConsultationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/consultations.Consultation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authentifie un utilisateur MedCore et retourne un JWT.",
@@ -508,49 +624,6 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/consultations.Consultation"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consultations"
-                ],
-                "summary": "Modifier une consultation médicale",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID consultation",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Consultation",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/consultations.UpdateConsultationRequest"
-                        }
                     }
                 ],
                 "responses": {
@@ -1055,6 +1128,443 @@ const docTemplate = `{
                 }
             }
         },
+        "/medical-records/{recordId}/alerts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ajoute une alerte active au dossier médical du patient.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Ajouter une alerte médicale",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du dossier médical",
+                        "name": "recordId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Alerte médicale",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.CreateAlertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.MedicalAlert"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/medical-records/{recordId}/allergies": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ajoute une allergie au dossier médical et crée automatiquement un événement dans la chronologie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Ajouter une allergie",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du dossier médical",
+                        "name": "recordId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Informations sur l'allergie",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.CreateAllergyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.Allergy"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/medical-records/{recordId}/histories": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ajoute un antécédent au dossier médical et crée automatiquement un événement dans la chronologie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Ajouter un antécédent médical",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du dossier médical",
+                        "name": "recordId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Antécédent médical",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.CreateMedicalHistoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.MedicalHistory"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/medical-records/{recordId}/overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne les informations générales du dossier, les alertes, allergies, antécédents et dernières constantes.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Obtenir la vue d'ensemble d'un dossier médical",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du dossier médical",
+                        "name": "recordId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.MedicalRecordOverviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/medical-records/{recordId}/timeline": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne tous les événements médicaux du patient dans l'ordre chronologique inverse.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Obtenir la chronologie médicale",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du dossier médical",
+                        "name": "recordId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/medical_records.MedicalTimelineEvent"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/medical-records/{recordId}/vital-signs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne l'historique des constantes vitales du patient, de la plus récente à la plus ancienne.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Lister les constantes vitales",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du dossier médical",
+                        "name": "recordId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/medical_records.VitalSign"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Enregistre les constantes du patient, calcule automatiquement l'IMC et ajoute un événement dans la chronologie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Enregistrer les constantes vitales",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du dossier médical",
+                        "name": "recordId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Constantes vitales",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.CreateVitalSignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.VitalSign"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/patients": {
             "post": {
                 "security": [
@@ -1359,6 +1869,116 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/patients/{id}/medical-record": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne le dossier médical du patient. S'il n'existe pas encore, il est créé automatiquement.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Récupérer ou créer le dossier médical d'un patient",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du patient",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.MedicalRecord"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/patients/{id}/medical-summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retourne le dossier médical, les alertes, les allergies, les antécédents, les dernières constantes et la chronologie récente.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Medical Records"
+                ],
+                "summary": "Obtenir le résumé médical complet d'un patient",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID du patient",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/medical_records.PatientMedicalSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2371,6 +2991,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/consultations.MedicalExam"
                     }
                 },
+                "gynecoObstetricHistories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.ConsultationGynecoObstetricHistory"
+                    }
+                },
                 "hospitalizationDuration": {
                     "type": "integer"
                 },
@@ -2408,6 +3034,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/consultations.ConsultationPrescription"
                     }
                 },
+                "previousMedications": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.ConsultationPreviousMedication"
+                    }
+                },
                 "reasons": {
                     "type": "array",
                     "items": {
@@ -2434,6 +3066,12 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "surgicalHistories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.ConsultationSurgicalHistory"
+                    }
                 },
                 "treatment": {
                     "type": "string"
@@ -2534,9 +3172,44 @@ const docTemplate = `{
                 }
             }
         },
+        "consultations.ConsultationGynecoObstetricHistory": {
+            "type": "object",
+            "properties": {
+                "consultationId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "eventDate": {
+                    "type": "string"
+                },
+                "eventType": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "consultations.ConsultationPhysicalExam": {
             "type": "object",
             "properties": {
+                "area": {
+                    "$ref": "#/definitions/consultations.PhysicalExamArea"
+                },
+                "areaId": {
+                    "type": "integer"
+                },
                 "consultationId": {
                     "type": "integer"
                 },
@@ -2547,9 +3220,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "observation": {
-                    "type": "string"
-                },
-                "organ": {
                     "type": "string"
                 },
                 "updatedAt": {
@@ -2601,6 +3271,44 @@ const docTemplate = `{
                 }
             }
         },
+        "consultations.ConsultationPreviousMedication": {
+            "type": "object",
+            "properties": {
+                "consultationId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dosage": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instructions": {
+                    "type": "string"
+                },
+                "medicationName": {
+                    "type": "string"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "consultations.ConsultationReason": {
             "type": "object",
             "properties": {
@@ -2617,6 +3325,38 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.ConsultationSurgicalHistory": {
+            "type": "object",
+            "properties": {
+                "complications": {
+                    "type": "string"
+                },
+                "consultationId": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "indication": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "procedureDate": {
+                    "type": "string"
+                },
+                "procedureName": {
+                    "type": "string"
+                },
+                "updatedAt": {
                     "type": "string"
                 }
             }
@@ -2725,6 +3465,12 @@ const docTemplate = `{
                         "type": "integer"
                     }
                 },
+                "gynecoObstetricHistories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.GynecoObstetricHistoryRequest"
+                    }
+                },
                 "hospitalizationDuration": {
                     "type": "integer"
                 },
@@ -2755,6 +3501,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/consultations.PrescriptionRequest"
                     }
                 },
+                "previousMedications": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.PreviousMedicationRequest"
+                    }
+                },
                 "reasonIds": {
                     "type": "array",
                     "items": {
@@ -2769,6 +3521,12 @@ const docTemplate = `{
                 },
                 "sickLeaveRequired": {
                     "type": "boolean"
+                },
+                "surgicalHistories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.SurgicalHistoryRequest"
+                    }
                 },
                 "treatment": {
                     "type": "string"
@@ -2792,6 +3550,26 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.GynecoObstetricHistoryRequest": {
+            "type": "object",
+            "required": [
+                "eventType"
+            ],
+            "properties": {
+                "eventDate": {
+                    "type": "string"
+                },
+                "eventType": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "outcome": {
                     "type": "string"
                 }
             }
@@ -2853,19 +3631,43 @@ const docTemplate = `{
                 }
             }
         },
+        "consultations.PhysicalExamArea": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "consultations.PhysicalExamRequest": {
             "type": "object",
             "required": [
-                "organ"
+                "areaId"
             ],
             "properties": {
-                "observation": {
-                    "type": "string",
-                    "example": "Rythme régulier, absence de souffle"
+                "areaId": {
+                    "type": "integer"
                 },
-                "organ": {
-                    "type": "string",
-                    "example": "Appareil cardiovasculaire"
+                "observation": {
+                    "type": "string"
                 }
             }
         },
@@ -2892,6 +3694,46 @@ const docTemplate = `{
                 }
             }
         },
+        "consultations.PreviousMedicationRequest": {
+            "type": "object",
+            "required": [
+                "presentationId"
+            ],
+            "properties": {
+                "instructions": {
+                    "type": "string"
+                },
+                "presentationId": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "consultations.SurgicalHistoryRequest": {
+            "type": "object",
+            "required": [
+                "procedureName"
+            ],
+            "properties": {
+                "complications": {
+                    "type": "string"
+                },
+                "indication": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "procedureDate": {
+                    "type": "string"
+                },
+                "procedureName": {
+                    "type": "string"
+                }
+            }
+        },
         "consultations.UpdateConsultationRequest": {
             "type": "object",
             "properties": {
@@ -2914,6 +3756,12 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "integer"
+                    }
+                },
+                "gynecoObstetricHistories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.GynecoObstetricHistoryRequest"
                     }
                 },
                 "hospitalizationDuration": {
@@ -2943,6 +3791,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/consultations.PrescriptionRequest"
                     }
                 },
+                "previousMedications": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.PreviousMedicationRequest"
+                    }
+                },
                 "reasonIds": {
                     "type": "array",
                     "items": {
@@ -2957,6 +3811,12 @@ const docTemplate = `{
                 },
                 "sickLeaveRequired": {
                     "type": "boolean"
+                },
+                "surgicalHistories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/consultations.SurgicalHistoryRequest"
+                    }
                 },
                 "treatment": {
                     "type": "string"
@@ -2994,6 +3854,507 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "medical_records.Allergy": {
+            "type": "object",
+            "properties": {
+                "allergen_name": {
+                    "type": "string"
+                },
+                "allergen_type": {
+                    "description": "medication, food, product, other",
+                    "type": "string"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "medical_record_id": {
+                    "type": "integer"
+                },
+                "patient_id": {
+                    "type": "integer"
+                },
+                "reaction": {
+                    "type": "string"
+                },
+                "severity": {
+                    "description": "low, medium, high, critical",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "medical_records.CreateAlertRequest": {
+            "type": "object",
+            "required": [
+                "title",
+                "type"
+            ],
+            "properties": {
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "medical_records.CreateAllergyRequest": {
+            "type": "object",
+            "required": [
+                "allergen_name",
+                "allergen_type"
+            ],
+            "properties": {
+                "allergen_name": {
+                    "type": "string"
+                },
+                "allergen_type": {
+                    "type": "string"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "reaction": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                }
+            }
+        },
+        "medical_records.CreateMedicalHistoryRequest": {
+            "type": "object",
+            "required": [
+                "title",
+                "type"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "medical_records.CreateVitalSignRequest": {
+            "type": "object",
+            "properties": {
+                "blood_glucose": {
+                    "type": "number"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "consultation_id": {
+                    "type": "integer"
+                },
+                "diastolic_bp": {
+                    "type": "integer"
+                },
+                "heart_rate": {
+                    "type": "integer"
+                },
+                "height_cm": {
+                    "type": "number"
+                },
+                "measured_at": {
+                    "type": "string"
+                },
+                "measured_by": {
+                    "type": "integer"
+                },
+                "oxygen_saturation": {
+                    "type": "number"
+                },
+                "pain_score": {
+                    "type": "integer"
+                },
+                "respiratory_rate": {
+                    "type": "integer"
+                },
+                "systolic_bp": {
+                    "type": "integer"
+                },
+                "temperature_c": {
+                    "type": "number"
+                },
+                "waist_circumference_cm": {
+                    "type": "number"
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "medical_records.MedicalAlert": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "medical_record_id": {
+                    "type": "integer"
+                },
+                "patient_id": {
+                    "type": "integer"
+                },
+                "severity": {
+                    "description": "low, medium, high, critical",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "allergy, chronic_disease, pregnancy, anticoagulant, critical_result",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "medical_records.MedicalHistory": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "medical_record_id": {
+                    "type": "integer"
+                },
+                "patient_id": {
+                    "type": "integer"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "active, resolved, unknown",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "medical, surgical, family, chronic, gyneco, pediatric",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "medical_records.MedicalRecord": {
+            "type": "object",
+            "properties": {
+                "alerts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalAlert"
+                    }
+                },
+                "allergies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.Allergy"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "medical_histories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalHistory"
+                    }
+                },
+                "patient_id": {
+                    "type": "integer"
+                },
+                "record_number": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timeline_events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalTimelineEvent"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vital_signs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.VitalSign"
+                    }
+                }
+            }
+        },
+        "medical_records.MedicalRecordOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "alerts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalAlert"
+                    }
+                },
+                "allergies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.Allergy"
+                    }
+                },
+                "last_vital_signs": {
+                    "$ref": "#/definitions/medical_records.VitalSign"
+                },
+                "medical_histories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalHistory"
+                    }
+                },
+                "medical_record": {
+                    "$ref": "#/definitions/medical_records.MedicalRecord"
+                }
+            }
+        },
+        "medical_records.MedicalTimelineEvent": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "department_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "event_date": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "medical_record_id": {
+                    "type": "integer"
+                },
+                "patient_id": {
+                    "type": "integer"
+                },
+                "reference_id": {
+                    "type": "integer"
+                },
+                "reference_type": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "medical_records.PatientMedicalSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "alerts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalAlert"
+                    }
+                },
+                "allergies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.Allergy"
+                    }
+                },
+                "last_vital_signs": {
+                    "$ref": "#/definitions/medical_records.VitalSign"
+                },
+                "medical_histories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalHistory"
+                    }
+                },
+                "medical_record": {
+                    "$ref": "#/definitions/medical_records.MedicalRecord"
+                },
+                "timeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/medical_records.MedicalTimelineEvent"
+                    }
+                }
+            }
+        },
+        "medical_records.VitalSign": {
+            "type": "object",
+            "properties": {
+                "blood_glucose": {
+                    "type": "number"
+                },
+                "bmi": {
+                    "type": "number"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "consultation_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "diastolic_bp": {
+                    "type": "integer"
+                },
+                "heart_rate": {
+                    "type": "integer"
+                },
+                "height_cm": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "measured_at": {
+                    "type": "string"
+                },
+                "measured_by": {
+                    "type": "integer"
+                },
+                "medical_record_id": {
+                    "type": "integer"
+                },
+                "oxygen_saturation": {
+                    "type": "number"
+                },
+                "pain_score": {
+                    "type": "integer"
+                },
+                "patient_id": {
+                    "type": "integer"
+                },
+                "respiratory_rate": {
+                    "type": "integer"
+                },
+                "systolic_bp": {
+                    "type": "integer"
+                },
+                "temperature_c": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "waist_circumference_cm": {
+                    "type": "number"
+                },
+                "weight_kg": {
+                    "type": "number"
                 }
             }
         },

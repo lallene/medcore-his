@@ -145,6 +145,10 @@ definitions:
         items:
           $ref: '#/definitions/consultations.MedicalExam'
         type: array
+      gynecoObstetricHistories:
+        items:
+          $ref: '#/definitions/consultations.ConsultationGynecoObstetricHistory'
+        type: array
       hospitalizationDuration:
         type: integer
       hospitalizationReason:
@@ -170,6 +174,10 @@ definitions:
         items:
           $ref: '#/definitions/consultations.ConsultationPrescription'
         type: array
+      previousMedications:
+        items:
+          $ref: '#/definitions/consultations.ConsultationPreviousMedication'
+        type: array
       reasons:
         items:
           $ref: '#/definitions/consultations.ConsultationReason'
@@ -188,6 +196,10 @@ definitions:
         type: string
       status:
         type: string
+      surgicalHistories:
+        items:
+          $ref: '#/definitions/consultations.ConsultationSurgicalHistory'
+        type: array
       treatment:
         type: string
       updatedAt:
@@ -253,8 +265,31 @@ definitions:
       visitType:
         type: string
     type: object
+  consultations.ConsultationGynecoObstetricHistory:
+    properties:
+      consultationId:
+        type: integer
+      createdAt:
+        type: string
+      eventDate:
+        type: string
+      eventType:
+        type: string
+      id:
+        type: integer
+      notes:
+        type: string
+      outcome:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   consultations.ConsultationPhysicalExam:
     properties:
+      area:
+        $ref: '#/definitions/consultations.PhysicalExamArea'
+      areaId:
+        type: integer
       consultationId:
         type: integer
       createdAt:
@@ -262,8 +297,6 @@ definitions:
       id:
         type: integer
       observation:
-        type: string
-      organ:
         type: string
       updatedAt:
         type: string
@@ -297,6 +330,31 @@ definitions:
       updatedAt:
         type: string
     type: object
+  consultations.ConsultationPreviousMedication:
+    properties:
+      consultationId:
+        type: integer
+      createdAt:
+        type: string
+      dosage:
+        type: string
+      form:
+        type: string
+      id:
+        type: integer
+      instructions:
+        type: string
+      medicationName:
+        type: string
+      presentationId:
+        type: integer
+      route:
+        type: string
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   consultations.ConsultationReason:
     properties:
       category:
@@ -308,6 +366,27 @@ definitions:
       isActive:
         type: boolean
       name:
+        type: string
+    type: object
+  consultations.ConsultationSurgicalHistory:
+    properties:
+      complications:
+        type: string
+      consultationId:
+        type: integer
+      createdAt:
+        type: string
+      id:
+        type: integer
+      indication:
+        type: string
+      notes:
+        type: string
+      procedureDate:
+        type: string
+      procedureName:
+        type: string
+      updatedAt:
         type: string
     type: object
   consultations.ConsultationVitals:
@@ -376,6 +455,10 @@ definitions:
         items:
           type: integer
         type: array
+      gynecoObstetricHistories:
+        items:
+          $ref: '#/definitions/consultations.GynecoObstetricHistoryRequest'
+        type: array
       hospitalizationDuration:
         type: integer
       hospitalizationReason:
@@ -396,6 +479,10 @@ definitions:
         items:
           $ref: '#/definitions/consultations.PrescriptionRequest'
         type: array
+      previousMedications:
+        items:
+          $ref: '#/definitions/consultations.PreviousMedicationRequest'
+        type: array
       reasonIds:
         items:
           type: integer
@@ -406,6 +493,10 @@ definitions:
         type: integer
       sickLeaveRequired:
         type: boolean
+      surgicalHistories:
+        items:
+          $ref: '#/definitions/consultations.SurgicalHistoryRequest'
+        type: array
       treatment:
         type: string
       vitals:
@@ -425,6 +516,19 @@ definitions:
     required:
     - code
     - name
+    type: object
+  consultations.GynecoObstetricHistoryRequest:
+    properties:
+      eventDate:
+        type: string
+      eventType:
+        type: string
+      notes:
+        type: string
+      outcome:
+        type: string
+    required:
+    - eventType
     type: object
   consultations.MedicalExam:
     properties:
@@ -463,16 +567,31 @@ definitions:
       url:
         type: string
     type: object
+  consultations.PhysicalExamArea:
+    properties:
+      category:
+        type: string
+      code:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      name:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   consultations.PhysicalExamRequest:
     properties:
+      areaId:
+        type: integer
       observation:
-        example: Rythme régulier, absence de souffle
-        type: string
-      organ:
-        example: Appareil cardiovasculaire
         type: string
     required:
-    - organ
+    - areaId
     type: object
   consultations.PrescriptionRequest:
     properties:
@@ -490,6 +609,32 @@ definitions:
     - presentationId
     - quantity
     type: object
+  consultations.PreviousMedicationRequest:
+    properties:
+      instructions:
+        type: string
+      presentationId:
+        type: integer
+      status:
+        type: string
+    required:
+    - presentationId
+    type: object
+  consultations.SurgicalHistoryRequest:
+    properties:
+      complications:
+        type: string
+      indication:
+        type: string
+      notes:
+        type: string
+      procedureDate:
+        type: string
+      procedureName:
+        type: string
+    required:
+    - procedureName
+    type: object
   consultations.UpdateConsultationRequest:
     properties:
       administeredTreatments:
@@ -505,6 +650,10 @@ definitions:
       examIds:
         items:
           type: integer
+        type: array
+      gynecoObstetricHistories:
+        items:
+          $ref: '#/definitions/consultations.GynecoObstetricHistoryRequest'
         type: array
       hospitalizationDuration:
         type: integer
@@ -524,6 +673,10 @@ definitions:
         items:
           $ref: '#/definitions/consultations.PrescriptionRequest'
         type: array
+      previousMedications:
+        items:
+          $ref: '#/definitions/consultations.PreviousMedicationRequest'
+        type: array
       reasonIds:
         items:
           type: integer
@@ -534,6 +687,10 @@ definitions:
         type: integer
       sickLeaveRequired:
         type: boolean
+      surgicalHistories:
+        items:
+          $ref: '#/definitions/consultations.SurgicalHistoryRequest'
+        type: array
       treatment:
         type: string
       vitals:
@@ -558,6 +715,339 @@ definitions:
         type: boolean
       name:
         type: string
+    type: object
+  medical_records.Allergy:
+    properties:
+      allergen_name:
+        type: string
+      allergen_type:
+        description: medication, food, product, other
+        type: string
+      comment:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      medical_record_id:
+        type: integer
+      patient_id:
+        type: integer
+      reaction:
+        type: string
+      severity:
+        description: low, medium, high, critical
+        type: string
+      updated_at:
+        type: string
+    type: object
+  medical_records.CreateAlertRequest:
+    properties:
+      created_by:
+        type: integer
+      description:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+    required:
+    - title
+    - type
+    type: object
+  medical_records.CreateAllergyRequest:
+    properties:
+      allergen_name:
+        type: string
+      allergen_type:
+        type: string
+      comment:
+        type: string
+      created_by:
+        type: integer
+      reaction:
+        type: string
+      severity:
+        type: string
+    required:
+    - allergen_name
+    - allergen_type
+    type: object
+  medical_records.CreateMedicalHistoryRequest:
+    properties:
+      comment:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      end_date:
+        type: string
+      severity:
+        type: string
+      start_date:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+    required:
+    - title
+    - type
+    type: object
+  medical_records.CreateVitalSignRequest:
+    properties:
+      blood_glucose:
+        type: number
+      comment:
+        type: string
+      consultation_id:
+        type: integer
+      diastolic_bp:
+        type: integer
+      heart_rate:
+        type: integer
+      height_cm:
+        type: number
+      measured_at:
+        type: string
+      measured_by:
+        type: integer
+      oxygen_saturation:
+        type: number
+      pain_score:
+        type: integer
+      respiratory_rate:
+        type: integer
+      systolic_bp:
+        type: integer
+      temperature_c:
+        type: number
+      waist_circumference_cm:
+        type: number
+      weight_kg:
+        type: number
+    type: object
+  medical_records.MedicalAlert:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      medical_record_id:
+        type: integer
+      patient_id:
+        type: integer
+      severity:
+        description: low, medium, high, critical
+        type: string
+      title:
+        type: string
+      type:
+        description: allergy, chronic_disease, pregnancy, anticoagulant, critical_result
+        type: string
+      updated_at:
+        type: string
+    type: object
+  medical_records.MedicalHistory:
+    properties:
+      comment:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      end_date:
+        type: string
+      id:
+        type: integer
+      medical_record_id:
+        type: integer
+      patient_id:
+        type: integer
+      severity:
+        type: string
+      start_date:
+        type: string
+      status:
+        description: active, resolved, unknown
+        type: string
+      title:
+        type: string
+      type:
+        description: medical, surgical, family, chronic, gyneco, pediatric
+        type: string
+      updated_at:
+        type: string
+    type: object
+  medical_records.MedicalRecord:
+    properties:
+      alerts:
+        items:
+          $ref: '#/definitions/medical_records.MedicalAlert'
+        type: array
+      allergies:
+        items:
+          $ref: '#/definitions/medical_records.Allergy'
+        type: array
+      created_at:
+        type: string
+      id:
+        type: integer
+      medical_histories:
+        items:
+          $ref: '#/definitions/medical_records.MedicalHistory'
+        type: array
+      patient_id:
+        type: integer
+      record_number:
+        type: string
+      status:
+        type: string
+      timeline_events:
+        items:
+          $ref: '#/definitions/medical_records.MedicalTimelineEvent'
+        type: array
+      updated_at:
+        type: string
+      vital_signs:
+        items:
+          $ref: '#/definitions/medical_records.VitalSign'
+        type: array
+    type: object
+  medical_records.MedicalRecordOverviewResponse:
+    properties:
+      alerts:
+        items:
+          $ref: '#/definitions/medical_records.MedicalAlert'
+        type: array
+      allergies:
+        items:
+          $ref: '#/definitions/medical_records.Allergy'
+        type: array
+      last_vital_signs:
+        $ref: '#/definitions/medical_records.VitalSign'
+      medical_histories:
+        items:
+          $ref: '#/definitions/medical_records.MedicalHistory'
+        type: array
+      medical_record:
+        $ref: '#/definitions/medical_records.MedicalRecord'
+    type: object
+  medical_records.MedicalTimelineEvent:
+    properties:
+      category:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      department_id:
+        type: integer
+      description:
+        type: string
+      event_date:
+        type: string
+      event_type:
+        type: string
+      id:
+        type: integer
+      medical_record_id:
+        type: integer
+      patient_id:
+        type: integer
+      reference_id:
+        type: integer
+      reference_type:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
+    type: object
+  medical_records.PatientMedicalSummaryResponse:
+    properties:
+      alerts:
+        items:
+          $ref: '#/definitions/medical_records.MedicalAlert'
+        type: array
+      allergies:
+        items:
+          $ref: '#/definitions/medical_records.Allergy'
+        type: array
+      last_vital_signs:
+        $ref: '#/definitions/medical_records.VitalSign'
+      medical_histories:
+        items:
+          $ref: '#/definitions/medical_records.MedicalHistory'
+        type: array
+      medical_record:
+        $ref: '#/definitions/medical_records.MedicalRecord'
+      timeline:
+        items:
+          $ref: '#/definitions/medical_records.MedicalTimelineEvent'
+        type: array
+    type: object
+  medical_records.VitalSign:
+    properties:
+      blood_glucose:
+        type: number
+      bmi:
+        type: number
+      comment:
+        type: string
+      consultation_id:
+        type: integer
+      created_at:
+        type: string
+      diastolic_bp:
+        type: integer
+      heart_rate:
+        type: integer
+      height_cm:
+        type: number
+      id:
+        type: integer
+      measured_at:
+        type: string
+      measured_by:
+        type: integer
+      medical_record_id:
+        type: integer
+      oxygen_saturation:
+        type: number
+      pain_score:
+        type: integer
+      patient_id:
+        type: integer
+      respiratory_rate:
+        type: integer
+      systolic_bp:
+        type: integer
+      temperature_c:
+        type: number
+      updated_at:
+        type: string
+      waist_circumference_cm:
+        type: number
+      weight_kg:
+        type: number
     type: object
   openapi.ErrorDetail:
     properties:
@@ -1167,6 +1657,86 @@ paths:
       summary: Créer une consultation
       tags:
       - Consultations
+  /api/consultations/{id}:
+    put:
+      consumes:
+      - application/json
+      description: Met à jour une consultation non terminée. Les antécédents peuvent
+        être remplacés. Les examens physiques et traitements administrés sont remplacés
+        uniquement lorsqu'ils sont présents dans la requête ; un tableau vide supprime
+        les éléments existants.
+      parameters:
+      - description: ID de la consultation
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Données à modifier
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/consultations.UpdateConsultationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/consultations.Consultation'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Modifier une consultation
+      tags:
+      - Consultations
+  /api/consultations/physical-exam-areas:
+    get:
+      description: Retourne le référentiel des systèmes, appareils, organes et zones
+        utilisables dans l'examen physique.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/consultations.PhysicalExamArea'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Liste des zones d'examen physique
+      tags:
+      - Consultations - Référentiels
   /auth/login:
     post:
       consumes:
@@ -1215,33 +1785,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Détail d'une consultation médicale
-      tags:
-      - Consultations
-    put:
-      consumes:
-      - application/json
-      parameters:
-      - description: ID consultation
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Consultation
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/consultations.UpdateConsultationRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/consultations.Consultation'
-      security:
-      - BearerAuth: []
-      summary: Modifier une consultation médicale
       tags:
       - Consultations
   /consultations/{id}/exam-request/pdf:
@@ -1774,6 +2317,299 @@ paths:
       summary: Modifier une compagnie d'assurance
       tags:
       - Insurance Companies
+  /medical-records/{recordId}/alerts:
+    post:
+      consumes:
+      - application/json
+      description: Ajoute une alerte active au dossier médical du patient.
+      parameters:
+      - description: ID du dossier médical
+        in: path
+        name: recordId
+        required: true
+        type: integer
+      - description: Alerte médicale
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/medical_records.CreateAlertRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/medical_records.MedicalAlert'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ajouter une alerte médicale
+      tags:
+      - Medical Records
+  /medical-records/{recordId}/allergies:
+    post:
+      consumes:
+      - application/json
+      description: Ajoute une allergie au dossier médical et crée automatiquement
+        un événement dans la chronologie.
+      parameters:
+      - description: ID du dossier médical
+        in: path
+        name: recordId
+        required: true
+        type: integer
+      - description: Informations sur l'allergie
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/medical_records.CreateAllergyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/medical_records.Allergy'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ajouter une allergie
+      tags:
+      - Medical Records
+  /medical-records/{recordId}/histories:
+    post:
+      consumes:
+      - application/json
+      description: Ajoute un antécédent au dossier médical et crée automatiquement
+        un événement dans la chronologie.
+      parameters:
+      - description: ID du dossier médical
+        in: path
+        name: recordId
+        required: true
+        type: integer
+      - description: Antécédent médical
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/medical_records.CreateMedicalHistoryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/medical_records.MedicalHistory'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ajouter un antécédent médical
+      tags:
+      - Medical Records
+  /medical-records/{recordId}/overview:
+    get:
+      description: Retourne les informations générales du dossier, les alertes, allergies,
+        antécédents et dernières constantes.
+      parameters:
+      - description: ID du dossier médical
+        in: path
+        name: recordId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/medical_records.MedicalRecordOverviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Obtenir la vue d'ensemble d'un dossier médical
+      tags:
+      - Medical Records
+  /medical-records/{recordId}/timeline:
+    get:
+      description: Retourne tous les événements médicaux du patient dans l'ordre chronologique
+        inverse.
+      parameters:
+      - description: ID du dossier médical
+        in: path
+        name: recordId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/medical_records.MedicalTimelineEvent'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Obtenir la chronologie médicale
+      tags:
+      - Medical Records
+  /medical-records/{recordId}/vital-signs:
+    get:
+      description: Retourne l'historique des constantes vitales du patient, de la
+        plus récente à la plus ancienne.
+      parameters:
+      - description: ID du dossier médical
+        in: path
+        name: recordId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/medical_records.VitalSign'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Lister les constantes vitales
+      tags:
+      - Medical Records
+    post:
+      consumes:
+      - application/json
+      description: Enregistre les constantes du patient, calcule automatiquement l'IMC
+        et ajoute un événement dans la chronologie.
+      parameters:
+      - description: ID du dossier médical
+        in: path
+        name: recordId
+        required: true
+        type: integer
+      - description: Constantes vitales
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/medical_records.CreateVitalSignRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/medical_records.VitalSign'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Enregistrer les constantes vitales
+      tags:
+      - Medical Records
   /patients:
     post:
       consumes:
@@ -1974,6 +2810,80 @@ paths:
       summary: Historique des consultations d'un patient
       tags:
       - Patient 360
+  /patients/{id}/medical-record:
+    get:
+      description: Retourne le dossier médical du patient. S'il n'existe pas encore,
+        il est créé automatiquement.
+      parameters:
+      - description: ID du patient
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/medical_records.MedicalRecord'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Récupérer ou créer le dossier médical d'un patient
+      tags:
+      - Medical Records
+  /patients/{id}/medical-summary:
+    get:
+      description: Retourne le dossier médical, les alertes, les allergies, les antécédents,
+        les dernières constantes et la chronologie récente.
+      parameters:
+      - description: ID du patient
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/medical_records.PatientMedicalSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Obtenir le résumé médical complet d'un patient
+      tags:
+      - Medical Records
   /pharmacy/batches:
     get:
       produces:
