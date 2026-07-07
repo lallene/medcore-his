@@ -67,5 +67,5 @@ var Clinic = ClinicBranding{
 		B: 240,
 	},
 
-	LogoPath: "internal/core/branding/assets/logo.png",
+	LogoPath: "internal/core/branding/assets/logo.jpg",
 }
