@@ -39,6 +39,7 @@ func formatDatePDF(value *time.Time) string {
 func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
+	drawClinicWatermark(pdf)
 
 	pdf.SetFont("Helvetica", "B", 16)
 	pdf.Cell(190, 10, pdfText("FICHE DE REPOS MALADIE"))
@@ -102,6 +103,7 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 func GenerateExamRequestPDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
+	drawClinicWatermark(pdf)
 
 	pdf.SetFont("Helvetica", "B", 16)
 	pdf.Cell(190, 10, pdfText("DEMANDE / AUTORISATION D'EXAMENS"))
@@ -175,7 +177,12 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(10, 10, 10)
 	pdf.SetAutoPageBreak(true, 28)
+	pdf.SetHeaderFunc(func() {
+		drawClinicWatermark(pdf)
+	})
+
 	pdf.AddPage()
+	drawClinicWatermark(pdf)
 
 	reference := branding.DocumentReference(
 		branding.DocumentTypePrescription,
@@ -351,6 +358,7 @@ func GenerateConsultationReportPDF(c *Consultation) ([]byte, error) {
 	pdf.SetMargins(10, 10, 10)
 	pdf.SetAutoPageBreak(true, 28)
 	pdf.AddPage()
+	drawClinicWatermark(pdf)
 
 	reference := branding.DocumentReference(
 		branding.DocumentTypeConsultationReport,
@@ -616,6 +624,7 @@ func patientBirthOrAge(c *Consultation) string {
 func GenerateHospitalizationPDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
+	drawClinicWatermark(pdf)
 
 	pdf.SetFont("Helvetica", "B", 16)
 	pdf.Cell(190, 10, pdfText("FICHE D'HOSPITALISATION"))

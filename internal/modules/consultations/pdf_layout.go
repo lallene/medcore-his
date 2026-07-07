@@ -26,7 +26,7 @@ func drawClinicHeader(pdf *gofpdf.Fpdf) {
 			0,
 			false,
 			gofpdf.ImageOptions{
-				ImageType: "PNG",
+				ImageType: "JPG",
 				ReadDpi:   true,
 			},
 			0,
@@ -303,4 +303,36 @@ func drawClinicFooter(pdf *gofpdf.Fpdf) {
 		0,
 		"",
 	)
+}
+func drawClinicWatermark(pdf *gofpdf.Fpdf) {
+	clinic := branding.Clinic
+
+	if _, err := os.Stat(clinic.LogoPath); err != nil {
+		return
+	}
+
+	pageWidth, pageHeight := pdf.GetPageSize()
+
+	watermarkWidth := 115.0
+	x := (pageWidth - watermarkWidth) / 2
+	y := (pageHeight - 85) / 2
+
+	pdf.SetAlpha(0.06, "Normal")
+
+	pdf.ImageOptions(
+		clinic.LogoPath,
+		x,
+		y,
+		watermarkWidth,
+		0,
+		false,
+		gofpdf.ImageOptions{
+			ImageType: "JPG",
+			ReadDpi:   true,
+		},
+		0,
+		"",
+	)
+
+	pdf.SetAlpha(1, "Normal")
 }
