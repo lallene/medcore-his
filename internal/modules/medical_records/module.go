@@ -17,6 +17,7 @@ func (Module) Register(app *application.Application) {
 		&Allergy{},
 		&MedicalHistory{},
 		&VitalSign{},
+		&MedicalTimelineEvent{},
 	)
 
 	repository := NewRepository(app.DB)

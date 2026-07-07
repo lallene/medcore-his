@@ -19,6 +19,9 @@ type Repository interface {
 	CreateVitalSign(vital *VitalSign) error
 	GetLastVitalSign(recordID uint) (*VitalSign, error)
 	ListVitalSigns(recordID uint) ([]VitalSign, error)
+
+	CreateTimelineEvent(event *MedicalTimelineEvent) error
+	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
 }
 
 type repository struct {
@@ -115,4 +118,19 @@ func (r *repository) ListVitalSigns(recordID uint) ([]VitalSign, error) {
 		Order("measured_at DESC").
 		Find(&vitals).Error
 	return vitals, err
+}
+
+func (r *repository) CreateTimelineEvent(event *MedicalTimelineEvent) error {
+	return r.db.Create(event).Error
+}
+
+func (r *repository) ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error) {
+	var events []MedicalTimelineEvent
+
+	err := r.db.
+		Where("medical_record_id = ?", recordID).
+		Order("event_date DESC, id DESC").
+		Find(&events).Error
+
+	return events, err
 }

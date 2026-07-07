@@ -17,6 +17,7 @@ type Service interface {
 	AddAllergy(recordID uint, req CreateAllergyRequest) (*Allergy, error)
 	AddMedicalHistory(recordID uint, req CreateMedicalHistoryRequest) (*MedicalHistory, error)
 	AddVitalSign(recordID uint, req CreateVitalSignRequest) (*VitalSign, error)
+	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
 
 	ListVitalSigns(recordID uint) ([]VitalSign, error)
 }
@@ -136,6 +137,22 @@ func (s *service) AddAllergy(recordID uint, req CreateAllergyRequest) (*Allergy,
 		return nil, err
 	}
 
+	_ = s.createTimelineEvent(
+		record,
+		"allergy_added",
+		"allergy",
+		"Allergie ajoutée",
+		fmt.Sprintf(
+			"%s — réaction : %s",
+			allergy.AllergenName,
+			allergy.Reaction,
+		),
+		"allergy",
+		allergy.ID,
+		allergy.Severity,
+		req.CreatedBy,
+	)
+
 	return allergy, nil
 }
 
@@ -170,6 +187,17 @@ func (s *service) AddMedicalHistory(recordID uint, req CreateMedicalHistoryReque
 	if err := s.repo.CreateMedicalHistory(history); err != nil {
 		return nil, err
 	}
+	_ = s.createTimelineEvent(
+		record,
+		"medical_history_added",
+		"medical_history",
+		"Antécédent ajouté",
+		history.Title,
+		"medical_history",
+		history.ID,
+		history.Severity,
+		req.CreatedBy,
+	)
 
 	return history, nil
 }
@@ -215,6 +243,26 @@ func (s *service) AddVitalSign(recordID uint, req CreateVitalSignRequest) (*Vita
 		return nil, err
 	}
 
+	description := fmt.Sprintf(
+		"TA %s — FC %s — Température %s — SpO2 %s",
+		formatBloodPressure(vital.SystolicBP, vital.DiastolicBP),
+		formatIntValue(vital.HeartRate, " bpm"),
+		formatFloatValue(vital.TemperatureC, " °C"),
+		formatFloatValue(vital.OxygenSaturation, " %"),
+	)
+
+	_ = s.createTimelineEvent(
+		record,
+		"vital_signs_recorded",
+		"vital_signs",
+		"Constantes enregistrées",
+		description,
+		"vital_sign",
+		vital.ID,
+		"info",
+		req.MeasuredBy,
+	)
+
 	return vital, nil
 }
 
@@ -224,4 +272,64 @@ func (s *service) ListVitalSigns(recordID uint) ([]VitalSign, error) {
 
 func generateRecordNumber(patientID uint) string {
 	return fmt.Sprintf("DM-%d-%d", time.Now().Year(), patientID)
+}
+
+func (s *service) createTimelineEvent(
+	record *MedicalRecord,
+	eventType string,
+	category string,
+	title string,
+	description string,
+	referenceType string,
+	referenceID uint,
+	severity string,
+	createdBy uint,
+) error {
+	event := &MedicalTimelineEvent{
+		MedicalRecordID: record.ID,
+		PatientID:       record.PatientID,
+		EventType:       eventType,
+		Category:        category,
+		Title:           title,
+		Description:     description,
+		ReferenceType:   referenceType,
+		ReferenceID:     &referenceID,
+		Severity:        severity,
+		EventDate:       time.Now(),
+		CreatedBy:       createdBy,
+	}
+
+	return s.repo.CreateTimelineEvent(event)
+}
+
+func formatBloodPressure(systolic, diastolic *int) string {
+	if systolic == nil || diastolic == nil {
+		return "non renseignée"
+	}
+
+	return fmt.Sprintf("%d/%d mmHg", *systolic, *diastolic)
+}
+
+func formatIntValue(value *int, unit string) string {
+	if value == nil {
+		return "non renseigné"
+	}
+
+	return fmt.Sprintf("%d%s", *value, unit)
+}
+
+func formatFloatValue(value *float64, unit string) string {
+	if value == nil {
+		return "non renseigné"
+	}
+
+	return fmt.Sprintf("%.1f%s", *value, unit)
+}
+
+func (s *service) ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error) {
+	if _, err := s.repo.GetMedicalRecordByID(recordID); err != nil {
+		return nil, err
+	}
+
+	return s.repo.ListTimelineEvents(recordID)
 }

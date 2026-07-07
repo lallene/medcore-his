@@ -150,3 +150,23 @@ func (h *Handler) ListVitalSigns(c *gin.Context) {
 
 	c.JSON(http.StatusOK, vitals)
 }
+
+func (h *Handler) ListTimelineEvents(c *gin.Context) {
+	recordID, err := strconv.ParseUint(c.Param("recordId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "recordId invalide",
+		})
+		return
+	}
+
+	events, err := h.service.ListTimelineEvents(uint(recordID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, events)
+}

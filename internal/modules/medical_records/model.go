@@ -10,10 +10,11 @@ type MedicalRecord struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 
-	Alerts           []MedicalAlert   `json:"alerts,omitempty" gorm:"foreignKey:MedicalRecordID"`
-	Allergies        []Allergy        `json:"allergies,omitempty" gorm:"foreignKey:MedicalRecordID"`
-	MedicalHistories []MedicalHistory `json:"medical_histories,omitempty" gorm:"foreignKey:MedicalRecordID"`
-	VitalSigns       []VitalSign      `json:"vital_signs,omitempty" gorm:"foreignKey:MedicalRecordID"`
+	Alerts           []MedicalAlert         `json:"alerts,omitempty" gorm:"foreignKey:MedicalRecordID"`
+	Allergies        []Allergy              `json:"allergies,omitempty" gorm:"foreignKey:MedicalRecordID"`
+	MedicalHistories []MedicalHistory       `json:"medical_histories,omitempty" gorm:"foreignKey:MedicalRecordID"`
+	VitalSigns       []VitalSign            `json:"vital_signs,omitempty" gorm:"foreignKey:MedicalRecordID"`
+	TimelineEvents   []MedicalTimelineEvent `json:"timeline_events,omitempty" gorm:"foreignKey:MedicalRecordID"`
 }
 
 type MedicalAlert struct {
@@ -92,4 +93,27 @@ type VitalSign struct {
 	MeasuredAt time.Time `json:"measured_at"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type MedicalTimelineEvent struct {
+	ID              uint `json:"id" gorm:"primaryKey"`
+	MedicalRecordID uint `json:"medical_record_id" gorm:"not null;index"`
+	PatientID       uint `json:"patient_id" gorm:"not null;index"`
+
+	EventType string `json:"event_type" gorm:"not null;index"`
+	Category  string `json:"category" gorm:"not null;index"`
+
+	Title       string `json:"title" gorm:"not null"`
+	Description string `json:"description"`
+
+	DepartmentID *uint `json:"department_id" gorm:"index"`
+
+	ReferenceType string `json:"reference_type" gorm:"index"`
+	ReferenceID   *uint  `json:"reference_id" gorm:"index"`
+
+	Severity string `json:"severity" gorm:"default:info"`
+
+	EventDate time.Time `json:"event_date" gorm:"not null;index"`
+	CreatedBy uint      `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
 }
