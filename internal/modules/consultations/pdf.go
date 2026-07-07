@@ -178,6 +178,8 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 	pdf.SetMargins(10, 10, 10)
 	pdf.SetAutoPageBreak(true, 28)
 
+	registerClinicLogo(pdf)
+
 	pdf.SetHeaderFunc(func() {
 		drawClinicWatermark(pdf)
 	})

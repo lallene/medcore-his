@@ -1,5 +1,10 @@
 package branding
 
+import _ "embed"
+
+//go:embed assets/logo.jpg
+var LogoBytes []byte
+
 type RGB struct {
 	R int
 	G int
