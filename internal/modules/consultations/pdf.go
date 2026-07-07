@@ -182,7 +182,7 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Consultation N° : %d", c.ID)))
 	pdf.Ln(8)
 
-	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Patient ID : %d", c.PatientID)))
+	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Patient : %s", patientFullName(c))))
 	pdf.Ln(8)
 
 	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Médecin : %s", c.DoctorName)))
@@ -252,6 +252,37 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 
 	return buf.Bytes(), err
 }
+func consultationStatusLabel(status string) string {
+	switch status {
+	case "draft":
+		return "Brouillon"
+	case "in_progress":
+		return "En cours"
+	case "completed":
+		return "Terminée"
+	case "cancelled":
+		return "Annulée"
+	default:
+		return status
+	}
+}
+
+func formatDateTimePDF(value time.Time) string {
+	return value.Local().Format("02/01/2006 15:04")
+}
+
+func hasConsultationVitals(c *Consultation) bool {
+	return c.Vitals.Temperature != nil ||
+		c.Vitals.BloodPressureSystolic != nil ||
+		c.Vitals.BloodPressureDiastolic != nil ||
+		c.Vitals.HeartRate != nil ||
+		c.Vitals.RespiratoryRate != nil ||
+		c.Vitals.OxygenSaturation != nil ||
+		c.Vitals.Weight != nil ||
+		c.Vitals.Height != nil ||
+		c.Vitals.BloodGlucose != nil ||
+		c.Vitals.PainScore != nil
+}
 
 func GenerateConsultationReportPDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
@@ -291,114 +322,80 @@ func GenerateConsultationReportPDF(c *Consultation) ([]byte, error) {
 	)
 	pdf.Ln(7)
 
-	// Informations générales
-	sectionTitle("INFORMATIONS GÉNÉRALES")
-
-	addLine("Patient ID :", fmt.Sprintf("%d", c.PatientID))
-	addLine("Médecin :", c.DoctorName)
-	addLine("Service :", c.Service)
-	addLine("Statut :", c.Status)
-	addLine("Créée le :", c.CreatedAt.Format("02/01/2006 15:04"))
-
-	if c.StartedAt != nil {
-		addLine(
-			"Débutée le :",
-			c.StartedAt.Format("02/01/2006 15:04"),
-		)
-	}
-
-	if c.CompletedAt != nil {
-		addLine(
-			"Terminée le :",
-			c.CompletedAt.Format("02/01/2006 15:04"),
-		)
-	}
-
-	if c.CancelledAt != nil {
-		addLine(
-			"Annulée le :",
-			c.CancelledAt.Format("02/01/2006 15:04"),
-		)
-
-		addLine(
-			"Motif annulation :",
-			c.CancellationReason,
-		)
-	}
-
 	// Constantes
-	sectionTitle("CONSTANTES VITALES")
+	if hasConsultationVitals(c) {
+		sectionTitle("CONSTANTES VITALES")
 
-	if c.Vitals.Temperature != nil {
-		addLine(
-			"Température :",
-			fmt.Sprintf("%.1f °C", *c.Vitals.Temperature),
-		)
-	}
+		if c.Vitals.Temperature != nil {
+			addLine(
+				"Température :",
+				fmt.Sprintf("%.1f °C", *c.Vitals.Temperature),
+			)
+		}
 
-	if c.Vitals.BloodPressureSystolic != nil &&
-		c.Vitals.BloodPressureDiastolic != nil {
+		if c.Vitals.BloodPressureSystolic != nil &&
+			c.Vitals.BloodPressureDiastolic != nil {
+			addLine(
+				"Tension artérielle :",
+				fmt.Sprintf(
+					"%d/%d mmHg",
+					*c.Vitals.BloodPressureSystolic,
+					*c.Vitals.BloodPressureDiastolic,
+				),
+			)
+		}
 
-		addLine(
-			"Tension artérielle :",
-			fmt.Sprintf(
-				"%d/%d mmHg",
-				*c.Vitals.BloodPressureSystolic,
-				*c.Vitals.BloodPressureDiastolic,
-			),
-		)
-	}
+		if c.Vitals.HeartRate != nil {
+			addLine(
+				"Fréquence cardiaque :",
+				fmt.Sprintf("%d bpm", *c.Vitals.HeartRate),
+			)
+		}
 
-	if c.Vitals.HeartRate != nil {
-		addLine(
-			"Fréquence cardiaque :",
-			fmt.Sprintf("%d bpm", *c.Vitals.HeartRate),
-		)
-	}
+		if c.Vitals.RespiratoryRate != nil {
+			addLine(
+				"Fréquence respiratoire :",
+				fmt.Sprintf(
+					"%d cycles/min",
+					*c.Vitals.RespiratoryRate,
+				),
+			)
+		}
 
-	if c.Vitals.RespiratoryRate != nil {
-		addLine(
-			"Fréquence respiratoire :",
-			fmt.Sprintf(
-				"%d cycles/min",
-				*c.Vitals.RespiratoryRate,
-			),
-		)
-	}
+		if c.Vitals.OxygenSaturation != nil {
+			addLine(
+				"Saturation O2 :",
+				fmt.Sprintf("%d %%", *c.Vitals.OxygenSaturation),
+			)
+		}
 
-	if c.Vitals.OxygenSaturation != nil {
-		addLine(
-			"Saturation O2 :",
-			fmt.Sprintf("%d %%", *c.Vitals.OxygenSaturation),
-		)
-	}
+		if c.Vitals.Weight != nil {
+			addLine(
+				"Poids :",
+				fmt.Sprintf("%.1f kg", *c.Vitals.Weight),
+			)
+		}
 
-	if c.Vitals.Weight != nil {
-		addLine(
-			"Poids :",
-			fmt.Sprintf("%.1f kg", *c.Vitals.Weight),
-		)
-	}
+		if c.Vitals.Height != nil {
+			addLine(
+				"Taille :",
+				fmt.Sprintf("%.1f cm", *c.Vitals.Height),
+			)
+		}
 
-	if c.Vitals.Height != nil {
-		addLine(
-			"Taille :",
-			fmt.Sprintf("%.1f cm", *c.Vitals.Height),
-		)
-	}
+		if c.Vitals.BloodGlucose != nil {
+			addLine(
+				"Glycémie :",
+				fmt.Sprintf("%.2f", *c.Vitals.BloodGlucose),
+			)
+		}
 
-	if c.Vitals.BloodGlucose != nil {
-		addLine(
-			"Glycémie :",
-			fmt.Sprintf("%.2f", *c.Vitals.BloodGlucose),
-		)
-	}
-
-	if c.Vitals.PainScore != nil {
-		addLine(
-			"Score douleur :",
-			fmt.Sprintf("%d / 10", *c.Vitals.PainScore),
-		)
+		if c.Vitals.PainScore != nil {
+			addLine(
+				"Score douleur :",
+				fmt.Sprintf("%d / 10", *c.Vitals.PainScore),
+			)
+		}
 	}
 
 	// Diagnostic
