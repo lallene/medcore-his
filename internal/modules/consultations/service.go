@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"gorm.io/gorm"
 )
 
@@ -44,11 +45,18 @@ var (
 )
 
 type Service struct {
-	repo *Repository
+	repo                  *Repository
+	medicalRecordsService medical_records.Service
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(
+	repo *Repository,
+	medicalRecordsService medical_records.Service,
+) *Service {
+	return &Service{
+		repo:                  repo,
+		medicalRecordsService: medicalRecordsService,
+	}
 }
 
 func (s *Service) GetReasons() ([]ConsultationReason, error) {
@@ -260,6 +268,18 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 	err = s.repo.Create(consultation)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.medicalRecordsService != nil {
+		err = s.medicalRecordsService.RecordConsultationCreated(
+			consultation.PatientID,
+			consultation.ID,
+			consultation.Service,
+			consultation.DoctorName,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return s.repo.FindByID(consultation.ID)

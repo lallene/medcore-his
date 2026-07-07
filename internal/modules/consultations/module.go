@@ -4,6 +4,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/application"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 )
 
 type Module struct{}
@@ -32,7 +33,17 @@ func (Module) Register(app *application.Application) {
 	SeedPhysicalExamAreas(app.DB)
 
 	repository := NewRepository(app.DB)
-	service := NewService(repository)
+
+	medicalRecordsRepository := medical_records.NewRepository(app.DB)
+	medicalRecordsService := medical_records.NewService(
+		medicalRecordsRepository,
+	)
+
+	service := NewService(
+		repository,
+		medicalRecordsService,
+	)
+
 	handler := NewHandler(service)
 
 	protected := app.API()

@@ -20,6 +20,7 @@ type Service interface {
 	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
 
 	ListVitalSigns(recordID uint) ([]VitalSign, error)
+	RecordConsultationCreated(patientID uint, consultationID uint, department string, doctorName string) error
 }
 
 type service struct {
@@ -332,4 +333,46 @@ func (s *service) ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, err
 	}
 
 	return s.repo.ListTimelineEvents(recordID)
+}
+
+func (s *service) RecordConsultationCreated(
+	patientID uint,
+	consultationID uint,
+	department string,
+	doctorName string,
+) error {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return err
+	}
+
+	title := "Consultation créée"
+
+	description := "Nouvelle consultation"
+
+	if department != "" {
+		description = fmt.Sprintf(
+			"Nouvelle consultation — Service : %s",
+			department,
+		)
+	}
+
+	if doctorName != "" {
+		description += fmt.Sprintf(
+			" — Médecin : %s",
+			doctorName,
+		)
+	}
+
+	return s.createTimelineEvent(
+		record,
+		"consultation_created",
+		"consultation",
+		title,
+		description,
+		"consultation",
+		consultationID,
+		"info",
+		0,
+	)
 }
