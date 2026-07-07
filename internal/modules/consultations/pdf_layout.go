@@ -49,21 +49,63 @@ func drawClinicHeader(pdf *gofpdf.Fpdf) {
 		"",
 	)
 
-	pdf.SetXY(57, 10)
+	pdf.SetXY(55, 10)
 
 	pdf.SetFont("Arial", "B", 14)
-	pdf.SetTextColor(clinic.Primary.R, clinic.Primary.G, clinic.Primary.B)
-	pdf.CellFormat(143, 7, pdfText(strings.ToUpper(clinic.Name)), "", 1, "L", false, 0, "")
+	pdf.SetTextColor(
+		clinic.Primary.R,
+		clinic.Primary.G,
+		clinic.Primary.B,
+	)
 
-	pdf.SetX(57)
+	pdf.CellFormat(
+		145,
+		7,
+		pdfText(strings.ToUpper(clinic.Name)),
+		"",
+		1,
+		"C",
+		false,
+		0,
+		"",
+	)
+
+	pdf.SetX(55)
 	pdf.SetFont("Arial", "", 9)
-	pdf.SetTextColor(clinic.Accent.R, clinic.Accent.G, clinic.Accent.B)
-	pdf.CellFormat(143, 5, pdfText(clinic.Tagline), "", 1, "L", false, 0, "")
+	pdf.SetTextColor(
+		clinic.Accent.R,
+		clinic.Accent.G,
+		clinic.Accent.B,
+	)
 
-	pdf.SetX(57)
+	pdf.CellFormat(
+		145,
+		5,
+		pdfText(clinic.Tagline),
+		"",
+		1,
+		"C",
+		false,
+		0,
+		"",
+	)
+
+	pdf.SetX(55)
 	pdf.SetFont("Arial", "", 7.5)
-	pdf.SetTextColor(clinic.Muted.R, clinic.Muted.G, clinic.Muted.B)
-	pdf.MultiCell(143, 4, pdfText(clinic.Address), "", "L", false)
+	pdf.SetTextColor(
+		clinic.Muted.R,
+		clinic.Muted.G,
+		clinic.Muted.B,
+	)
+
+	pdf.MultiCell(
+		145,
+		4,
+		pdfText(clinic.Address),
+		"",
+		"C",
+		false,
+	)
 
 	pdf.SetY(39)
 	pdf.SetDrawColor(clinic.Accent.R, clinic.Accent.G, clinic.Accent.B)

@@ -102,70 +102,153 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 
 func GenerateExamRequestPDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.SetMargins(10, 10, 10)
+	pdf.SetAutoPageBreak(true, 28)
+
+	registerClinicLogo(pdf)
+
+	pdf.SetHeaderFunc(func() {
+		drawClinicWatermark(pdf)
+	})
+
 	pdf.AddPage()
-	drawClinicWatermark(pdf)
 
-	pdf.SetFont("Helvetica", "B", 16)
-	pdf.Cell(190, 10, pdfText("DEMANDE / AUTORISATION D'EXAMENS"))
-	pdf.Ln(15)
+	reference := branding.DocumentReference(
+		branding.DocumentTypeExamRequest,
+		c.ID,
+		c.CreatedAt,
+	)
 
-	pdf.SetFont("Helvetica", "", 12)
+	drawClinicHeader(pdf)
+	drawDocumentTitle(pdf, "Demande / autorisation d'examens", reference)
 
-	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Consultation N° : %d", c.ID)))
-	pdf.Ln(8)
+	addLine := func(label string, value string) {
+		if value == "" {
+			value = "-"
+		}
 
-	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Patient : %s", patientFullName(c))))
-	pdf.Ln(8)
+		pdf.SetFont("Arial", "B", 9)
+		pdf.SetTextColor(
+			branding.Clinic.Muted.R,
+			branding.Clinic.Muted.G,
+			branding.Clinic.Muted.B,
+		)
+		pdf.CellFormat(48, 6, pdfText(label), "", 0, "L", false, 0, "")
 
-	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Médecin : %s", c.DoctorName)))
-	pdf.Ln(8)
+		pdf.SetFont("Arial", "", 9)
+		setPDFTextColor(pdf)
+		pdf.MultiCell(142, 6, pdfText(value), "", "L", false)
+	}
 
-	pdf.Cell(190, 8, pdfText(fmt.Sprintf("Service : %s", c.Service)))
-	pdf.Ln(12)
+	addParagraph := func(value string) {
+		if value == "" {
+			value = "-"
+		}
 
-	pdf.SetFont("Helvetica", "B", 12)
-	pdf.Cell(190, 8, pdfText("Examens demandés"))
-	pdf.Ln(10)
+		pdf.SetFont("Arial", "", 9)
+		setPDFTextColor(pdf)
+		pdf.MultiCell(190, 6, pdfText(value), "", "L", false)
+	}
 
-	pdf.SetFont("Helvetica", "", 12)
+	drawPDFSectionTitle(pdf, "Informations du patient")
+	addLine("Nom et prénoms :", patientFullName(c))
+	addLine("Date de naissance / âge :", patientBirthOrAge(c))
+
+	if c.Patient.IsAssure && c.Patient.MatriculeAssure != "" {
+		addLine("Matricule assuré :", c.Patient.MatriculeAssure)
+	}
+
+	drawPDFSectionTitle(pdf, "Informations de la demande")
+	addLine("Médecin prescripteur :", c.DoctorName)
+	addLine("Service demandeur :", c.Service)
+	addLine("Date de demande :", formatDateTimePDF(time.Now()))
+	addLine("Consultation :", fmt.Sprintf("N° %d", c.ID))
+
+	drawPDFSectionTitle(pdf, "Examens demandés")
 
 	if len(c.Exams) == 0 {
-		pdf.Cell(190, 8, pdfText("Aucun examen demandé."))
-		pdf.Ln(8)
+		addParagraph("Aucun examen demandé.")
 	} else {
-		for _, exam := range c.Exams {
-			line := fmt.Sprintf("- %s (%s)", exam.Name, exam.Category)
-			pdf.Cell(190, 8, pdfText(line))
-			pdf.Ln(8)
+		for index, exam := range c.Exams {
+			pdf.SetFillColor(245, 248, 252)
+			pdf.SetDrawColor(
+				branding.Clinic.Border.R,
+				branding.Clinic.Border.G,
+				branding.Clinic.Border.B,
+			)
+
+			startY := pdf.GetY()
+			pdf.Rect(10, startY, 190, 9, "FD")
+
+			pdf.SetXY(13, startY+2)
+			pdf.SetFont("Arial", "B", 10)
+			pdf.SetTextColor(
+				branding.Clinic.Primary.R,
+				branding.Clinic.Primary.G,
+				branding.Clinic.Primary.B,
+			)
+
+			pdf.CellFormat(
+				184,
+				5,
+				pdfText(fmt.Sprintf("%d. %s", index+1, exam.Name)),
+				"",
+				1,
+				"L",
+				false,
+				0,
+				"",
+			)
+
+			if exam.Category != "" {
+				addLine("Catégorie :", exam.Category)
+			}
+
+			pdf.Ln(4)
 		}
 	}
 
-	pdf.Ln(8)
-
-	pdf.SetFont("Helvetica", "B", 12)
-	pdf.Cell(190, 8, pdfText("Diagnostic / Renseignement clinique"))
-	pdf.Ln(8)
-
-	pdf.SetFont("Helvetica", "", 12)
-	pdf.MultiCell(190, 8, pdfText(c.Diagnosis), "", "", false)
-	pdf.Ln(8)
+	drawPDFSectionTitle(pdf, "Renseignement clinique")
+	addParagraph(c.Diagnosis)
 
 	if len(c.Reasons) > 0 {
 		var reasonNames []string
+
 		for _, reason := range c.Reasons {
 			reasonNames = append(reasonNames, reason.Name)
 		}
 
-		pdf.SetFont("Helvetica", "", 12)
-		pdf.MultiCell(190, 8, pdfText(strings.Join(reasonNames, ", ")), "", "", false)
-		pdf.Ln(8)
+		drawPDFSectionTitle(pdf, "Motifs associés")
+		addParagraph(strings.Join(reasonNames, ", "))
 	}
 
-	pdf.Cell(190, 8, pdfText("Fait le : "+time.Now().Format("02/01/2006 15:04")))
-	pdf.Ln(20)
+	drawPDFSectionTitle(pdf, "Autorisation")
+	addParagraph(
+		"Le présent document autorise la réalisation des examens médicaux mentionnés ci-dessus dans le cadre de la prise en charge du patient.",
+	)
 
-	pdf.Cell(190, 8, pdfText("Signature et cachet du médecin"))
-	pdf.Ln(15)
+	pdf.Ln(5)
+
+	pdf.SetFont("Arial", "", 8)
+	pdf.SetTextColor(
+		branding.Clinic.Muted.R,
+		branding.Clinic.Muted.G,
+		branding.Clinic.Muted.B,
+	)
+	pdf.CellFormat(
+		190,
+		5,
+		pdfText("Document généré le : "+time.Now().Format("02/01/2006 15:04")),
+		"",
+		1,
+		"L",
+		false,
+		0,
+		"",
+	)
+
+	drawSignatureArea(pdf, c.DoctorName)
+	drawClinicFooter(pdf)
 
 	var buf bytes.Buffer
 	err := pdf.Output(&buf)
@@ -221,76 +304,47 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 		addLine("Matricule assuré :", c.Patient.MatriculeAssure)
 	}
 
-	drawPDFSectionTitle(pdf, "Informations de prescription")
-	addLine("Médecin :", c.DoctorName)
-	addLine("Service :", c.Service)
-	addLine("Date :", formatDateTimePDF(time.Now()))
-
 	drawPDFSectionTitle(pdf, "Médicaments prescrits")
 
 	if len(c.Prescriptions) == 0 {
 		pdf.SetFont("Arial", "", 9)
 		setPDFTextColor(pdf)
-		pdf.MultiCell(190, 6, pdfText("Aucune prescription renseignée."), "", "L", false)
+		pdf.MultiCell(
+			190,
+			6,
+			pdfText("Aucune prescription renseignée."),
+			"",
+			"L",
+			false,
+		)
 	} else {
+		pdf.SetFillColor(
+			branding.Clinic.Primary.R,
+			branding.Clinic.Primary.G,
+			branding.Clinic.Primary.B,
+		)
+		pdf.SetTextColor(255, 255, 255)
+		pdf.SetFont("Arial", "B", 7.5)
+
+		pdf.CellFormat(8, 8, pdfText("N°"), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(38, 8, pdfText("Médicament"), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(22, 8, pdfText("Dosage"), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(24, 8, pdfText("Forme"), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(24, 8, pdfText("Durée"), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(22, 8, pdfText("Voie"), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(52, 8, pdfText("Instructions"), "1", 1, "C", true, 0, "")
+
+		pdf.SetFont("Arial", "", 7.2)
+		setPDFTextColor(pdf)
+
 		for index, p := range c.Prescriptions {
-			pdf.SetFillColor(245, 248, 252)
-			pdf.SetDrawColor(
-				branding.Clinic.Border.R,
-				branding.Clinic.Border.G,
-				branding.Clinic.Border.B,
-			)
-
-			startY := pdf.GetY()
-			pdf.Rect(10, startY, 190, 9, "FD")
-
-			pdf.SetXY(13, startY+2)
-			pdf.SetFont("Arial", "B", 10)
-			pdf.SetTextColor(
-				branding.Clinic.Primary.R,
-				branding.Clinic.Primary.G,
-				branding.Clinic.Primary.B,
-			)
-
-			pdf.CellFormat(
-				184,
-				5,
-				pdfText(fmt.Sprintf("%d. %s", index+1, p.MedicationName)),
-				"",
-				1,
-				"L",
-				false,
-				0,
-				"",
-			)
-
-			pdf.Ln(3)
-
-			if p.Dosage != "" {
-				addLine("Dosage :", p.Dosage)
-			}
-
-			if p.Form != "" {
-				addLine("Forme :", p.Form)
-			}
-
-			if p.Frequency != "" {
-				addLine("Fréquence :", p.Frequency)
-			}
-
-			if p.Duration != "" {
-				addLine("Durée :", p.Duration)
-			}
-
-			if p.Route != "" {
-				addLine("Voie :", p.Route)
-			}
-
-			if p.Instructions != "" {
-				addLine("Instructions :", p.Instructions)
-			}
-
-			pdf.Ln(4)
+			pdf.CellFormat(8, 8, pdfText(fmt.Sprintf("%d", index+1)), "1", 0, "C", false, 0, "")
+			pdf.CellFormat(38, 8, pdfText(p.MedicationName), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(22, 8, pdfText(p.Dosage), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(24, 8, pdfText(p.Form), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(24, 8, pdfText(p.Duration), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(22, 8, pdfText(p.Route), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(52, 8, pdfText(p.Instructions), "1", 1, "L", false, 0, "")
 		}
 	}
 
