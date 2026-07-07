@@ -23,6 +23,7 @@ type Service interface {
 	RecordConsultationCreated(patientID uint, consultationID uint, department string, doctorName string) error
 	RecordConsultationStatusChanged(patientID uint, consultationID uint, oldStatus string, newStatus string) error
 	RecordExamRequested(patientID uint, consultationID uint, examName string, service string) error
+	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string) error
 }
 
 type service struct {
@@ -434,6 +435,45 @@ func (s *service) RecordExamRequested(
 		"exam_requested",
 		"exam",
 		"Examen prescrit",
+		description,
+		"consultation",
+		consultationID,
+		"info",
+		0,
+	)
+}
+
+func (s *service) RecordMedicationPrescribed(
+	patientID uint,
+	consultationID uint,
+	medicationName string,
+	dosage string,
+	service string,
+) error {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return err
+	}
+
+	description := fmt.Sprintf("Médicament prescrit : %s", medicationName)
+
+	if dosage != "" {
+		description = fmt.Sprintf(
+			"Médicament prescrit : %s %s",
+			medicationName,
+			dosage,
+		)
+	}
+
+	if service != "" {
+		description += fmt.Sprintf(" — Service : %s", service)
+	}
+
+	return s.createTimelineEvent(
+		record,
+		"medication_prescribed",
+		"prescription",
+		"Médicament prescrit",
 		description,
 		"consultation",
 		consultationID,

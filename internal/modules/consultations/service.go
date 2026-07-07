@@ -293,6 +293,18 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 		}
 	}
 
+	if s.medicalRecordsService != nil {
+		for _, prescription := range prescriptions {
+			_ = s.medicalRecordsService.RecordMedicationPrescribed(
+				consultation.PatientID,
+				consultation.ID,
+				prescription.MedicationName,
+				prescription.Dosage,
+				consultation.Service,
+			)
+		}
+	}
+
 	return s.repo.FindByID(consultation.ID)
 }
 
