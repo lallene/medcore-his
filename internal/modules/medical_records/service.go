@@ -21,6 +21,7 @@ type Service interface {
 
 	ListVitalSigns(recordID uint) ([]VitalSign, error)
 	RecordConsultationCreated(patientID uint, consultationID uint, department string, doctorName string) error
+	RecordConsultationStatusChanged(patientID uint, consultationID uint, oldStatus string, newStatus string) error
 }
 
 type service struct {
@@ -369,6 +370,35 @@ func (s *service) RecordConsultationCreated(
 		"consultation_created",
 		"consultation",
 		title,
+		description,
+		"consultation",
+		consultationID,
+		"info",
+		0,
+	)
+}
+func (s *service) RecordConsultationStatusChanged(
+	patientID uint,
+	consultationID uint,
+	oldStatus string,
+	newStatus string,
+) error {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return err
+	}
+
+	description := fmt.Sprintf(
+		"Statut consultation : %s → %s",
+		oldStatus,
+		newStatus,
+	)
+
+	return s.createTimelineEvent(
+		record,
+		"consultation_status_changed",
+		"consultation",
+		"Statut de consultation modifié",
 		description,
 		"consultation",
 		consultationID,

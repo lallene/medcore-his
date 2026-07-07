@@ -388,8 +388,19 @@ func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest) (*C
 		updates["cancellation_reason"] = req.CancellationReason
 	}
 
+	oldStatus := consultation.Status
+
 	if err := s.repo.UpdateStatus(id, updates); err != nil {
 		return nil, err
+	}
+
+	if s.medicalRecordsService != nil {
+		_ = s.medicalRecordsService.RecordConsultationStatusChanged(
+			consultation.PatientID,
+			consultation.ID,
+			oldStatus,
+			req.Status,
+		)
 	}
 
 	return s.repo.FindByID(id)
