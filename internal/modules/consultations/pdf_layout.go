@@ -4,13 +4,34 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jung-kurt/gofpdf"
 	"github.com/lallene/medcore-his/backend/internal/core/branding"
 )
 
 const clinicLogoName = "clinic-logo"
+
+// Palette unique utilisée par tous les documents générés (ordonnance,
+// repos maladie, demande d'examens, compte rendu, hospitalisation) afin
+// que chaque PDF partage la même identité visuelle.
+var (
+	colorNavyDeep   = [3]int{11, 33, 68}
+	colorNavy       = [3]int{18, 48, 92}
+	colorTeal       = [3]int{22, 168, 140}
+	colorGold       = [3]int{201, 168, 76}
+	colorInk        = [3]int{30, 42, 58}
+	colorMuted      = [3]int{91, 107, 125}
+	colorLine       = [3]int{221, 227, 234}
+	colorCardBg     = [3]int{231, 245, 241}
+	colorCardBorder = [3]int{211, 233, 227}
+	colorRowAlt     = [3]int{245, 247, 244}
+	colorIvory      = [3]int{251, 250, 247}
+	colorRefMuted   = [3]int{185, 198, 218}
+)
+
+func fillRGB(pdf *gofpdf.Fpdf, c [3]int) { pdf.SetFillColor(c[0], c[1], c[2]) }
+func textRGB(pdf *gofpdf.Fpdf, c [3]int) { pdf.SetTextColor(c[0], c[1], c[2]) }
+func drawRGB(pdf *gofpdf.Fpdf, c [3]int) { pdf.SetDrawColor(c[0], c[1], c[2]) }
 
 func registerClinicLogo(pdf *gofpdf.Fpdf) {
 	if len(branding.LogoBytes) == 0 {
@@ -27,206 +48,38 @@ func registerClinicLogo(pdf *gofpdf.Fpdf) {
 	)
 }
 
-func setPDFTextColor(pdf *gofpdf.Fpdf) {
-	c := branding.Clinic.Text
-	pdf.SetTextColor(c.R, c.G, c.B)
+// newModernDocument crée un PDF A4 avec les marges, la pagination et
+// l'en-tête (logo + ruban de titre + filigrane) communs à tous les
+// documents. Le titre et la référence sont redessinés automatiquement
+// sur chaque nouvelle page via SetHeaderFunc, ce qui évite d'avoir à les
+// reproduire manuellement à chaque saut de page.
+func newModernDocument(title string, reference string) *gofpdf.Fpdf {
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.SetMargins(12, 10, 12)
+	pdf.SetAutoPageBreak(true, 26)
+
+	registerClinicLogo(pdf)
+
+	pdf.SetHeaderFunc(func() {
+		drawModernHeader(pdf)
+		drawDocumentRibbon(pdf, title, reference)
+		drawModernWatermark(pdf)
+	})
+
+	pdf.AddPage()
+
+	return pdf
 }
 
-func drawClinicHeader(pdf *gofpdf.Fpdf) {
+// drawModernHeader dessine le bandeau ivoire avec le logo, le nom de la
+// clinique, le slogan et l'adresse, surmonté du triple filet
+// navy / teal / or.
+func drawModernHeader(pdf *gofpdf.Fpdf) {
 	clinic := branding.Clinic
 
-	pdf.ImageOptions(
-		clinicLogoName,
-		10,
-		8,
-		42,
-		0,
-		false,
-		gofpdf.ImageOptions{
-			ImageType: "JPG",
-			ReadDpi:   true,
-		},
-		0,
-		"",
-	)
-
-	pdf.SetXY(55, 10)
-
-	pdf.SetFont("Arial", "B", 14)
-	pdf.SetTextColor(
-		clinic.Primary.R,
-		clinic.Primary.G,
-		clinic.Primary.B,
-	)
-
-	pdf.CellFormat(
-		145,
-		7,
-		pdfText(strings.ToUpper(clinic.Name)),
-		"",
-		1,
-		"C",
-		false,
-		0,
-		"",
-	)
-
-	pdf.SetX(55)
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetTextColor(
-		clinic.Accent.R,
-		clinic.Accent.G,
-		clinic.Accent.B,
-	)
-
-	pdf.CellFormat(
-		145,
-		5,
-		pdfText(clinic.Tagline),
-		"",
-		1,
-		"C",
-		false,
-		0,
-		"",
-	)
-
-	pdf.SetX(55)
-	pdf.SetFont("Arial", "", 7.5)
-	pdf.SetTextColor(
-		clinic.Muted.R,
-		clinic.Muted.G,
-		clinic.Muted.B,
-	)
-
-	pdf.MultiCell(
-		145,
-		4,
-		pdfText(clinic.Address),
-		"",
-		"C",
-		false,
-	)
-
-	pdf.SetY(39)
-	pdf.SetDrawColor(clinic.Accent.R, clinic.Accent.G, clinic.Accent.B)
-	pdf.SetLineWidth(0.8)
-	pdf.Line(10, 39, 200, 39)
-
-	pdf.Ln(7)
-	setPDFTextColor(pdf)
-}
-
-func drawClinicWatermark(pdf *gofpdf.Fpdf) {
-	pageWidth, pageHeight := pdf.GetPageSize()
-
-	watermarkWidth := 115.0
-	x := (pageWidth - watermarkWidth) / 2
-	y := (pageHeight - 85) / 2
-
-	pdf.SetAlpha(0.06, "Normal")
-	pdf.ImageOptions(
-		clinicLogoName,
-		x,
-		y,
-		watermarkWidth,
-		0,
-		false,
-		gofpdf.ImageOptions{
-			ImageType: "JPG",
-			ReadDpi:   true,
-		},
-		0,
-		"",
-	)
-	pdf.SetAlpha(1, "Normal")
-}
-
-func drawDocumentTitle(pdf *gofpdf.Fpdf, title string, reference string) {
-	clinic := branding.Clinic
-
-	pdf.SetFillColor(clinic.Primary.R, clinic.Primary.G, clinic.Primary.B)
-	pdf.SetTextColor(255, 255, 255)
-	pdf.SetFont("Arial", "B", 15)
-	pdf.CellFormat(190, 11, pdfText(strings.ToUpper(title)), "", 1, "C", true, 0, "")
-
-	pdf.SetFont("Arial", "", 8)
-	pdf.SetTextColor(clinic.Muted.R, clinic.Muted.G, clinic.Muted.B)
-	pdf.CellFormat(190, 7, pdfText("Référence : "+reference), "", 1, "R", false, 0, "")
-
-	pdf.Ln(2)
-	setPDFTextColor(pdf)
-}
-
-func drawPDFSectionTitle(pdf *gofpdf.Fpdf, title string) {
-	clinic := branding.Clinic
-
-	pdf.Ln(3)
-	pdf.SetFillColor(clinic.Primary.R, clinic.Primary.G, clinic.Primary.B)
-	pdf.Rect(10, pdf.GetY(), 2.5, 7, "F")
-
-	pdf.SetX(16)
-	pdf.SetFont("Arial", "B", 10)
-	pdf.SetTextColor(clinic.Primary.R, clinic.Primary.G, clinic.Primary.B)
-	pdf.CellFormat(184, 7, pdfText(strings.ToUpper(title)), "", 1, "L", false, 0, "")
-
-	setPDFTextColor(pdf)
-}
-
-func drawSignatureArea(pdf *gofpdf.Fpdf, doctorName string) {
-	pdf.Ln(10)
-	y := pdf.GetY()
-
-	pdf.SetFont("Arial", "", 9)
-	setPDFTextColor(pdf)
-
-	pdf.SetXY(10, y)
-	pdf.CellFormat(85, 6, pdfText("Médecin : "+doctorName), "", 0, "L", false, 0, "")
-
-	pdf.SetXY(115, y)
-	pdf.SetFont("Arial", "B", 9)
-	pdf.CellFormat(85, 6, pdfText("Signature et cachet"), "", 1, "C", false, 0, "")
-
-	pdf.Ln(18)
-}
-
-func drawClinicFooter(pdf *gofpdf.Fpdf) {
-	clinic := branding.Clinic
-
-	pdf.SetAutoPageBreak(false, 0)
-	pdf.SetY(-24)
-
-	pdf.SetDrawColor(clinic.Accent.R, clinic.Accent.G, clinic.Accent.B)
-	pdf.SetLineWidth(0.5)
-	pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
-
-	pdf.Ln(3)
-
-	pdf.SetFont("Arial", "", 7)
-	pdf.SetTextColor(clinic.Muted.R, clinic.Muted.G, clinic.Muted.B)
-
-	legal := fmt.Sprintf(
-		"%s au capital de %s - RCCM : %s",
-		clinic.LegalForm,
-		clinic.Capital,
-		clinic.RCCM,
-	)
-
-	pdf.CellFormat(190, 4, pdfText(legal), "", 1, "C", false, 0, "")
-
-	pdf.SetFont("Arial", "I", 7)
-	pdf.SetTextColor(clinic.Accent.R, clinic.Accent.G, clinic.Accent.B)
-	pdf.CellFormat(190, 4, pdfText(clinic.Signature), "", 1, "C", false, 0, "")
-}
-
-func drawModernClinicHeader(pdf *gofpdf.Fpdf) {
-	clinic := branding.Clinic
-
-	// Fond ivoire de l'en-tête.
-	pdf.SetFillColor(251, 250, 247)
+	fillRGB(pdf, colorIvory)
 	pdf.Rect(0, 0, 210, 48, "F")
 
-	// Logo à gauche.
 	pdf.ImageOptions(
 		clinicLogoName,
 		12,
@@ -242,122 +95,108 @@ func drawModernClinicHeader(pdf *gofpdf.Fpdf) {
 		"",
 	)
 
-	// Nom de la clinique.
 	pdf.SetXY(43, 10)
 	pdf.SetFont("Times", "B", 15)
-	pdf.SetTextColor(11, 33, 68)
-	pdf.CellFormat(
-		157,
-		8,
-		pdfText(clinic.Name),
-		"",
-		1,
-		"C",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorNavyDeep)
+	pdf.CellFormat(157, 8, pdfText(clinic.Name), "", 1, "C", false, 0, "")
 
-	// Slogan.
 	pdf.SetX(43)
 	pdf.SetFont("Arial", "B", 8.5)
-	pdf.SetTextColor(22, 168, 140)
-	pdf.CellFormat(
-		157,
-		5,
-		pdfText("EXCELLENCE - COMPASSION - SANTÉ"),
-		"",
-		1,
-		"C",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorTeal)
+	pdf.CellFormat(157, 5, pdfText(strings.ToUpper(clinic.Tagline)), "", 1, "C", false, 0, "")
 
-	// Adresse.
 	pdf.SetX(43)
 	pdf.SetFont("Arial", "", 7.5)
-	pdf.SetTextColor(91, 107, 125)
-	pdf.MultiCell(
-		157,
-		4,
-		pdfText(clinic.Address),
-		"",
-		"C",
-		false,
-	)
+	textRGB(pdf, colorMuted)
+	pdf.MultiCell(157, 4, pdfText(clinic.Address), "", "C", false)
 
-	// Séparateur tricolore.
 	pdf.SetLineWidth(1.1)
 
-	pdf.SetDrawColor(18, 48, 92)
+	drawRGB(pdf, colorNavy)
 	pdf.Line(0, 47, 70, 47)
 
-	pdf.SetDrawColor(22, 168, 140)
+	drawRGB(pdf, colorTeal)
 	pdf.Line(70, 47, 150, 47)
 
-	pdf.SetDrawColor(201, 168, 76)
+	drawRGB(pdf, colorGold)
 	pdf.Line(150, 47, 210, 47)
 
 	pdf.SetY(47)
 }
 
-func drawPrescriptionRibbon(
-	pdf *gofpdf.Fpdf,
-	reference string,
-) {
-	pdf.SetFillColor(11, 33, 68)
+// drawDocumentRibbon dessine le bandeau bleu nuit portant le titre du
+// document (ORDONNANCE, FICHE DE REPOS MALADIE, ...) et sa référence.
+// La taille de police du titre se réduit automatiquement pour les
+// intitulés longs afin de ne jamais déborder du bandeau.
+func drawDocumentRibbon(pdf *gofpdf.Fpdf, title string, reference string) {
+	fillRGB(pdf, colorNavyDeep)
 	pdf.Rect(0, 48, 210, 22, "F")
 
+	upperTitle := strings.ToUpper(title)
+	availableWidth := 118.0
+
+	titleSize := 19.0
+	pdf.SetFont("Times", "B", titleSize)
+
+	for titleSize > 12 && pdf.GetStringWidth(pdfText(upperTitle)) > availableWidth {
+		titleSize -= 1.5
+		pdf.SetFont("Times", "B", titleSize)
+	}
+
 	pdf.SetXY(12, 54)
-	pdf.SetFont("Times", "B", 19)
 	pdf.SetTextColor(255, 255, 255)
+	pdf.CellFormat(availableWidth, 10, pdfText(upperTitle), "", 0, "L", false, 0, "")
 
-	pdf.CellFormat(
-		100,
-		10,
-		pdfText("ORDONNANCE"),
-		"",
-		0,
-		"L",
-		false,
-		0,
-		"",
-	)
-
-	pdf.SetXY(112, 56)
+	pdf.SetXY(12+availableWidth, 56)
 	pdf.SetFont("Courier", "B", 8)
-	pdf.SetTextColor(185, 198, 218)
-
-	pdf.CellFormat(
-		86,
-		7,
-		pdfText("RÉF. "+reference),
-		"",
-		1,
-		"R",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorRefMuted)
+	pdf.CellFormat(210-12-(12+availableWidth), 7, pdfText("RÉF. "+reference), "", 1, "R", false, 0, "")
 
 	pdf.SetY(77)
 }
 
-func drawModernSectionLabel(
-	pdf *gofpdf.Fpdf,
-	title string,
-) {
+// drawModernWatermark superpose une version très légère du logo, centrée
+// verticalement sur la page, quel que soit le type de document.
+func drawModernWatermark(pdf *gofpdf.Fpdf) {
+	pageWidth, pageHeight := pdf.GetPageSize()
+
+	width := 92.0
+	x := pageWidth - width - 8
+	y := (pageHeight - width) / 2
+
+	pdf.SetAlpha(0.035, "Normal")
+
+	pdf.ImageOptions(
+		clinicLogoName,
+		x,
+		y,
+		width,
+		0,
+		false,
+		gofpdf.ImageOptions{
+			ImageType: "JPG",
+			ReadDpi:   true,
+		},
+		0,
+		"",
+	)
+
+	pdf.SetAlpha(1, "Normal")
+}
+
+// drawModernSectionLabel dessine le liseré teal + le libellé de section
+// utilisé pour introduire chaque bloc de contenu.
+func drawModernSectionLabel(pdf *gofpdf.Fpdf, title string) {
 	pdf.Ln(3)
 
 	y := pdf.GetY()
 
-	pdf.SetFillColor(22, 168, 140)
+	fillRGB(pdf, colorTeal)
 	pdf.RoundedRect(12, y, 1.6, 6, 0.5, "1234", "F")
 
 	pdf.SetXY(17, y-0.5)
 	pdf.SetFont("Arial", "B", 9)
-	pdf.SetTextColor(18, 48, 92)
+	textRGB(pdf, colorNavy)
 
 	pdf.CellFormat(
 		180,
@@ -374,80 +213,70 @@ func drawModernSectionLabel(
 	pdf.Ln(3)
 }
 
-func drawPatientIdentityCard(
-	pdf *gofpdf.Fpdf,
-	c *Consultation,
-) {
+// drawModernFieldRow affiche une ligne libellé / valeur (ex: "Médecin :
+// Dr Test"), avec retour à la ligne automatique de la valeur.
+func drawModernFieldRow(pdf *gofpdf.Fpdf, label string, value string) {
+	if value == "" {
+		value = "-"
+	}
+
+	startY := pdf.GetY()
+
+	pdf.SetFont("Arial", "B", 8.5)
+	textRGB(pdf, colorMuted)
+	pdf.CellFormat(50, 6, pdfText(label), "", 0, "L", false, 0, "")
+
+	pdf.SetXY(62, startY)
+	pdf.SetFont("Arial", "", 9.5)
+	textRGB(pdf, colorInk)
+	pdf.MultiCell(136, 6, pdfText(value), "", "L", false)
+}
+
+// drawModernParagraph affiche un bloc de texte libre (diagnostic,
+// observations, motif, ...) sur toute la largeur du contenu.
+func drawModernParagraph(pdf *gofpdf.Fpdf, value string) {
+	if value == "" {
+		value = "-"
+	}
+
+	pdf.SetFont("Arial", "", 9.5)
+	textRGB(pdf, colorInk)
+	pdf.MultiCell(186, 6, pdfText(value), "", "L", false)
+}
+
+// drawPatientIdentityCard affiche l'encart teal clair avec le nom du
+// patient et sa date de naissance / âge.
+func drawPatientIdentityCard(pdf *gofpdf.Fpdf, c *Consultation) {
 	x := 12.0
 	y := pdf.GetY()
 	width := 186.0
 	height := 24.0
 
-	pdf.SetFillColor(231, 245, 241)
-	pdf.SetDrawColor(211, 233, 227)
+	fillRGB(pdf, colorCardBg)
+	drawRGB(pdf, colorCardBorder)
 	pdf.RoundedRect(x, y, width, height, 2, "1234", "FD")
 
 	// Colonne nom.
 	pdf.SetXY(x+7, y+5)
 	pdf.SetFont("Arial", "B", 7)
-	pdf.SetTextColor(91, 107, 125)
-	pdf.CellFormat(
-		82,
-		4,
-		pdfText("NOM ET PRÉNOMS"),
-		"",
-		1,
-		"L",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorMuted)
+	pdf.CellFormat(82, 4, pdfText("NOM ET PRÉNOMS"), "", 1, "L", false, 0, "")
 
 	pdf.SetXY(x+7, y+10)
 	pdf.SetFont("Arial", "B", 11)
-	pdf.SetTextColor(11, 33, 68)
-	pdf.CellFormat(
-		82,
-		7,
-		pdfText(patientFullName(c)),
-		"",
-		0,
-		"L",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorNavyDeep)
+	pdf.CellFormat(82, 7, pdfText(patientFullName(c)), "", 0, "L", false, 0, "")
 
 	// Colonne naissance / âge.
 	pdf.SetXY(x+97, y+5)
 	pdf.SetFont("Arial", "B", 7)
-	pdf.SetTextColor(91, 107, 125)
-	pdf.CellFormat(
-		82,
-		4,
-		pdfText("DATE DE NAISSANCE / ÂGE"),
-		"",
-		1,
-		"L",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorMuted)
+	pdf.CellFormat(82, 4, pdfText("DATE DE NAISSANCE / ÂGE"), "", 1, "L", false, 0, "")
 
 	pdf.SetXY(x+97, y+10)
 	pdf.SetFont("Arial", "B", 11)
-	pdf.SetTextColor(11, 33, 68)
-	pdf.CellFormat(
-		82,
-		7,
-		pdfText(patientBirthOrAge(c)),
-		"",
-		0,
-		"L",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorNavyDeep)
+	pdf.CellFormat(82, 7, pdfText(patientBirthOrAge(c)), "", 0, "L", false, 0, "")
 
 	pdf.SetY(y + height + 7)
 }
@@ -478,11 +307,11 @@ func drawWrappedTableCell(
 	fillColor [3]int,
 ) {
 	if fill {
-		pdf.SetFillColor(fillColor[0], fillColor[1], fillColor[2])
+		fillRGB(pdf, fillColor)
 		pdf.Rect(x, y, width, height, "F")
 	}
 
-	pdf.SetDrawColor(221, 227, 234)
+	drawRGB(pdf, colorLine)
 	pdf.Line(x, y+height, x+width, y+height)
 
 	style := ""
@@ -491,7 +320,7 @@ func drawWrappedTableCell(
 	}
 
 	pdf.SetFont("Arial", style, 7.4)
-	pdf.SetTextColor(textColor[0], textColor[1], textColor[2])
+	textRGB(pdf, textColor)
 
 	pdf.SetXY(x+2, y+2)
 	pdf.MultiCell(
@@ -504,13 +333,63 @@ func drawWrappedTableCell(
 	)
 }
 
+// prescriptionTableWidths / prescriptionTableHeaders sont partagés entre
+// le dessin initial de l'en-tête du tableau et sa reconduction sur les
+// pages suivantes, afin de garder les deux parfaitement synchronisés.
+var prescriptionTableWidths = []float64{8, 34, 21, 23, 22, 20, 58}
+
+var prescriptionTableHeaders = []string{
+	"N°",
+	"MÉDICAMENT",
+	"DOSAGE",
+	"FORME",
+	"DURÉE",
+	"VOIE",
+	"INSTRUCTIONS",
+}
+
+func drawPrescriptionTableHeader(pdf *gofpdf.Fpdf) {
+	x := 12.0
+	headerHeight := 10.0
+
+	fillRGB(pdf, colorNavy)
+	pdf.SetTextColor(255, 255, 255)
+	pdf.SetFont("Arial", "B", 7)
+
+	currentX := x
+
+	for index, header := range prescriptionTableHeaders {
+		align := "L"
+		if index == 0 {
+			align = "C"
+		}
+
+		pdf.SetXY(currentX, pdf.GetY())
+		pdf.CellFormat(
+			prescriptionTableWidths[index],
+			headerHeight,
+			pdfText(header),
+			"",
+			0,
+			align,
+			true,
+			0,
+			"",
+		)
+
+		currentX += prescriptionTableWidths[index]
+	}
+
+	pdf.Ln(headerHeight)
+}
+
 func drawPrescriptionTable(
 	pdf *gofpdf.Fpdf,
 	prescriptions []ConsultationPrescription,
 ) {
 	if len(prescriptions) == 0 {
 		pdf.SetFont("Arial", "", 9)
-		pdf.SetTextColor(91, 107, 125)
+		textRGB(pdf, colorMuted)
 		pdf.MultiCell(
 			186,
 			6,
@@ -523,57 +402,8 @@ func drawPrescriptionTable(
 	}
 
 	x := 12.0
-	headerHeight := 10.0
 
-	widths := []float64{
-		8,  // N°
-		34, // Médicament
-		21, // Dosage
-		23, // Forme
-		22, // Durée
-		20, // Voie
-		58, // Instructions
-	}
-
-	headers := []string{
-		"N°",
-		"MÉDICAMENT",
-		"DOSAGE",
-		"FORME",
-		"DURÉE",
-		"VOIE",
-		"INSTRUCTIONS",
-	}
-
-	pdf.SetFillColor(18, 48, 92)
-	pdf.SetTextColor(255, 255, 255)
-	pdf.SetFont("Arial", "B", 7)
-
-	currentX := x
-
-	for index, header := range headers {
-		align := "L"
-		if index == 0 {
-			align = "C"
-		}
-
-		pdf.SetXY(currentX, pdf.GetY())
-		pdf.CellFormat(
-			widths[index],
-			headerHeight,
-			pdfText(header),
-			"",
-			0,
-			align,
-			true,
-			0,
-			"",
-		)
-
-		currentX += widths[index]
-	}
-
-	pdf.Ln(headerHeight)
+	drawPrescriptionTableHeader(pdf)
 
 	for index, prescription := range prescriptions {
 		values := []string{
@@ -589,9 +419,23 @@ func drawPrescriptionTable(
 		lineCounts := make([]int, len(values))
 
 		for columnIndex, value := range values {
+			// La police doit être fixée avant chaque SplitText pour
+			// correspondre exactement à celle utilisée au rendu
+			// (drawWrappedTableCell), faute de quoi le nombre de
+			// lignes calculé ici peut différer du nombre de lignes
+			// réellement affichées.
+			bold := columnIndex == 0 || columnIndex == 1
+
+			style := ""
+			if bold {
+				style = "B"
+			}
+
+			pdf.SetFont("Arial", style, 7.4)
+
 			lines := pdf.SplitText(
 				pdfText(value),
-				widths[columnIndex]-4,
+				prescriptionTableWidths[columnIndex]-4,
 			)
 
 			lineCounts[columnIndex] = len(lines)
@@ -599,137 +443,83 @@ func drawPrescriptionTable(
 
 		rowHeight := float64(maxInt(lineCounts...))*4.5 + 5
 
-		// Nouvelle page si la ligne dépasse la zone disponible.
+		// Nouvelle page si la ligne dépasse la zone disponible. Le
+		// saut de page déclenche automatiquement le SetHeaderFunc
+		// (en-tête + ruban + filigrane) : il ne reste qu'à reproduire
+		// le libellé de section et l'en-tête du tableau.
 		if pdf.GetY()+rowHeight > 255 {
 			pdf.AddPage()
-			drawModernClinicHeader(pdf)
-			drawPrescriptionRibbon(
-				pdf,
-				branding.DocumentReference(
-					branding.DocumentTypePrescription,
-					prescription.ConsultationID,
-					time.Now(),
-				),
-			)
-			drawModernSectionLabel(pdf, "Médicaments prescrits")
+			drawModernSectionLabel(pdf, "Médicaments prescrits (suite)")
+			drawPrescriptionTableHeader(pdf)
 		}
 
 		rowY := pdf.GetY()
-		currentX = x
+		currentX := x
 
 		fill := index%2 == 1
-		fillColor := [3]int{245, 247, 244}
 
 		for columnIndex, value := range values {
 			align := "L"
 			bold := false
-			textColor := [3]int{30, 42, 58}
+			textColor := colorInk
 
 			if columnIndex == 0 {
 				align = "C"
 				bold = true
-				textColor = [3]int{22, 168, 140}
+				textColor = colorTeal
 			}
 
 			if columnIndex == 1 {
 				bold = true
-				textColor = [3]int{11, 33, 68}
+				textColor = colorNavyDeep
 			}
 
 			if columnIndex == 6 {
-				textColor = [3]int{91, 107, 125}
+				textColor = colorMuted
 			}
 
 			drawWrappedTableCell(
 				pdf,
 				currentX,
 				rowY,
-				widths[columnIndex],
+				prescriptionTableWidths[columnIndex],
 				rowHeight,
 				value,
 				align,
 				bold,
 				textColor,
 				fill,
-				fillColor,
+				colorRowAlt,
 			)
 
-			currentX += widths[columnIndex]
+			currentX += prescriptionTableWidths[columnIndex]
 		}
 
 		pdf.SetY(rowY + rowHeight)
 	}
 }
 
-func drawModernWatermark(pdf *gofpdf.Fpdf) {
-	pageWidth, pageHeight := pdf.GetPageSize()
-
-	width := 92.0
-	x := pageWidth - width + 13
-	y := pageHeight - 122
-
-	pdf.SetAlpha(0.035, "Normal")
-
-	pdf.ImageOptions(
-		clinicLogoName,
-		x,
-		y,
-		width,
-		0,
-		false,
-		gofpdf.ImageOptions{
-			ImageType: "JPG",
-			ReadDpi:   true,
-		},
-		0,
-		"",
-	)
-
-	pdf.SetAlpha(1, "Normal")
-}
-
-func drawModernPrescriptionSignature(
-	pdf *gofpdf.Fpdf,
-	doctorName string,
-) {
+// drawModernSignatureArea affiche le nom du médecin à gauche et un
+// encadré pointillé "Signature & cachet" à droite. Utilisée par tous
+// les documents pour garder une présentation homogène.
+func drawModernSignatureArea(pdf *gofpdf.Fpdf, doctorName string) {
 	y := pdf.GetY() + 15
 
 	if y > 230 {
 		pdf.AddPage()
-		drawModernClinicHeader(pdf)
-		y = 85
+		y = pdf.GetY() + 8
 	}
 
 	// Médecin.
 	pdf.SetXY(12, y)
 	pdf.SetFont("Arial", "", 7)
-	pdf.SetTextColor(91, 107, 125)
-	pdf.CellFormat(
-		70,
-		5,
-		pdfText("MÉDECIN"),
-		"",
-		1,
-		"L",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorMuted)
+	pdf.CellFormat(70, 5, pdfText("MÉDECIN"), "", 1, "L", false, 0, "")
 
 	pdf.SetX(12)
 	pdf.SetFont("Arial", "B", 11)
-	pdf.SetTextColor(11, 33, 68)
-	pdf.CellFormat(
-		70,
-		7,
-		pdfText(doctorName),
-		"",
-		0,
-		"L",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, colorNavyDeep)
+	pdf.CellFormat(70, 7, pdfText(doctorName), "", 0, "L", false, 0, "")
 
 	// Cadre signature.
 	boxX := 143.0
@@ -737,36 +527,45 @@ func drawModernPrescriptionSignature(
 	boxWidth := 55.0
 	boxHeight := 28.0
 
-	pdf.SetDrawColor(183, 195, 210)
+	drawRGB(pdf, [3]int{183, 195, 210})
 	pdf.SetLineWidth(0.5)
 	pdf.SetDashPattern([]float64{2, 1}, 0)
-	pdf.RoundedRect(
-		boxX,
-		boxY,
-		boxWidth,
-		boxHeight,
-		2,
-		"1234",
-		"D",
-	)
+	pdf.RoundedRect(boxX, boxY, boxWidth, boxHeight, 2, "1234", "D")
 	pdf.SetDashPattern([]float64{}, 0)
 
 	pdf.SetXY(boxX, boxY+10)
 	pdf.SetFont("Arial", "B", 7.5)
-	pdf.SetTextColor(166, 178, 195)
-	pdf.CellFormat(
-		boxWidth,
-		6,
-		pdfText("SIGNATURE & CACHET"),
-		"",
-		0,
-		"C",
-		false,
-		0,
-		"",
-	)
+	textRGB(pdf, [3]int{166, 178, 195})
+	pdf.CellFormat(boxWidth, 6, pdfText("SIGNATURE & CACHET"), "", 0, "C", false, 0, "")
 
 	pdf.SetY(boxY + boxHeight + 5)
+}
+
+// drawModernFooter affiche la mention légale et la bande diagonale
+// navy / teal en bas de chaque page.
+func drawModernFooter(pdf *gofpdf.Fpdf) {
+	clinic := branding.Clinic
+
+	pdf.SetAutoPageBreak(false, 0)
+	pdf.SetY(-24)
+
+	pdf.SetFont("Arial", "", 7)
+	textRGB(pdf, colorMuted)
+
+	legal := fmt.Sprintf(
+		"%s au capital de %s - RCCM : %s",
+		clinic.LegalForm,
+		clinic.Capital,
+		clinic.RCCM,
+	)
+
+	pdf.CellFormat(186, 4, pdfText(legal), "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "I", 7)
+	textRGB(pdf, colorTeal)
+	pdf.CellFormat(186, 4, pdfText(clinic.Signature), "", 1, "C", false, 0, "")
+
+	drawModernFooterStrip(pdf)
 }
 
 func drawModernFooterStrip(pdf *gofpdf.Fpdf) {
@@ -777,9 +576,9 @@ func drawModernFooterStrip(pdf *gofpdf.Fpdf) {
 
 	for x < 210 {
 		if useNavy {
-			pdf.SetFillColor(18, 48, 92)
+			fillRGB(pdf, colorNavy)
 		} else {
-			pdf.SetFillColor(22, 168, 140)
+			fillRGB(pdf, colorTeal)
 		}
 
 		pdf.Polygon(
