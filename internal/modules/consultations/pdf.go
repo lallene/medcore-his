@@ -88,7 +88,11 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 	// branding.DocumentType dédié aux repos maladie. On construit donc
 	// une référence lisible à partir du numéro de consultation plutôt
 	// que d'appeler branding.DocumentReference avec un type inexistant.
-	reference := fmt.Sprintf("REPOS-%d-%s", c.ID, c.CreatedAt.Format("20060102"))
+	reference := branding.DocumentReference(
+		branding.DocumentTypeSickLeave,
+		c.ID,
+		c.CreatedAt,
+	)
 
 	pdf := newModernDocument("Fiche de repos maladie", reference)
 
@@ -118,10 +122,16 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 	pdf.Ln(5)
 	pdf.SetFont("Arial", "I", 7.5)
 	textRGB(pdf, colorMuted)
+	now := time.Now()
 	pdf.CellFormat(
 		186,
 		5,
-		pdfText("Document généré le "+time.Now().Format("02/01/2006")+" à "+time.Now().Format("15:04")),
+		pdfText(
+			"Document généré le "+
+				now.Format("02/01/2006")+
+				" à "+
+				now.Format("15:04"),
+		),
 		"",
 		1,
 		"L",
@@ -131,7 +141,6 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 	)
 
 	drawModernSignatureArea(pdf, c.DoctorName)
-	drawModernFooter(pdf)
 
 	var buf bytes.Buffer
 	err := pdf.Output(&buf)
@@ -237,7 +246,6 @@ func GenerateExamRequestPDF(c *Consultation) ([]byte, error) {
 	)
 
 	drawModernSignatureArea(pdf, c.DoctorName)
-	drawModernFooter(pdf)
 
 	var buf bytes.Buffer
 	err := pdf.Output(&buf)
@@ -285,7 +293,6 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 	)
 
 	drawModernSignatureArea(pdf, c.DoctorName)
-	drawModernFooter(pdf)
 
 	var buf bytes.Buffer
 
@@ -483,7 +490,6 @@ func GenerateConsultationReportPDF(c *Consultation) ([]byte, error) {
 	)
 
 	drawModernSignatureArea(pdf, c.DoctorName)
-	drawModernFooter(pdf)
 
 	var buf bytes.Buffer
 
@@ -501,7 +507,11 @@ func GenerateConsultationReportPDF(c *Consultation) ([]byte, error) {
 func GenerateHospitalizationPDF(c *Consultation) ([]byte, error) {
 	// Même remarque que pour GenerateSickLeavePDF : pas de
 	// branding.DocumentType dédié fourni pour ce type de document.
-	reference := fmt.Sprintf("HOSPIT-%d-%s", c.ID, c.CreatedAt.Format("20060102"))
+	reference := branding.DocumentReference(
+		branding.DocumentTypeHospitalization,
+		c.ID,
+		c.CreatedAt,
+	)
 
 	pdf := newModernDocument("Fiche d'hospitalisation", reference)
 
@@ -539,7 +549,6 @@ func GenerateHospitalizationPDF(c *Consultation) ([]byte, error) {
 	)
 
 	drawModernSignatureArea(pdf, c.DoctorName)
-	drawModernFooter(pdf)
 
 	var buf bytes.Buffer
 	err := pdf.Output(&buf)

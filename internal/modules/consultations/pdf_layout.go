@@ -61,9 +61,13 @@ func newModernDocument(title string, reference string) *gofpdf.Fpdf {
 	registerClinicLogo(pdf)
 
 	pdf.SetHeaderFunc(func() {
+		drawModernWatermark(pdf)
 		drawModernHeader(pdf)
 		drawDocumentRibbon(pdf, title, reference)
-		drawModernWatermark(pdf)
+	})
+
+	pdf.SetFooterFunc(func() {
+		drawModernFooter(pdf)
 	})
 
 	pdf.AddPage()
@@ -262,10 +266,31 @@ func drawPatientIdentityCard(pdf *gofpdf.Fpdf, c *Consultation) {
 	textRGB(pdf, colorMuted)
 	pdf.CellFormat(82, 4, pdfText("NOM ET PRÉNOMS"), "", 1, "L", false, 0, "")
 
+	patientName := patientFullName(c)
+
+	fontSize := 11.0
+	pdf.SetFont("Arial", "B", fontSize)
+
+	// Réduit progressivement la taille si le texte dépasse la largeur disponible.
+	for fontSize > 7.0 && pdf.GetStringWidth(pdfText(patientName)) > 78 {
+		fontSize -= 0.5
+		pdf.SetFont("Arial", "B", fontSize)
+	}
+
 	pdf.SetXY(x+7, y+10)
-	pdf.SetFont("Arial", "B", 11)
 	textRGB(pdf, colorNavyDeep)
-	pdf.CellFormat(82, 7, pdfText(patientFullName(c)), "", 0, "L", false, 0, "")
+
+	pdf.CellFormat(
+		82,
+		7,
+		pdfText(patientName),
+		"",
+		0,
+		"L",
+		false,
+		0,
+		"",
+	)
 
 	// Colonne naissance / âge.
 	pdf.SetXY(x+97, y+5)
@@ -447,8 +472,12 @@ func drawPrescriptionTable(
 		// saut de page déclenche automatiquement le SetHeaderFunc
 		// (en-tête + ruban + filigrane) : il ne reste qu'à reproduire
 		// le libellé de section et l'en-tête du tableau.
-		if pdf.GetY()+rowHeight > 255 {
+
+		const prescriptionTableBottomY = 250.0
+
+		if pdf.GetY()+rowHeight > prescriptionTableBottomY {
 			pdf.AddPage()
+
 			drawModernSectionLabel(pdf, "Médicaments prescrits (suite)")
 			drawPrescriptionTableHeader(pdf)
 		}
@@ -546,7 +575,6 @@ func drawModernSignatureArea(pdf *gofpdf.Fpdf, doctorName string) {
 func drawModernFooter(pdf *gofpdf.Fpdf) {
 	clinic := branding.Clinic
 
-	pdf.SetAutoPageBreak(false, 0)
 	pdf.SetY(-24)
 
 	pdf.SetFont("Arial", "", 7)
