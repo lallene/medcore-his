@@ -11,11 +11,33 @@ import (
 )
 
 func pdfText(value string) string {
-	out, err := charmap.ISO8859_1.NewEncoder().String(value)
-	if err != nil {
-		return value
+	replacer := strings.NewReplacer(
+		"’", "'",
+		"‘", "'",
+		"“", `"`,
+		"”", `"`,
+		"–", "-",
+		"—", "-",
+		"•", "-",
+		"…", "...",
+		"œ", "oe",
+		"Œ", "OE",
+		"\u00a0", " ",
+	)
+
+	cleaned := replacer.Replace(value)
+
+	out, err := charmap.ISO8859_1.NewEncoder().String(cleaned)
+	if err == nil {
+		return out
 	}
-	return out
+
+	return strings.Map(func(r rune) rune {
+		if r >= 32 && r <= 255 {
+			return r
+		}
+		return '?'
+	}, cleaned)
 }
 
 func patientFullName(c *Consultation) string {

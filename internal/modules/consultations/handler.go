@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lallene/medcore-his/backend/internal/core/logger"
 )
 
 type Handler struct {
@@ -539,6 +540,12 @@ func (h *Handler) GeneratePrescriptionPDF(c *gin.Context) {
 
 	content, err := GeneratePrescriptionPDF(consultation)
 	if err != nil {
+		logger.Error(
+			"Erreur génération ordonnance PDF",
+			"consultation_id", consultation.ID,
+			"error", err,
+		)
+
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})

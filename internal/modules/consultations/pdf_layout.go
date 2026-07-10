@@ -7,6 +7,7 @@ import (
 
 	"github.com/jung-kurt/gofpdf"
 	"github.com/lallene/medcore-his/backend/internal/core/branding"
+	"golang.org/x/text/encoding/charmap"
 )
 
 const clinicLogoName = "clinic-logo"
@@ -351,7 +352,7 @@ func drawWrappedTableCell(
 	pdf.MultiCell(
 		width-4,
 		4.5,
-		pdfText(text),
+		safePDFText(text),
 		"",
 		align,
 		false,
@@ -444,11 +445,6 @@ func drawPrescriptionTable(
 		lineCounts := make([]int, len(values))
 
 		for columnIndex, value := range values {
-			// La police doit être fixée avant chaque SplitText pour
-			// correspondre exactement à celle utilisée au rendu
-			// (drawWrappedTableCell), faute de quoi le nombre de
-			// lignes calculé ici peut différer du nombre de lignes
-			// réellement affichées.
 			bold := columnIndex == 0 || columnIndex == 1
 
 			style := ""
@@ -458,8 +454,10 @@ func drawPrescriptionTable(
 
 			pdf.SetFont("Arial", style, 7.4)
 
+			safeValue := safeTextForSplit(value)
+
 			lines := pdf.SplitText(
-				pdfText(value),
+				safeValue,
 				prescriptionTableWidths[columnIndex]-4,
 			)
 
@@ -575,6 +573,10 @@ func drawModernSignatureArea(pdf *gofpdf.Fpdf, doctorName string) {
 func drawModernFooter(pdf *gofpdf.Fpdf) {
 	clinic := branding.Clinic
 
+	// Évite qu'un élément du footer déclenche une nouvelle page
+	// et provoque un appel récursif du FooterFunc.
+	pdf.SetAutoPageBreak(false, 0)
+
 	pdf.SetY(-24)
 
 	pdf.SetFont("Arial", "", 7)
@@ -587,13 +589,37 @@ func drawModernFooter(pdf *gofpdf.Fpdf) {
 		clinic.RCCM,
 	)
 
-	pdf.CellFormat(186, 4, pdfText(legal), "", 1, "C", false, 0, "")
+	pdf.CellFormat(
+		186,
+		4,
+		pdfText(legal),
+		"",
+		1,
+		"C",
+		false,
+		0,
+		"",
+	)
 
 	pdf.SetFont("Arial", "I", 7)
 	textRGB(pdf, colorTeal)
-	pdf.CellFormat(186, 4, pdfText(clinic.Signature), "", 1, "C", false, 0, "")
+
+	pdf.CellFormat(
+		186,
+		4,
+		pdfText(clinic.Signature),
+		"",
+		1,
+		"C",
+		false,
+		0,
+		"",
+	)
 
 	drawModernFooterStrip(pdf)
+
+	// Rétablit la configuration utilisée par newModernDocument.
+	pdf.SetAutoPageBreak(true, 26)
 }
 
 func drawModernFooterStrip(pdf *gofpdf.Fpdf) {
@@ -622,4 +648,62 @@ func drawModernFooterStrip(pdf *gofpdf.Fpdf) {
 		x += stripeWidth
 		useNavy = !useNavy
 	}
+}
+
+func safePDFText(value string) string {
+	replacer := strings.NewReplacer(
+		"’", "'",
+		"‘", "'",
+		"“", `"`,
+		"”", `"`,
+		"–", "-",
+		"—", "-",
+		"•", "-",
+		"…", "...",
+		"œ", "oe",
+		"Œ", "OE",
+		"°", " deg",
+		"\u00a0", " ",
+	)
+
+	cleaned := replacer.Replace(value)
+
+	encoded, err := charmap.ISO8859_1.NewEncoder().String(cleaned)
+	if err != nil {
+		return strings.Map(func(r rune) rune {
+			if r >= 32 && r <= 255 {
+				return r
+			}
+			return '?'
+		}, cleaned)
+	}
+
+	return encoded
+}
+
+func safeTextForSplit(value string) string {
+	replacer := strings.NewReplacer(
+		"’", "'",
+		"‘", "'",
+		"“", `"`,
+		"”", `"`,
+		"–", "-",
+		"—", "-",
+		"•", "-",
+		"…", "...",
+		"œ", "oe",
+		"Œ", "OE",
+		"\u00a0", " ",
+	)
+
+	cleaned := replacer.Replace(value)
+
+	return strings.Map(func(r rune) rune {
+		// Les polices internes de gofpdf utilisent une table de 256 caractères.
+		if r >= 0 && r <= 255 {
+			return r
+		}
+
+		return '?'
+	}, cleaned)
 }
