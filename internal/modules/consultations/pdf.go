@@ -258,13 +258,13 @@ func GenerateExamRequestPDF(c *Consultation) ([]byte, error) {
 
 func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(10, 10, 10)
-	pdf.SetAutoPageBreak(true, 28)
+	pdf.SetMargins(12, 10, 12)
+	pdf.SetAutoPageBreak(true, 20)
 
 	registerClinicLogo(pdf)
 
 	pdf.SetHeaderFunc(func() {
-		drawClinicWatermark(pdf)
+		drawModernWatermark(pdf)
 	})
 
 	pdf.AddPage()
@@ -275,91 +275,27 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 		c.CreatedAt,
 	)
 
-	drawClinicHeader(pdf)
-	drawDocumentTitle(pdf, "Ordonnance", reference)
+	drawModernClinicHeader(pdf)
+	drawPrescriptionRibbon(pdf, reference)
 
-	addLine := func(label string, value string) {
-		if value == "" {
-			value = "-"
-		}
+	drawModernSectionLabel(pdf, "Informations du patient")
+	drawPatientIdentityCard(pdf, c)
 
-		pdf.SetFont("Arial", "B", 9)
-		pdf.SetTextColor(
-			branding.Clinic.Muted.R,
-			branding.Clinic.Muted.G,
-			branding.Clinic.Muted.B,
-		)
-		pdf.CellFormat(48, 6, pdfText(label), "", 0, "L", false, 0, "")
+	drawModernSectionLabel(pdf, "Médicaments prescrits")
+	drawPrescriptionTable(pdf, c.Prescriptions)
 
-		pdf.SetFont("Arial", "", 9)
-		setPDFTextColor(pdf)
-		pdf.MultiCell(142, 6, pdfText(value), "", "L", false)
-	}
+	pdf.Ln(12)
 
-	drawPDFSectionTitle(pdf, "Informations du patient")
-	addLine("Nom et prénoms :", patientFullName(c))
-	addLine("Date de naissance / âge :", patientBirthOrAge(c))
-
-	if c.Patient.IsAssure && c.Patient.MatriculeAssure != "" {
-		addLine("Matricule assuré :", c.Patient.MatriculeAssure)
-	}
-
-	drawPDFSectionTitle(pdf, "Médicaments prescrits")
-
-	if len(c.Prescriptions) == 0 {
-		pdf.SetFont("Arial", "", 9)
-		setPDFTextColor(pdf)
-		pdf.MultiCell(
-			190,
-			6,
-			pdfText("Aucune prescription renseignée."),
-			"",
-			"L",
-			false,
-		)
-	} else {
-		pdf.SetFillColor(
-			branding.Clinic.Primary.R,
-			branding.Clinic.Primary.G,
-			branding.Clinic.Primary.B,
-		)
-		pdf.SetTextColor(255, 255, 255)
-		pdf.SetFont("Arial", "B", 7.5)
-
-		pdf.CellFormat(8, 8, pdfText("N°"), "1", 0, "C", true, 0, "")
-		pdf.CellFormat(38, 8, pdfText("Médicament"), "1", 0, "C", true, 0, "")
-		pdf.CellFormat(22, 8, pdfText("Dosage"), "1", 0, "C", true, 0, "")
-		pdf.CellFormat(24, 8, pdfText("Forme"), "1", 0, "C", true, 0, "")
-		pdf.CellFormat(24, 8, pdfText("Durée"), "1", 0, "C", true, 0, "")
-		pdf.CellFormat(22, 8, pdfText("Voie"), "1", 0, "C", true, 0, "")
-		pdf.CellFormat(52, 8, pdfText("Instructions"), "1", 1, "C", true, 0, "")
-
-		pdf.SetFont("Arial", "", 7.2)
-		setPDFTextColor(pdf)
-
-		for index, p := range c.Prescriptions {
-			pdf.CellFormat(8, 8, pdfText(fmt.Sprintf("%d", index+1)), "1", 0, "C", false, 0, "")
-			pdf.CellFormat(38, 8, pdfText(p.MedicationName), "1", 0, "L", false, 0, "")
-			pdf.CellFormat(22, 8, pdfText(p.Dosage), "1", 0, "L", false, 0, "")
-			pdf.CellFormat(24, 8, pdfText(p.Form), "1", 0, "L", false, 0, "")
-			pdf.CellFormat(24, 8, pdfText(p.Duration), "1", 0, "L", false, 0, "")
-			pdf.CellFormat(22, 8, pdfText(p.Route), "1", 0, "L", false, 0, "")
-			pdf.CellFormat(52, 8, pdfText(p.Instructions), "1", 1, "L", false, 0, "")
-		}
-	}
-
-	pdf.Ln(5)
-
-	pdf.SetFont("Arial", "", 8)
-	pdf.SetTextColor(
-		branding.Clinic.Muted.R,
-		branding.Clinic.Muted.G,
-		branding.Clinic.Muted.B,
-	)
+	pdf.SetFont("Arial", "I", 7.5)
+	pdf.SetTextColor(91, 107, 125)
 	pdf.CellFormat(
-		190,
+		186,
 		5,
-		pdfText("Document généré le : "+time.Now().Format("02/01/2006 15:04")),
+		pdfText(
+			"Document généré le "+
+				time.Now().Format("02/01/2006")+" à "+
+				time.Now().Format("15:04"),
+		),
 		"",
 		1,
 		"L",
@@ -368,13 +304,16 @@ func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
 		"",
 	)
 
-	drawSignatureArea(pdf, c.DoctorName)
-	drawClinicFooter(pdf)
+	drawModernPrescriptionSignature(pdf, c.DoctorName)
+	drawModernFooterStrip(pdf)
 
 	var buf bytes.Buffer
-	err := pdf.Output(&buf)
 
-	return buf.Bytes(), err
+	if err := pdf.Output(&buf); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func consultationStatusLabel(status string) string {
