@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
@@ -700,4 +701,47 @@ func (h *Handler) GetPhysicalExamAreas(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, areas)
+}
+
+func (h *Handler) GetSOAP(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
+		return
+	}
+
+	soap, err := h.service.GetSOAP(uint(id))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "SOAP non renseigné"})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, soap)
+}
+
+func (h *Handler) UpsertSOAP(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
+		return
+	}
+
+	var req UpsertConsultationSOAPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	soap, err := h.service.UpsertSOAP(uint(id), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, soap)
 }

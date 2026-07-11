@@ -183,3 +183,27 @@ type GynecoObstetricHistoryRequest struct {
 	Outcome   string `json:"outcome"`
 	Notes     string `json:"notes"`
 }
+
+type UpsertConsultationSOAPRequest struct {
+	ChiefComplaint          string `json:"chiefComplaint"`
+	HistoryOfPresentIllness string `json:"historyOfPresentIllness"`
+	AssociatedSymptoms      string `json:"associatedSymptoms"`
+	PatientReportedNotes    string `json:"patientReportedNotes"`
+
+	GeneralAppearance   string `json:"generalAppearance"`
+	Consciousness       string `json:"consciousness"`
+	HydrationStatus     string `json:"hydrationStatus"`
+	PhysicalExamSummary string `json:"physicalExamSummary"`
+
+	PrimaryDiagnosis    string `json:"primaryDiagnosis"`
+	AssociatedDiagnoses string `json:"associatedDiagnoses"`
+	ClinicalImpression  string `json:"clinicalImpression"`
+
+	TreatmentPlan     string `json:"treatmentPlan"`
+	InvestigationPlan string `json:"investigationPlan"`
+	FollowUpPlan      string `json:"followUpPlan"`
+	PatientAdvice     string `json:"patientAdvice"`
+	Disposition       string `json:"disposition"`
+
+	UserID uint `json:"userId"`
+}

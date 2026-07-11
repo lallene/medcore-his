@@ -121,10 +121,6 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 	drawModernSectionLabel(pdf, "Informations du patient")
 	drawPatientIdentityCard(pdf, c)
 
-	drawModernSectionLabel(pdf, "Informations de la consultation")
-	drawModernFieldRow(pdf, "Médecin :", c.DoctorName)
-	drawModernFieldRow(pdf, "Service :", c.Service)
-
 	drawModernSectionLabel(pdf, "Repos maladie")
 
 	if !c.SickLeaveRequired {
@@ -189,12 +185,6 @@ func GenerateExamRequestPDF(c *Consultation) ([]byte, error) {
 	if c.Patient.IsAssure && c.Patient.MatriculeAssure != "" {
 		drawModernFieldRow(pdf, "Matricule assuré :", c.Patient.MatriculeAssure)
 	}
-
-	drawModernSectionLabel(pdf, "Informations de la demande")
-	drawModernFieldRow(pdf, "Médecin prescripteur :", c.DoctorName)
-	drawModernFieldRow(pdf, "Service demandeur :", c.Service)
-	drawModernFieldRow(pdf, "Date de demande :", formatDateTimePDF(time.Now()))
-	drawModernFieldRow(pdf, "Consultation :", fmt.Sprintf("N° %d", c.ID))
 
 	drawModernSectionLabel(pdf, "Examens demandés")
 
@@ -543,10 +533,6 @@ func GenerateHospitalizationPDF(c *Consultation) ([]byte, error) {
 	if c.Patient.IsAssure && c.Patient.MatriculeAssure != "" {
 		drawModernFieldRow(pdf, "Matricule assuré :", c.Patient.MatriculeAssure)
 	}
-
-	drawModernSectionLabel(pdf, "Informations de la consultation")
-	drawModernFieldRow(pdf, "Médecin :", c.DoctorName)
-	drawModernFieldRow(pdf, "Service :", c.Service)
 
 	drawModernSectionLabel(pdf, "Motif d'hospitalisation")
 	drawModernParagraph(pdf, c.HospitalizationReason)

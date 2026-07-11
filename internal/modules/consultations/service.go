@@ -851,3 +851,73 @@ func (s *Service) buildPreviousMedication(
 		Status:         status,
 	}, nil
 }
+
+func (s *Service) GetSOAP(consultationID uint) (*ConsultationSOAP, error) {
+	if _, err := s.repo.FindByID(consultationID); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetSOAPByConsultationID(consultationID)
+}
+
+func (s *Service) UpsertSOAP(
+	consultationID uint,
+	req UpsertConsultationSOAPRequest,
+) (*ConsultationSOAP, error) {
+	consultation, err := s.repo.FindByID(consultationID)
+	if err != nil {
+		return nil, err
+	}
+
+	soap := &ConsultationSOAP{
+		ConsultationID: consultationID,
+
+		ChiefComplaint:          req.ChiefComplaint,
+		HistoryOfPresentIllness: req.HistoryOfPresentIllness,
+		AssociatedSymptoms:      req.AssociatedSymptoms,
+		PatientReportedNotes:    req.PatientReportedNotes,
+
+		GeneralAppearance:   req.GeneralAppearance,
+		Consciousness:       req.Consciousness,
+		HydrationStatus:     req.HydrationStatus,
+		PhysicalExamSummary: req.PhysicalExamSummary,
+
+		PrimaryDiagnosis:    req.PrimaryDiagnosis,
+		AssociatedDiagnoses: req.AssociatedDiagnoses,
+		ClinicalImpression:  req.ClinicalImpression,
+
+		TreatmentPlan:     req.TreatmentPlan,
+		InvestigationPlan: req.InvestigationPlan,
+		FollowUpPlan:      req.FollowUpPlan,
+		PatientAdvice:     req.PatientAdvice,
+		Disposition:       req.Disposition,
+
+		UpdatedBy: req.UserID,
+	}
+
+	existing, err := s.repo.GetSOAPByConsultationID(consultationID)
+	if err == nil {
+		soap.ID = existing.ID
+		soap.CreatedAt = existing.CreatedAt
+		soap.CreatedBy = existing.CreatedBy
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		soap.CreatedBy = req.UserID
+	} else {
+		return nil, err
+	}
+
+	if err := s.repo.UpsertSOAP(soap); err != nil {
+		return nil, err
+	}
+
+	if s.medicalRecordsService != nil {
+		_ = s.medicalRecordsService.RecordConsultationStatusChanged(
+			consultation.PatientID,
+			consultation.ID,
+			"soap",
+			"updated",
+		)
+	}
+
+	return s.repo.GetSOAPByConsultationID(consultationID)
+}

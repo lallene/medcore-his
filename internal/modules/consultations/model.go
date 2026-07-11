@@ -54,6 +54,8 @@ type Consultation struct {
 
 	GynecoObstetricHistories []ConsultationGynecoObstetricHistory `gorm:"constraint:OnDelete:CASCADE;" json:"gynecoObstetricHistories"`
 
+	SOAP *ConsultationSOAP `json:"soap,omitempty" gorm:"foreignKey:ConsultationID"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -231,4 +233,38 @@ type ConsultationGynecoObstetricHistory struct {
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type ConsultationSOAP struct {
+	ID             uint `json:"id" gorm:"primaryKey"`
+	ConsultationID uint `json:"consultation_id" gorm:"not null;uniqueIndex"`
+
+	// S — Subjectif
+	ChiefComplaint          string `json:"chief_complaint" gorm:"type:text"`
+	HistoryOfPresentIllness string `json:"history_of_present_illness" gorm:"type:text"`
+	AssociatedSymptoms      string `json:"associated_symptoms" gorm:"type:text"`
+	PatientReportedNotes    string `json:"patient_reported_notes" gorm:"type:text"`
+
+	// O — Objectif
+	GeneralAppearance   string `json:"general_appearance" gorm:"type:text"`
+	Consciousness       string `json:"consciousness" gorm:"type:text"`
+	HydrationStatus     string `json:"hydration_status" gorm:"type:text"`
+	PhysicalExamSummary string `json:"physical_exam_summary" gorm:"type:text"`
+
+	// A — Assessment
+	PrimaryDiagnosis    string `json:"primary_diagnosis" gorm:"type:text"`
+	AssociatedDiagnoses string `json:"associated_diagnoses" gorm:"type:text"`
+	ClinicalImpression  string `json:"clinical_impression" gorm:"type:text"`
+
+	// P — Plan
+	TreatmentPlan     string `json:"treatment_plan" gorm:"type:text"`
+	InvestigationPlan string `json:"investigation_plan" gorm:"type:text"`
+	FollowUpPlan      string `json:"follow_up_plan" gorm:"type:text"`
+	PatientAdvice     string `json:"patient_advice" gorm:"type:text"`
+	Disposition       string `json:"disposition" gorm:"type:varchar(50)"`
+
+	CreatedBy uint      `json:"created_by"`
+	UpdatedBy uint      `json:"updated_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

@@ -27,6 +27,7 @@ func (Module) Register(app *application.Application) {
 		&ConsultationPreviousMedication{},
 		&ConsultationSurgicalHistory{},
 		&ConsultationGynecoObstetricHistory{},
+		&ConsultationSOAP{},
 	)
 
 	SeedConsultationReferences(app.DB)
