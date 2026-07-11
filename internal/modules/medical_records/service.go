@@ -18,6 +18,11 @@ type Service interface {
 	AddMedicalHistory(recordID uint, req CreateMedicalHistoryRequest) (*MedicalHistory, error)
 	AddVitalSign(recordID uint, req CreateVitalSignRequest) (*VitalSign, error)
 	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
+	RecordConsultationSOAPUpdated(
+		patientID uint,
+		consultationID uint,
+		updatedBy uint,
+	) error
 
 	ListVitalSigns(recordID uint) ([]VitalSign, error)
 	RecordConsultationCreated(patientID uint, consultationID uint, department string, doctorName string) error
@@ -570,4 +575,27 @@ func (s *service) GetPatientMedicalSummary(patientID uint) (*PatientMedicalSumma
 		RecentConsultations: recentConsultations,
 		Documents:           documents,
 	}, nil
+}
+
+func (s *service) RecordConsultationSOAPUpdated(
+	patientID uint,
+	consultationID uint,
+	updatedBy uint,
+) error {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return err
+	}
+
+	return s.createTimelineEvent(
+		record,
+		"soap_updated",
+		"consultation",
+		"Note clinique SOAP mise à jour",
+		"Les informations cliniques Subjectif, Objectif, Évaluation et Plan ont été mises à jour.",
+		"consultation",
+		consultationID,
+		"info",
+		updatedBy,
+	)
 }

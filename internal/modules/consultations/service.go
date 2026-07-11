@@ -911,12 +911,13 @@ func (s *Service) UpsertSOAP(
 	}
 
 	if s.medicalRecordsService != nil {
-		_ = s.medicalRecordsService.RecordConsultationStatusChanged(
+		if err := s.medicalRecordsService.RecordConsultationSOAPUpdated(
 			consultation.PatientID,
 			consultation.ID,
-			"soap",
-			"updated",
-		)
+			req.UserID,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.repo.GetSOAPByConsultationID(consultationID)
