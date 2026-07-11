@@ -1,6 +1,7 @@
 package consultations
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -744,4 +745,90 @@ func (h *Handler) UpsertSOAP(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, soap)
+}
+
+func (h *Handler) GetSpecialtyData(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "identifiant de consultation invalide",
+		})
+		return
+	}
+
+	data, err := h.service.GetSpecialtyData(uint(id))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "données de spécialité non renseignées",
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	var parsedData map[string]any
+
+	if data.Data != "" {
+		_ = json.Unmarshal([]byte(data.Data), &parsedData)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":              data.ID,
+		"consultation_id": data.ConsultationID,
+		"specialty_code":  data.SpecialtyCode,
+		"data":            parsedData,
+		"created_by":      data.CreatedBy,
+		"updated_by":      data.UpdatedBy,
+		"created_at":      data.CreatedAt,
+		"updated_at":      data.UpdatedAt,
+	})
+}
+
+func (h *Handler) UpsertSpecialtyData(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "identifiant de consultation invalide",
+		})
+		return
+	}
+
+	var req UpsertConsultationSpecialtyRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	data, err := h.service.UpsertSpecialtyData(uint(id), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	var parsedData map[string]any
+
+	if data.Data != "" {
+		_ = json.Unmarshal([]byte(data.Data), &parsedData)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":              data.ID,
+		"consultation_id": data.ConsultationID,
+		"specialty_code":  data.SpecialtyCode,
+		"data":            parsedData,
+		"created_by":      data.CreatedBy,
+		"updated_by":      data.UpdatedBy,
+		"created_at":      data.CreatedAt,
+		"updated_at":      data.UpdatedAt,
+	})
 }

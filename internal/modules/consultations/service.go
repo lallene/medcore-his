@@ -1,6 +1,7 @@
 package consultations
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -921,4 +922,62 @@ func (s *Service) UpsertSOAP(
 	}
 
 	return s.repo.GetSOAPByConsultationID(consultationID)
+}
+
+func (s *Service) GetSpecialtyData(
+	consultationID uint,
+) (*ConsultationSpecialtyData, error) {
+	if _, err := s.repo.FindByID(consultationID); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetSpecialtyDataByConsultationID(consultationID)
+}
+
+func (s *Service) UpsertSpecialtyData(
+	consultationID uint,
+	req UpsertConsultationSpecialtyRequest,
+) (*ConsultationSpecialtyData, error) {
+	consultation, err := s.repo.FindByID(consultationID)
+	if err != nil {
+		return nil, err
+	}
+
+	dataJSON, err := json.Marshal(req.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	specialtyData := &ConsultationSpecialtyData{
+		ConsultationID: consultationID,
+		SpecialtyCode:  req.SpecialtyCode,
+		Data:           string(dataJSON),
+		UpdatedBy:      req.UserID,
+	}
+
+	existing, err := s.repo.GetSpecialtyDataByConsultationID(consultationID)
+	if err == nil {
+		specialtyData.ID = existing.ID
+		specialtyData.CreatedBy = existing.CreatedBy
+		specialtyData.CreatedAt = existing.CreatedAt
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		specialtyData.CreatedBy = req.UserID
+	} else {
+		return nil, err
+	}
+
+	if err := s.repo.UpsertSpecialtyData(specialtyData); err != nil {
+		return nil, err
+	}
+
+	if s.medicalRecordsService != nil {
+		_ = s.medicalRecordsService.RecordConsultationSpecialtyUpdated(
+			consultation.PatientID,
+			consultation.ID,
+			req.SpecialtyCode,
+			req.UserID,
+		)
+	}
+
+	return s.repo.GetSpecialtyDataByConsultationID(consultationID)
 }

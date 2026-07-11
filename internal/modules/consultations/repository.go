@@ -46,6 +46,7 @@ func (r *Repository) FindByID(id uint) (*Consultation, error) {
 		Preload("SurgicalHistories").
 		Preload("GynecoObstetricHistories").
 		Preload("SOAP").
+		Preload("SpecialtyData").
 		First(&consultation, id).Error
 
 	return &consultation, err
@@ -502,4 +503,31 @@ func (r *Repository) UpsertSOAP(soap *ConsultationSOAP) error {
 		Where("consultation_id = ?", soap.ConsultationID).
 		Assign(soap).
 		FirstOrCreate(soap).Error
+}
+
+func (r *Repository) GetSpecialtyDataByConsultationID(
+	consultationID uint,
+) (*ConsultationSpecialtyData, error) {
+	var specialtyData ConsultationSpecialtyData
+
+	err := r.db.
+		Where("consultation_id = ?", consultationID).
+		First(&specialtyData).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &specialtyData, nil
+}
+
+func (r *Repository) UpsertSpecialtyData(
+	specialtyData *ConsultationSpecialtyData,
+) error {
+	return r.db.
+		Where("consultation_id = ?", specialtyData.ConsultationID).
+		Assign(specialtyData).
+		FirstOrCreate(specialtyData).
+		Error
 }

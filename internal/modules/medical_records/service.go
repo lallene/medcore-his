@@ -30,6 +30,7 @@ type Service interface {
 	RecordExamRequested(patientID uint, consultationID uint, examName string, service string) error
 	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string) error
 	GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error)
+	RecordConsultationSpecialtyUpdated(patientID uint, consultationID uint, specialtyCode string, updatedBy uint) error
 }
 
 type service struct {
@@ -599,3 +600,37 @@ func (s *service) RecordConsultationSOAPUpdated(
 		updatedBy,
 	)
 }
+
+func (s *service) RecordConsultationSpecialtyUpdated(
+	patientID uint,
+	consultationID uint,
+	specialtyCode string,
+	updatedBy uint,
+) error {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return err
+	}
+
+	return s.createTimelineEvent(
+		record,
+		"specialty_data_updated",
+		"consultation",
+		"Volet de spécialité mis à jour",
+		"Données de spécialité enregistrées : "+specialtyCode,
+		"consultation",
+		consultationID,
+		"info",
+		updatedBy,
+	)
+}
+
+const (
+	SpecialtyGeneralMedicine = "GENERAL_MEDICINE"
+	SpecialtyCardiology      = "CARDIOLOGY"
+	SpecialtyGynecology      = "GYNECOLOGY"
+	SpecialtyPediatrics      = "PEDIATRICS"
+	SpecialtyNutrition       = "NUTRITION"
+	SpecialtyNeurology       = "NEUROLOGY"
+	SpecialtySurgery         = "SURGERY"
+)

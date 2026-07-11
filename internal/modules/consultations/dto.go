@@ -207,3 +207,9 @@ type UpsertConsultationSOAPRequest struct {
 
 	UserID uint `json:"userId"`
 }
+
+type UpsertConsultationSpecialtyRequest struct {
+	SpecialtyCode string         `json:"specialtyCode" binding:"required"`
+	Data          map[string]any `json:"data" binding:"required"`
+	UserID        uint           `json:"userId"`
+}

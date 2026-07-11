@@ -53,6 +53,7 @@ type Consultation struct {
 	SurgicalHistories []ConsultationSurgicalHistory `gorm:"constraint:OnDelete:CASCADE;" json:"surgicalHistories"`
 
 	GynecoObstetricHistories []ConsultationGynecoObstetricHistory `gorm:"constraint:OnDelete:CASCADE;" json:"gynecoObstetricHistories"`
+	SpecialtyData            *ConsultationSpecialtyData           `json:"specialty_data,omitempty" gorm:"foreignKey:ConsultationID"`
 
 	SOAP *ConsultationSOAP `json:"soap,omitempty" gorm:"foreignKey:ConsultationID"`
 
@@ -262,6 +263,19 @@ type ConsultationSOAP struct {
 	FollowUpPlan      string `json:"follow_up_plan" gorm:"type:text"`
 	PatientAdvice     string `json:"patient_advice" gorm:"type:text"`
 	Disposition       string `json:"disposition" gorm:"type:varchar(50)"`
+
+	CreatedBy uint      `json:"created_by"`
+	UpdatedBy uint      `json:"updated_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type ConsultationSpecialtyData struct {
+	ID             uint `json:"id" gorm:"primaryKey"`
+	ConsultationID uint `json:"consultation_id" gorm:"not null;uniqueIndex"`
+
+	SpecialtyCode string `json:"specialty_code" gorm:"type:varchar(50);not null;index"`
+	Data          string `json:"data" gorm:"type:json"`
 
 	CreatedBy uint      `json:"created_by"`
 	UpdatedBy uint      `json:"updated_by"`
