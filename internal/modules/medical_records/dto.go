@@ -130,12 +130,34 @@ type UpdateCommonMedicalRecordRequest struct {
 	RegularTreatments      []RegularTreatmentRequest     `json:"regular_treatments"`
 	Vaccinations           []VaccinationRequest          `json:"vaccinations"`
 	Disabilities           []DisabilityRequest           `json:"disabilities"`
+	Allergies              []AllergyRequest              `json:"allergies"`
+	MedicalHistories       []MedicalHistoryRequest       `json:"medical_histories"`
 
 	Lifestyle *LifestyleRequest `json:"lifestyle"`
 
 	MedicalDevices []MedicalDeviceRequest `json:"medical_devices"`
 
 	UpdatedBy uint `json:"updated_by"`
+}
+
+type AllergyRequest struct {
+	AllergenType string `json:"allergen_type"`
+	AllergenName string `json:"allergen_name"`
+	Reaction     string `json:"reaction"`
+	Severity     string `json:"severity"`
+	Comment      string `json:"comment"`
+	IsActive     bool   `json:"is_active"`
+}
+
+type MedicalHistoryRequest struct {
+	Type        string     `json:"type"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	StartDate   *time.Time `json:"start_date"`
+	EndDate     *time.Time `json:"end_date"`
+	Status      string     `json:"status"`
+	Severity    string     `json:"severity"`
+	Comment     string     `json:"comment"`
 }
 
 type PatientMedicalProfileRequest struct {

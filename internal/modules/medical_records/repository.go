@@ -309,6 +309,80 @@ func (r *repository) SaveCommonMedicalRecord(
 
 				UpdatedBy: req.UpdatedBy,
 			}
+			if err := tx.
+				Where("medical_record_id = ?", record.ID).
+				Delete(&Allergy{}).
+				Error; err != nil {
+				return err
+			}
+
+			for _, item := range req.Allergies {
+				if item.AllergenName == "" {
+					continue
+				}
+
+				severity := item.Severity
+				if severity == "" {
+					severity = "medium"
+				}
+
+				entity := Allergy{
+					MedicalRecordID: record.ID,
+					PatientID:       record.PatientID,
+					AllergenType:    item.AllergenType,
+					AllergenName:    item.AllergenName,
+					Reaction:        item.Reaction,
+					Severity:        severity,
+					Comment:         item.Comment,
+					IsActive:        item.IsActive,
+					CreatedBy:       req.UpdatedBy,
+				}
+
+				if err := tx.Create(&entity).Error; err != nil {
+					return err
+				}
+			}
+
+			if err := tx.
+				Where("medical_record_id = ?", record.ID).
+				Delete(&MedicalHistory{}).
+				Error; err != nil {
+				return err
+			}
+
+			for _, item := range req.MedicalHistories {
+				if item.Title == "" {
+					continue
+				}
+
+				status := item.Status
+				if status == "" {
+					status = "active"
+				}
+
+				severity := item.Severity
+				if severity == "" {
+					severity = "medium"
+				}
+
+				entity := MedicalHistory{
+					MedicalRecordID: record.ID,
+					PatientID:       record.PatientID,
+					Type:            item.Type,
+					Title:           item.Title,
+					Description:     item.Description,
+					StartDate:       item.StartDate,
+					EndDate:         item.EndDate,
+					Status:          status,
+					Severity:        severity,
+					Comment:         item.Comment,
+					CreatedBy:       req.UpdatedBy,
+				}
+
+				if err := tx.Create(&entity).Error; err != nil {
+					return err
+				}
+			}
 
 			if err := tx.
 				Where("medical_record_id = ?", record.ID).
