@@ -96,6 +96,9 @@ type VitalSign struct {
 	BloodGlucose         *float64 `json:"blood_glucose"`
 	WaistCircumferenceCm *float64 `json:"waist_circumference_cm"`
 	PainScore            *int     `json:"pain_score"`
+	PainLocation         string   `json:"pain_location" gorm:"size:200"`
+	PainType             string   `json:"pain_type" gorm:"size:150"`
+	PainDuration         string   `json:"pain_duration" gorm:"size:100"`
 	Comment              string   `json:"comment"`
 
 	MeasuredBy uint      `json:"measured_by"`
@@ -276,12 +279,13 @@ type MedicalDocument struct {
 	PatientID       uint  `json:"patient_id" gorm:"not null;index"`
 	ConsultationID  *uint `json:"consultation_id" gorm:"index"`
 
-	Type        string `json:"type" gorm:"not null;size:100"`
-	Label       string `json:"label" gorm:"not null;size:255"`
-	FileName    string `json:"file_name" gorm:"size:255"`
-	MimeType    string `json:"mime_type" gorm:"size:100"`
-	FileURL     string `json:"file_url" gorm:"size:500"`
-	Description string `json:"description" gorm:"type:text"`
+	Type         string     `json:"type" gorm:"not null;size:100"`
+	Label        string     `json:"label" gorm:"not null;size:255"`
+	FileName     string     `json:"file_name" gorm:"size:255"`
+	MimeType     string     `json:"mime_type" gorm:"size:100"`
+	FileURL      string     `json:"file_url" gorm:"size:500"`
+	Description  string     `json:"description" gorm:"type:text"`
+	DocumentDate *time.Time `json:"document_date"`
 
 	UploadedBy uint      `json:"uploaded_by"`
 	CreatedAt  time.Time `json:"created_at"`

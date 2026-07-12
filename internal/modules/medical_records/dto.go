@@ -132,6 +132,8 @@ type UpdateCommonMedicalRecordRequest struct {
 	Disabilities           []DisabilityRequest           `json:"disabilities"`
 	Allergies              []AllergyRequest              `json:"allergies"`
 	MedicalHistories       []MedicalHistoryRequest       `json:"medical_histories"`
+	VitalSigns             []VitalSignRequest            `json:"vital_signs"`
+	Documents              []MedicalDocumentRequest      `json:"documents"`
 
 	Lifestyle *LifestyleRequest `json:"lifestyle"`
 
@@ -237,4 +239,43 @@ type MedicalDeviceRequest struct {
 	ImplantationDate *time.Time `json:"implantation_date"`
 	Comment          string     `json:"comment"`
 	IsActive         bool       `json:"is_active"`
+}
+
+type VitalSignRequest struct {
+	ID             uint  `json:"id"`
+	ConsultationID *uint `json:"consultation_id"`
+
+	WeightKg             *float64 `json:"weight_kg"`
+	HeightCm             *float64 `json:"height_cm"`
+	TemperatureC         *float64 `json:"temperature_c"`
+	SystolicBP           *int     `json:"systolic_bp"`
+	DiastolicBP          *int     `json:"diastolic_bp"`
+	HeartRate            *int     `json:"heart_rate"`
+	RespiratoryRate      *int     `json:"respiratory_rate"`
+	OxygenSaturation     *float64 `json:"oxygen_saturation"`
+	BloodGlucose         *float64 `json:"blood_glucose"`
+	WaistCircumferenceCm *float64 `json:"waist_circumference_cm"`
+	PainScore            *int     `json:"pain_score"`
+
+	PainLocation string `json:"pain_location"`
+	PainType     string `json:"pain_type"`
+	PainDuration string `json:"pain_duration"`
+
+	MeasuredAt *time.Time `json:"measured_at"`
+	MeasuredBy uint       `json:"measured_by"`
+	Comment    string     `json:"comment"`
+}
+
+type MedicalDocumentRequest struct {
+	ID             uint  `json:"id"`
+	ConsultationID *uint `json:"consultation_id"`
+
+	Type         string     `json:"type"`
+	Label        string     `json:"label"`
+	DocumentDate *time.Time `json:"document_date"`
+	FileName     string     `json:"file_name"`
+	MimeType     string     `json:"mime_type"`
+	FileURL      string     `json:"file_url"`
+	Description  string     `json:"description"`
+	UploadedBy   uint       `json:"uploaded_by"`
 }

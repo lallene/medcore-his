@@ -1,6 +1,8 @@
 package medical_records
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -581,6 +583,181 @@ func (r *repository) SaveCommonMedicalRecord(
 			}
 		}
 
+		vitalIDs := make([]uint, 0, len(req.VitalSigns))
+
+		for _, item := range req.VitalSigns {
+			measuredAt := time.Now()
+
+			if item.MeasuredAt != nil {
+				measuredAt = *item.MeasuredAt
+			}
+
+			var bmi *float64
+
+			if item.WeightKg != nil &&
+				item.HeightCm != nil &&
+				*item.HeightCm > 0 {
+				heightM := *item.HeightCm / 100
+				calculatedBMI := *item.WeightKg / (heightM * heightM)
+				bmi = &calculatedBMI
+			}
+
+			if item.ID > 0 {
+				updates := map[string]any{
+					"consultation_id":        item.ConsultationID,
+					"weight_kg":              item.WeightKg,
+					"height_cm":              item.HeightCm,
+					"bmi":                    bmi,
+					"temperature_c":          item.TemperatureC,
+					"systolic_bp":            item.SystolicBP,
+					"diastolic_bp":           item.DiastolicBP,
+					"heart_rate":             item.HeartRate,
+					"respiratory_rate":       item.RespiratoryRate,
+					"oxygen_saturation":      item.OxygenSaturation,
+					"blood_glucose":          item.BloodGlucose,
+					"waist_circumference_cm": item.WaistCircumferenceCm,
+					"pain_score":             item.PainScore,
+					"pain_location":          item.PainLocation,
+					"pain_type":              item.PainType,
+					"pain_duration":          item.PainDuration,
+					"measured_at":            measuredAt,
+					"measured_by":            item.MeasuredBy,
+					"comment":                item.Comment,
+				}
+
+				result := tx.
+					Model(&VitalSign{}).
+					Where(
+						"id = ? AND medical_record_id = ?",
+						item.ID,
+						record.ID,
+					).
+					Updates(updates)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				if result.RowsAffected > 0 {
+					vitalIDs = append(vitalIDs, item.ID)
+				}
+
+				continue
+			}
+
+			entity := VitalSign{
+				MedicalRecordID:      record.ID,
+				PatientID:            record.PatientID,
+				ConsultationID:       item.ConsultationID,
+				WeightKg:             item.WeightKg,
+				HeightCm:             item.HeightCm,
+				BMI:                  bmi,
+				TemperatureC:         item.TemperatureC,
+				SystolicBP:           item.SystolicBP,
+				DiastolicBP:          item.DiastolicBP,
+				HeartRate:            item.HeartRate,
+				RespiratoryRate:      item.RespiratoryRate,
+				OxygenSaturation:     item.OxygenSaturation,
+				BloodGlucose:         item.BloodGlucose,
+				WaistCircumferenceCm: item.WaistCircumferenceCm,
+				PainScore:            item.PainScore,
+				PainLocation:         item.PainLocation,
+				PainType:             item.PainType,
+				PainDuration:         item.PainDuration,
+				MeasuredAt:           measuredAt,
+				MeasuredBy:           item.MeasuredBy,
+				Comment:              item.Comment,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+
+			vitalIDs = append(vitalIDs, entity.ID)
+		}
+
+		deleteVitals := tx.
+			Where("medical_record_id = ?", record.ID)
+
+		if len(vitalIDs) > 0 {
+			deleteVitals = deleteVitals.Not("id IN ?", vitalIDs)
+		}
+
+		if err := deleteVitals.Delete(&VitalSign{}).Error; err != nil {
+			return err
+		}
+
+		documentIDs := make([]uint, 0, len(req.Documents))
+
+		for _, item := range req.Documents {
+			if item.Label == "" && item.FileURL == "" {
+				continue
+			}
+
+			if item.ID > 0 {
+				updates := map[string]any{
+					"consultation_id": item.ConsultationID,
+					"type":            item.Type,
+					"label":           item.Label,
+					"document_date":   item.DocumentDate,
+					"file_name":       item.FileName,
+					"mime_type":       item.MimeType,
+					"file_url":        item.FileURL,
+					"description":     item.Description,
+					"uploaded_by":     item.UploadedBy,
+				}
+
+				result := tx.
+					Model(&MedicalDocument{}).
+					Where(
+						"id = ? AND medical_record_id = ?",
+						item.ID,
+						record.ID,
+					).
+					Updates(updates)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				if result.RowsAffected > 0 {
+					documentIDs = append(documentIDs, item.ID)
+				}
+
+				continue
+			}
+
+			entity := MedicalDocument{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+				ConsultationID:  item.ConsultationID,
+				Type:            item.Type,
+				Label:           item.Label,
+				DocumentDate:    item.DocumentDate,
+				FileName:        item.FileName,
+				MimeType:        item.MimeType,
+				FileURL:         item.FileURL,
+				Description:     item.Description,
+				UploadedBy:      item.UploadedBy,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+
+			documentIDs = append(documentIDs, entity.ID)
+		}
+
+		deleteDocuments := tx.
+			Where("medical_record_id = ?", record.ID)
+
+		if len(documentIDs) > 0 {
+			deleteDocuments = deleteDocuments.Not("id IN ?", documentIDs)
+		}
+
+		if err := deleteDocuments.Delete(&MedicalDocument{}).Error; err != nil {
+			return err
+		}
 		return nil
 	})
 }
