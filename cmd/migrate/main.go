@@ -38,6 +38,16 @@ func main() {
 		&medical_records.Allergy{},
 		&medical_records.MedicalHistory{},
 		&medical_records.VitalSign{},
+		&medical_records.MedicalTimelineEvent{},
+		&medical_records.PatientMedicalProfile{},
+		&medical_records.SurgicalHistory{},
+		&medical_records.FamilyMedicalHistory{},
+		&medical_records.RegularTreatment{},
+		&medical_records.Vaccination{},
+		&medical_records.Disability{},
+		&medical_records.Lifestyle{},
+		&medical_records.MedicalDevice{},
+		&medical_records.MedicalDocument{},
 	)
 
 	if err != nil {

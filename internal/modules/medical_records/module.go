@@ -18,6 +18,15 @@ func (Module) Register(app *application.Application) {
 		&MedicalHistory{},
 		&VitalSign{},
 		&MedicalTimelineEvent{},
+		&PatientMedicalProfile{},
+		&SurgicalHistory{},
+		&FamilyMedicalHistory{},
+		&RegularTreatment{},
+		&Vaccination{},
+		&Disability{},
+		&Lifestyle{},
+		&MedicalDevice{},
+		&MedicalDocument{},
 	)
 
 	repository := NewRepository(app.DB)

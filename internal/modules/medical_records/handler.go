@@ -302,3 +302,55 @@ func (h *Handler) GetPatientMedicalSummary(c *gin.Context) {
 
 	c.JSON(http.StatusOK, summary)
 }
+
+func (h *Handler) GetCommonMedicalRecord(c *gin.Context) {
+	patientID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "identifiant patient invalide",
+		})
+		return
+	}
+
+	record, err := h.service.GetCommonMedicalRecord(uint(patientID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, record)
+}
+
+func (h *Handler) UpdateCommonMedicalRecord(c *gin.Context) {
+	patientID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "identifiant patient invalide",
+		})
+		return
+	}
+
+	var req UpdateCommonMedicalRecordRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	record, err := h.service.UpdateCommonMedicalRecord(
+		uint(patientID),
+		req,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, record)
+}

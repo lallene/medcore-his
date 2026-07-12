@@ -31,6 +31,15 @@ type Service interface {
 	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string) error
 	GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error)
 	RecordConsultationSpecialtyUpdated(patientID uint, consultationID uint, specialtyCode string, updatedBy uint) error
+
+	GetCommonMedicalRecord(
+		patientID uint,
+	) (*CommonMedicalRecordResponse, error)
+
+	UpdateCommonMedicalRecord(
+		patientID uint,
+		req UpdateCommonMedicalRecordRequest,
+	) (*CommonMedicalRecordResponse, error)
 }
 
 type service struct {
@@ -634,3 +643,42 @@ const (
 	SpecialtyNeurology       = "NEUROLOGY"
 	SpecialtySurgery         = "SURGERY"
 )
+
+func (s *service) GetCommonMedicalRecord(
+	patientID uint,
+) (*CommonMedicalRecordResponse, error) {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetCommonMedicalRecord(record.ID)
+}
+
+func (s *service) UpdateCommonMedicalRecord(
+	patientID uint,
+	req UpdateCommonMedicalRecordRequest,
+) (*CommonMedicalRecordResponse, error) {
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.SaveCommonMedicalRecord(record, req); err != nil {
+		return nil, err
+	}
+
+	_ = s.createTimelineEvent(
+		record,
+		"common_medical_record_updated",
+		"medical_record",
+		"Dossier médical mis à jour",
+		"Les informations longitudinales du patient ont été mises à jour.",
+		"medical_record",
+		record.ID,
+		"info",
+		req.UpdatedBy,
+	)
+
+	return s.repo.GetCommonMedicalRecord(record.ID)
+}

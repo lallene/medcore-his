@@ -26,6 +26,12 @@ type Repository interface {
 	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
 	ListRecentTimelineEvents(recordID uint, limit int) ([]MedicalTimelineEvent, error)
 	ListRecentConsultations(patientID uint, limit int) ([]MedicalSummaryConsultationItem, error)
+	GetCommonMedicalRecord(recordID uint) (*CommonMedicalRecordResponse, error)
+
+	SaveCommonMedicalRecord(
+		record *MedicalRecord,
+		req UpdateCommonMedicalRecordRequest,
+	) error
 }
 
 type repository struct {
@@ -188,4 +194,319 @@ func (r *repository) ListRecentConsultations(
 		Scan(&items).Error
 
 	return items, err
+}
+
+func (r *repository) GetCommonMedicalRecord(
+	recordID uint,
+) (*CommonMedicalRecordResponse, error) {
+	var record MedicalRecord
+
+	err := r.db.
+		Preload("Profile").
+		Preload("Allergies", "is_active = ?", true).
+		Preload("MedicalHistories").
+		Preload("SurgicalHistories").
+		Preload("FamilyMedicalHistories").
+		Preload("RegularTreatments").
+		Preload("Vaccinations").
+		Preload("Disabilities").
+		Preload("Lifestyle").
+		Preload("MedicalDevices").
+		Preload("VitalSigns", func(db *gorm.DB) *gorm.DB {
+			return db.Order("measured_at DESC")
+		}).
+		Preload("Documents", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at DESC")
+		}).
+		First(&record, recordID).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	profile := record.Profile
+	allergies := record.Allergies
+	medicalHistories := record.MedicalHistories
+	surgicalHistories := record.SurgicalHistories
+	familyMedicalHistories := record.FamilyMedicalHistories
+	regularTreatments := record.RegularTreatments
+	vaccinations := record.Vaccinations
+	disabilities := record.Disabilities
+	lifestyle := record.Lifestyle
+	medicalDevices := record.MedicalDevices
+	vitalSigns := record.VitalSigns
+	documents := record.Documents
+
+	record.Profile = nil
+	record.Allergies = nil
+	record.MedicalHistories = nil
+	record.SurgicalHistories = nil
+	record.FamilyMedicalHistories = nil
+	record.RegularTreatments = nil
+	record.Vaccinations = nil
+	record.Disabilities = nil
+	record.Lifestyle = nil
+	record.MedicalDevices = nil
+	record.VitalSigns = nil
+	record.Documents = nil
+
+	return &CommonMedicalRecordResponse{
+		MedicalRecord: record,
+
+		Profile: profile,
+
+		Allergies:        allergies,
+		MedicalHistories: medicalHistories,
+
+		SurgicalHistories:      surgicalHistories,
+		FamilyMedicalHistories: familyMedicalHistories,
+		RegularTreatments:      regularTreatments,
+		Vaccinations:           vaccinations,
+		Disabilities:           disabilities,
+
+		Lifestyle: lifestyle,
+
+		MedicalDevices: medicalDevices,
+		VitalSigns:     vitalSigns,
+		Documents:      documents,
+	}, nil
+}
+
+func (r *repository) SaveCommonMedicalRecord(
+	record *MedicalRecord,
+	req UpdateCommonMedicalRecordRequest,
+) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if req.Profile != nil {
+			profile := PatientMedicalProfile{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+
+				Email:         req.Profile.Email,
+				Address:       req.Profile.Address,
+				MaritalStatus: req.Profile.MaritalStatus,
+				Profession:    req.Profile.Profession,
+				PhotoURL:      req.Profile.PhotoURL,
+
+				EmergencyContactFirstName:    req.Profile.EmergencyContactFirstName,
+				EmergencyContactLastName:     req.Profile.EmergencyContactLastName,
+				EmergencyContactRelationship: req.Profile.EmergencyContactRelationship,
+				EmergencyContactPhone:        req.Profile.EmergencyContactPhone,
+
+				LegalGuardianName:         req.Profile.LegalGuardianName,
+				LegalGuardianRelationship: req.Profile.LegalGuardianRelationship,
+				LegalGuardianPhone:        req.Profile.LegalGuardianPhone,
+				LegalGuardianAddress:      req.Profile.LegalGuardianAddress,
+
+				InsuranceName:        req.Profile.InsuranceName,
+				MutualName:           req.Profile.MutualName,
+				InsuranceNumber:      req.Profile.InsuranceNumber,
+				CoverageOrganization: req.Profile.CoverageOrganization,
+
+				BloodGroup: req.Profile.BloodGroup,
+				Rhesus:     req.Profile.Rhesus,
+
+				UpdatedBy: req.UpdatedBy,
+			}
+
+			if err := tx.
+				Where("medical_record_id = ?", record.ID).
+				Assign(profile).
+				FirstOrCreate(&profile).
+				Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.
+			Where("medical_record_id = ?", record.ID).
+			Delete(&SurgicalHistory{}).
+			Error; err != nil {
+			return err
+		}
+
+		for _, item := range req.SurgicalHistories {
+			if item.ProcedureName == "" {
+				continue
+			}
+
+			entity := SurgicalHistory{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+				ProcedureName:   item.ProcedureName,
+				ProcedureDate:   item.ProcedureDate,
+				Facility:        item.Facility,
+				Complications:   item.Complications,
+				Comment:         item.Comment,
+				CreatedBy:       req.UpdatedBy,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.
+			Where("medical_record_id = ?", record.ID).
+			Delete(&FamilyMedicalHistory{}).
+			Error; err != nil {
+			return err
+		}
+
+		for _, item := range req.FamilyMedicalHistories {
+			if item.Disease == "" {
+				continue
+			}
+
+			entity := FamilyMedicalHistory{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+				Disease:         item.Disease,
+				Relationship:    item.Relationship,
+				Comment:         item.Comment,
+				CreatedBy:       req.UpdatedBy,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.
+			Where("medical_record_id = ?", record.ID).
+			Delete(&RegularTreatment{}).
+			Error; err != nil {
+			return err
+		}
+
+		for _, item := range req.RegularTreatments {
+			if item.MedicationName == "" {
+				continue
+			}
+
+			entity := RegularTreatment{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+				MedicationName:  item.MedicationName,
+				Dosage:          item.Dosage,
+				Frequency:       item.Frequency,
+				StartDate:       item.StartDate,
+				Prescriber:      item.Prescriber,
+				IsActive:        item.IsActive,
+				CreatedBy:       req.UpdatedBy,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.
+			Where("medical_record_id = ?", record.ID).
+			Delete(&Vaccination{}).
+			Error; err != nil {
+			return err
+		}
+
+		for _, item := range req.Vaccinations {
+			if item.VaccineName == "" {
+				continue
+			}
+
+			entity := Vaccination{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+				VaccineName:     item.VaccineName,
+				Dose:            item.Dose,
+				VaccinationDate: item.VaccinationDate,
+				NextBoosterDate: item.NextBoosterDate,
+				Status:          item.Status,
+				CreatedBy:       req.UpdatedBy,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.
+			Where("medical_record_id = ?", record.ID).
+			Delete(&Disability{}).
+			Error; err != nil {
+			return err
+		}
+
+		for _, item := range req.Disabilities {
+			if item.Type == "" {
+				continue
+			}
+
+			entity := Disability{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+				Type:            item.Type,
+				Level:           item.Level,
+				SpecialNeeds:    item.SpecialNeeds,
+				CreatedBy:       req.UpdatedBy,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+		}
+
+		if req.Lifestyle != nil {
+			lifestyle := Lifestyle{
+				MedicalRecordID: record.ID,
+				PatientID:       record.PatientID,
+
+				Tobacco:          req.Lifestyle.Tobacco,
+				Alcohol:          req.Lifestyle.Alcohol,
+				PhysicalActivity: req.Lifestyle.PhysicalActivity,
+				Diet:             req.Lifestyle.Diet,
+
+				UpdatedBy: req.UpdatedBy,
+			}
+
+			if err := tx.
+				Where("medical_record_id = ?", record.ID).
+				Assign(lifestyle).
+				FirstOrCreate(&lifestyle).
+				Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.
+			Where("medical_record_id = ?", record.ID).
+			Delete(&MedicalDevice{}).
+			Error; err != nil {
+			return err
+		}
+
+		for _, item := range req.MedicalDevices {
+			if item.Type == "" {
+				continue
+			}
+
+			entity := MedicalDevice{
+				MedicalRecordID:  record.ID,
+				PatientID:        record.PatientID,
+				Type:             item.Type,
+				Name:             item.Name,
+				Reference:        item.Reference,
+				ImplantationDate: item.ImplantationDate,
+				Comment:          item.Comment,
+				IsActive:         item.IsActive,
+				CreatedBy:        req.UpdatedBy,
+			}
+
+			if err := tx.Create(&entity).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }

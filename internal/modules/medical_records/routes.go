@@ -15,4 +15,7 @@ func RegisterRoutes(router *gin.RouterGroup, handler *Handler) {
 	router.GET("/medical-records/:recordId/vital-signs", handler.ListVitalSigns)
 	router.GET("/medical-records/:recordId/timeline", handler.ListTimelineEvents)
 	router.GET("/patients/:id/medical-summary", handler.GetPatientMedicalSummary)
+	router.GET("/patients/:id/common-medical-record", handler.GetCommonMedicalRecord)
+
+	router.PUT("/patients/:id/common-medical-record", handler.UpdateCommonMedicalRecord)
 }

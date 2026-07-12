@@ -100,3 +100,119 @@ type PatientMedicalSummaryResponse struct {
 	RecentConsultations []MedicalSummaryConsultationItem `json:"recent_consultations"`
 	Documents           []MedicalSummaryDocumentItem     `json:"documents"`
 }
+
+type CommonMedicalRecordResponse struct {
+	MedicalRecord MedicalRecord `json:"medical_record"`
+
+	Profile *PatientMedicalProfile `json:"profile"`
+
+	Allergies        []Allergy        `json:"allergies"`
+	MedicalHistories []MedicalHistory `json:"medical_histories"`
+
+	SurgicalHistories      []SurgicalHistory      `json:"surgical_histories"`
+	FamilyMedicalHistories []FamilyMedicalHistory `json:"family_medical_histories"`
+	RegularTreatments      []RegularTreatment     `json:"regular_treatments"`
+	Vaccinations           []Vaccination          `json:"vaccinations"`
+	Disabilities           []Disability           `json:"disabilities"`
+
+	Lifestyle *Lifestyle `json:"lifestyle"`
+
+	MedicalDevices []MedicalDevice   `json:"medical_devices"`
+	VitalSigns     []VitalSign       `json:"vital_signs"`
+	Documents      []MedicalDocument `json:"documents"`
+}
+
+type UpdateCommonMedicalRecordRequest struct {
+	Profile *PatientMedicalProfileRequest `json:"profile"`
+
+	SurgicalHistories      []SurgicalHistoryRequest      `json:"surgical_histories"`
+	FamilyMedicalHistories []FamilyMedicalHistoryRequest `json:"family_medical_histories"`
+	RegularTreatments      []RegularTreatmentRequest     `json:"regular_treatments"`
+	Vaccinations           []VaccinationRequest          `json:"vaccinations"`
+	Disabilities           []DisabilityRequest           `json:"disabilities"`
+
+	Lifestyle *LifestyleRequest `json:"lifestyle"`
+
+	MedicalDevices []MedicalDeviceRequest `json:"medical_devices"`
+
+	UpdatedBy uint `json:"updated_by"`
+}
+
+type PatientMedicalProfileRequest struct {
+	Email         string `json:"email"`
+	Address       string `json:"address"`
+	MaritalStatus string `json:"marital_status"`
+	Profession    string `json:"profession"`
+	PhotoURL      string `json:"photo_url"`
+
+	EmergencyContactFirstName    string `json:"emergency_contact_first_name"`
+	EmergencyContactLastName     string `json:"emergency_contact_last_name"`
+	EmergencyContactRelationship string `json:"emergency_contact_relationship"`
+	EmergencyContactPhone        string `json:"emergency_contact_phone"`
+
+	LegalGuardianName         string `json:"legal_guardian_name"`
+	LegalGuardianRelationship string `json:"legal_guardian_relationship"`
+	LegalGuardianPhone        string `json:"legal_guardian_phone"`
+	LegalGuardianAddress      string `json:"legal_guardian_address"`
+
+	InsuranceName        string `json:"insurance_name"`
+	MutualName           string `json:"mutual_name"`
+	InsuranceNumber      string `json:"insurance_number"`
+	CoverageOrganization string `json:"coverage_organization"`
+
+	BloodGroup string `json:"blood_group"`
+	Rhesus     string `json:"rhesus"`
+}
+
+type SurgicalHistoryRequest struct {
+	ProcedureName string     `json:"procedure_name"`
+	ProcedureDate *time.Time `json:"procedure_date"`
+	Facility      string     `json:"facility"`
+	Complications string     `json:"complications"`
+	Comment       string     `json:"comment"`
+}
+
+type FamilyMedicalHistoryRequest struct {
+	Disease      string `json:"disease"`
+	Relationship string `json:"relationship"`
+	Comment      string `json:"comment"`
+}
+
+type RegularTreatmentRequest struct {
+	MedicationName string     `json:"medication_name"`
+	Dosage         string     `json:"dosage"`
+	Frequency      string     `json:"frequency"`
+	StartDate      *time.Time `json:"start_date"`
+	Prescriber     string     `json:"prescriber"`
+	IsActive       bool       `json:"is_active"`
+}
+
+type VaccinationRequest struct {
+	VaccineName     string     `json:"vaccine_name"`
+	Dose            string     `json:"dose"`
+	VaccinationDate *time.Time `json:"vaccination_date"`
+	NextBoosterDate *time.Time `json:"next_booster_date"`
+	Status          string     `json:"status"`
+}
+
+type DisabilityRequest struct {
+	Type         string `json:"type"`
+	Level        string `json:"level"`
+	SpecialNeeds string `json:"special_needs"`
+}
+
+type LifestyleRequest struct {
+	Tobacco          string `json:"tobacco"`
+	Alcohol          string `json:"alcohol"`
+	PhysicalActivity string `json:"physical_activity"`
+	Diet             string `json:"diet"`
+}
+
+type MedicalDeviceRequest struct {
+	Type             string     `json:"type"`
+	Name             string     `json:"name"`
+	Reference        string     `json:"reference"`
+	ImplantationDate *time.Time `json:"implantation_date"`
+	Comment          string     `json:"comment"`
+	IsActive         bool       `json:"is_active"`
+}
