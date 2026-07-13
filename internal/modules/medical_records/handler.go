@@ -1,10 +1,12 @@
 package medical_records
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
@@ -353,4 +355,52 @@ func (h *Handler) UpdateCommonMedicalRecord(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, record)
+}
+
+// GetPatientSummary godoc
+// @Summary      Obtenir le résumé clinique du patient
+// @Description  Retourne l'identité, les allergies, les maladies chroniques, les traitements, les dernières constantes, la dernière consultation et les alertes cliniques.
+// @Tags         Medical Records
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "ID du patient"
+// @Success      200 {object} PatientSummaryResponse
+// @Failure      400 {object} map[string]interface{}
+// @Failure      404 {object} map[string]interface{}
+// @Failure      500 {object} map[string]interface{}
+// @Router       /patients/{id}/summary [get]
+func (h *Handler) GetPatientSummary(c *gin.Context) {
+	patientID, err := strconv.ParseUint(
+		c.Param("id"),
+		10,
+		64,
+	)
+	if err != nil {
+		c.JSON(
+			http.StatusBadRequest,
+			gin.H{"error": "identifiant patient invalide"},
+		)
+		return
+	}
+
+	summary, err := h.service.GetPatientSummary(
+		uint(patientID),
+	)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(
+				http.StatusNotFound,
+				gin.H{"error": "patient introuvable"},
+			)
+			return
+		}
+
+		c.JSON(
+			http.StatusInternalServerError,
+			gin.H{"error": err.Error()},
+		)
+		return
+	}
+
+	c.JSON(http.StatusOK, summary)
 }

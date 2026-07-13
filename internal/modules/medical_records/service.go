@@ -3,6 +3,7 @@ package medical_records
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -31,6 +32,9 @@ type Service interface {
 	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string) error
 	GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error)
 	RecordConsultationSpecialtyUpdated(patientID uint, consultationID uint, specialtyCode string, updatedBy uint) error
+	GetPatientSummary(
+		patientID uint,
+	) (*PatientSummaryResponse, error)
 
 	GetCommonMedicalRecord(
 		patientID uint,
@@ -681,4 +685,303 @@ func (s *service) UpdateCommonMedicalRecord(
 	)
 
 	return s.repo.GetCommonMedicalRecord(record.ID)
+}
+
+func (s *service) GetPatientSummary(
+	patientID uint,
+) (*PatientSummaryResponse, error) {
+	patient, err := s.repo.GetPatientSummaryIdentity(patientID)
+	if err != nil {
+		return nil, err
+	}
+
+	record, err := s.GetOrCreateMedicalRecord(patientID)
+	if err != nil {
+		return nil, err
+	}
+
+	allergies, err := s.repo.ListAllergies(record.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	histories, err := s.repo.ListMedicalHistories(record.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	commonRecord, err := s.repo.GetCommonMedicalRecord(record.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	lastVital, err := s.repo.GetLastVitalSign(record.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		lastVital = nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	lastConsultation, err := s.repo.GetLastConsultationSummary(patientID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		lastConsultation = nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	statistics, err := s.repo.GetPatientSummaryStatistics(
+		patientID,
+		record.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	allergyItems := make([]AllergySummary, 0, len(allergies))
+
+	for _, allergy := range allergies {
+		allergyItems = append(allergyItems, AllergySummary{
+			ID:         allergy.ID,
+			Name:       allergy.AllergenName,
+			Type:       allergy.AllergenType,
+			Reaction:   allergy.Reaction,
+			Severity:   allergy.Severity,
+			IsHighRisk: isHighRiskAllergy(allergy.Severity),
+		})
+	}
+
+	chronicDiseases := make([]ChronicDiseaseSummary, 0)
+
+	for _, history := range histories {
+		if !isChronicMedicalHistory(history) {
+			continue
+		}
+
+		chronicDiseases = append(
+			chronicDiseases,
+			ChronicDiseaseSummary{
+				ID:          history.ID,
+				Name:        history.Title,
+				Severity:    history.Severity,
+				DiagnosedAt: history.StartDate,
+			},
+		)
+	}
+
+	activeTreatments := make([]TreatmentSummary, 0)
+
+	for _, treatment := range commonRecord.RegularTreatments {
+		if !treatment.IsActive {
+			continue
+		}
+
+		activeTreatments = append(
+			activeTreatments,
+			TreatmentSummary{
+				ID:             treatment.ID,
+				MedicationName: treatment.MedicationName,
+				Dosage:         treatment.Dosage,
+				Frequency:      treatment.Frequency,
+				StartDate:      treatment.StartDate,
+				Prescriber:     treatment.Prescriber,
+			},
+		)
+	}
+
+	alerts := buildClinicalAlerts(
+		allergies,
+		lastVital,
+	)
+
+	var lastVitalSummary *LastVitalSummary
+
+	if lastVital != nil {
+		lastVitalSummary = &LastVitalSummary{
+			ID:                   lastVital.ID,
+			MeasuredAt:           lastVital.MeasuredAt,
+			WeightKg:             lastVital.WeightKg,
+			HeightCm:             lastVital.HeightCm,
+			BMI:                  lastVital.BMI,
+			SystolicBP:           lastVital.SystolicBP,
+			DiastolicBP:          lastVital.DiastolicBP,
+			HeartRate:            lastVital.HeartRate,
+			Temperature:          lastVital.TemperatureC,
+			RespiratoryRate:      lastVital.RespiratoryRate,
+			OxygenSaturation:     lastVital.OxygenSaturation,
+			BloodGlucose:         lastVital.BloodGlucose,
+			PainScore:            lastVital.PainScore,
+			WaistCircumferenceCm: lastVital.WaistCircumferenceCm,
+		}
+	}
+
+	return &PatientSummaryResponse{
+		Patient: *patient,
+
+		MedicalRecord: MedicalRecordSummary{
+			ID:                record.ID,
+			RecordNumber:      record.RecordNumber,
+			Status:            record.Status,
+			ActiveAllergies:   int64(len(allergyItems)),
+			ChronicDiseases:   int64(len(chronicDiseases)),
+			CurrentTreatments: int64(len(activeTreatments)),
+		},
+
+		Allergies:        allergyItems,
+		ChronicDiseases:  chronicDiseases,
+		ActiveTreatments: activeTreatments,
+		LastVitals:       lastVitalSummary,
+		LastConsultation: lastConsultation,
+		ClinicalAlerts:   alerts,
+		Statistics:       *statistics,
+	}, nil
+}
+
+func isHighRiskAllergy(severity string) bool {
+	switch normalizeClinicalValue(severity) {
+	case "high", "severe", "critical", "anaphylaxis":
+		return true
+	default:
+		return false
+	}
+}
+
+func isChronicMedicalHistory(history MedicalHistory) bool {
+	historyType := normalizeClinicalValue(history.Type)
+	status := normalizeClinicalValue(history.Status)
+
+	return historyType == "chronic" &&
+		status != "resolved" &&
+		status != "inactive"
+}
+
+func normalizeClinicalValue(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func buildClinicalAlerts(
+	allergies []Allergy,
+	vital *VitalSign,
+) []ClinicalAlertSummary {
+	alerts := make([]ClinicalAlertSummary, 0)
+
+	for _, allergy := range allergies {
+		if !isHighRiskAllergy(allergy.Severity) {
+			continue
+		}
+
+		description := allergy.AllergenName
+
+		if allergy.Reaction != "" {
+			description += " — " + allergy.Reaction
+		}
+
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity:    "critical",
+			Code:        "HIGH_RISK_ALLERGY",
+			Title:       "Allergie à haut risque",
+			Description: description,
+			Source:      "allergy",
+		})
+	}
+
+	if vital == nil {
+		return alerts
+	}
+
+	if vital.SystolicBP != nil && *vital.SystolicBP >= 180 {
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity: "critical",
+			Code:     "SEVERE_HYPERTENSION",
+			Title:    "Hypertension sévère",
+			Description: fmt.Sprintf(
+				"Pression artérielle systolique mesurée à %d mmHg.",
+				*vital.SystolicBP,
+			),
+			Source: "vital_sign",
+		})
+	}
+
+	if vital.DiastolicBP != nil && *vital.DiastolicBP >= 120 {
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity: "critical",
+			Code:     "SEVERE_DIASTOLIC_HYPERTENSION",
+			Title:    "Hypertension diastolique sévère",
+			Description: fmt.Sprintf(
+				"Pression artérielle diastolique mesurée à %d mmHg.",
+				*vital.DiastolicBP,
+			),
+			Source: "vital_sign",
+		})
+	}
+
+	if vital.OxygenSaturation != nil &&
+		*vital.OxygenSaturation < 90 {
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity: "critical",
+			Code:     "LOW_OXYGEN_SATURATION",
+			Title:    "Saturation en oxygène basse",
+			Description: fmt.Sprintf(
+				"SpO₂ mesurée à %.1f %%.",
+				*vital.OxygenSaturation,
+			),
+			Source: "vital_sign",
+		})
+	}
+
+	if vital.TemperatureC != nil &&
+		*vital.TemperatureC >= 39 {
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity: "high",
+			Code:     "HIGH_FEVER",
+			Title:    "Fièvre élevée",
+			Description: fmt.Sprintf(
+				"Température mesurée à %.1f °C.",
+				*vital.TemperatureC,
+			),
+			Source: "vital_sign",
+		})
+	}
+
+	if vital.BMI != nil && *vital.BMI >= 40 {
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity: "high",
+			Code:     "SEVERE_OBESITY",
+			Title:    "Obésité sévère",
+			Description: fmt.Sprintf(
+				"IMC calculé à %.1f kg/m².",
+				*vital.BMI,
+			),
+			Source: "vital_sign",
+		})
+	}
+
+	if vital.PainScore != nil && *vital.PainScore >= 8 {
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity: "high",
+			Code:     "SEVERE_PAIN",
+			Title:    "Douleur intense",
+			Description: fmt.Sprintf(
+				"Score de douleur évalué à %d/10.",
+				*vital.PainScore,
+			),
+			Source: "vital_sign",
+		})
+	}
+
+	if vital.TemperatureC != nil &&
+		vital.HeartRate != nil &&
+		vital.RespiratoryRate != nil &&
+		*vital.TemperatureC >= 39 &&
+		*vital.HeartRate >= 120 &&
+		*vital.RespiratoryRate >= 30 {
+		alerts = append(alerts, ClinicalAlertSummary{
+			Severity:    "critical",
+			Code:        "SEPSIS_WARNING",
+			Title:       "Signes cliniques préoccupants",
+			Description: "Fièvre élevée associée à une tachycardie et une fréquence respiratoire élevée. Une évaluation médicale urgente est nécessaire.",
+			Source:      "clinical_rule",
+		})
+	}
+
+	return alerts
 }

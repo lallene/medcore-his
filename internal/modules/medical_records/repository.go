@@ -29,6 +29,18 @@ type Repository interface {
 	ListRecentTimelineEvents(recordID uint, limit int) ([]MedicalTimelineEvent, error)
 	ListRecentConsultations(patientID uint, limit int) ([]MedicalSummaryConsultationItem, error)
 	GetCommonMedicalRecord(recordID uint) (*CommonMedicalRecordResponse, error)
+	GetPatientSummaryIdentity(
+		patientID uint,
+	) (*PatientSummaryPatient, error)
+
+	GetLastConsultationSummary(
+		patientID uint,
+	) (*LastConsultationSummary, error)
+
+	GetPatientSummaryStatistics(
+		patientID uint,
+		recordID uint,
+	) (*PatientSummaryStatistics, error)
 
 	SaveCommonMedicalRecord(
 		record *MedicalRecord,
@@ -760,4 +772,144 @@ func (r *repository) SaveCommonMedicalRecord(
 		}
 		return nil
 	})
+}
+
+func (r *repository) GetPatientSummaryIdentity(
+	patientID uint,
+) (*PatientSummaryPatient, error) {
+	var patient PatientSummaryPatient
+
+	err := r.db.
+		Table("patients p").
+		Select(`
+			p.id,
+			p.code_patient,
+			p.numero_dossier,
+			p.nom AS last_name,
+			p.prenoms AS first_names,
+			p.sexe AS sex,
+			p.date_naissance AS birth_date,
+			p.age,
+			p.telephone AS phone,
+			p.quartier AS address,
+			p.is_assure AS is_insured,
+			p.taux_couverture AS coverage_rate,
+			p.matricule_assure AS insurance_number,
+			COALESCE(pmp.blood_group, '') AS blood_group,
+			COALESCE(pmp.rhesus, '') AS rhesus,
+			COALESCE(pmp.insurance_name, '') AS insurance_name,
+			COALESCE(pmp.mutual_name, '') AS mutual_name,
+			COALESCE(pmp.photo_url, '') AS photo_url
+		`).
+		Joins(`
+			LEFT JOIN medical_records mr
+				ON mr.patient_id = p.id
+		`).
+		Joins(`
+			LEFT JOIN patient_medical_profiles pmp
+				ON pmp.medical_record_id = mr.id
+		`).
+		Where("p.id = ?", patientID).
+		Limit(1).
+		Scan(&patient).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if patient.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	return &patient, nil
+}
+
+func (r *repository) GetLastConsultationSummary(
+	patientID uint,
+) (*LastConsultationSummary, error) {
+	var consultation LastConsultationSummary
+
+	err := r.db.
+		Table("consultations").
+		Select(`
+			id,
+			created_at AS date,
+			service,
+			doctor_name,
+			diagnosis,
+			status
+		`).
+		Where("patient_id = ?", patientID).
+		Order("created_at DESC, id DESC").
+		Limit(1).
+		Scan(&consultation).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if consultation.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	return &consultation, nil
+}
+
+func (r *repository) GetPatientSummaryStatistics(
+	patientID uint,
+	recordID uint,
+) (*PatientSummaryStatistics, error) {
+	var statistics PatientSummaryStatistics
+
+	err := r.db.Raw(`
+		SELECT
+			(
+				SELECT COUNT(*)
+				FROM consultations
+				WHERE patient_id = ?
+			) AS consultations,
+
+			(
+				SELECT COUNT(*)
+				FROM consultations
+				WHERE patient_id = ?
+				  AND hospitalization_required = TRUE
+			) AS hospitalizations,
+
+			(
+				SELECT COUNT(*)
+				FROM consultation_prescriptions cp
+				INNER JOIN consultations c
+					ON c.id = cp.consultation_id
+				WHERE c.patient_id = ?
+			) AS prescriptions,
+
+			(
+				SELECT COUNT(*)
+				FROM consultation_exam_requests cer
+				INNER JOIN consultations c
+					ON c.id = cer.consultation_id
+				WHERE c.patient_id = ?
+			) AS exams,
+
+			(
+				SELECT COUNT(*)
+				FROM medical_documents
+				WHERE medical_record_id = ?
+			) AS documents
+	`,
+		patientID,
+		patientID,
+		patientID,
+		patientID,
+		recordID,
+	).Scan(&statistics).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &statistics, nil
 }
