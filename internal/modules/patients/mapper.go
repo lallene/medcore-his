@@ -8,16 +8,23 @@ func ToResponse(patient *Patient) PatientResponse {
 	}
 
 	return PatientResponse{
-		ID:              patient.ID,
-		UUID:            patient.UUID,
-		CodePatient:     patient.CodePatient,
-		NumeroDossier:   patient.NumeroDossier,
-		Nom:             patient.Nom,
-		Prenoms:         patient.Prenoms,
-		Sexe:            patient.Sexe,
-		Age:             patient.Age,
+		ID:   patient.ID,
+		UUID: patient.UUID,
+
+		CodePatient:   patient.CodePatient,
+		NumeroDossier: patient.NumeroDossier,
+
+		Nom:     patient.Nom,
+		Prenoms: patient.Prenoms,
+		Sexe:    patient.Sexe,
+
+		DateNaissance: patient.DateNaissance,
+		Age:           patient.Age,
+
 		Telephone:       patient.Telephone,
 		Quartier:        patient.Quartier,
+		PersonneContact: patient.PersonneContact,
+
 		IsAssure:        patient.IsAssure,
 		TauxCouverture:  patient.TauxCouverture,
 		MatriculeAssure: patient.MatriculeAssure,
@@ -26,11 +33,25 @@ func ToResponse(patient *Patient) PatientResponse {
 
 func ToSummary(patient Patient) PatientSummary {
 	return PatientSummary{
-		ID:            patient.ID,
+		ID: patient.ID,
+
+		CodePatient:   patient.CodePatient,
 		NumeroDossier: patient.NumeroDossier,
-		Nom:           patient.Nom,
-		Prenoms:       patient.Prenoms,
-		Telephone:     patient.Telephone,
+
+		Nom:     patient.Nom,
+		Prenoms: patient.Prenoms,
+		Sexe:    patient.Sexe,
+
+		DateNaissance: patient.DateNaissance,
+		Age:           patient.Age,
+
+		Telephone:       patient.Telephone,
+		Quartier:        patient.Quartier,
+		PersonneContact: patient.PersonneContact,
+
+		IsAssure:        patient.IsAssure,
+		TauxCouverture:  patient.TauxCouverture,
+		MatriculeAssure: patient.MatriculeAssure,
 	}
 }
 
