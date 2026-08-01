@@ -22,6 +22,6 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
 /**
 git status
 git add .
-git commit -m "feat: enrich patient medical summary with consultations and documents"
+git commit -m "medical_record"
 git push origin main
 **/

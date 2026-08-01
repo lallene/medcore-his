@@ -62,8 +62,28 @@ func (r *Repository) FindByPatientID(patientID uint) ([]Consultation, error) {
 		Preload("Exams").
 		Preload("Prescriptions").
 		Preload("Antecedent").
+
+		// Examen physique
 		Preload("PhysicalExams").
+		Preload("PhysicalExams.Area").
+
+		// Traitements administrés
 		Preload("AdministeredTreatments").
+
+		// Historique médicamenteux
+		Preload("PreviousMedications").
+
+		// Antécédents chirurgicaux
+		Preload("SurgicalHistories").
+
+		// Historique gynécologique / obstétrical
+		Preload("GynecoObstetricHistories").
+
+		// SOAP
+		Preload("SOAP").
+
+		// Données spécifiques à la spécialité
+		Preload("SpecialtyData").
 		Where("patient_id = ?", patientID).
 		Order("created_at DESC").
 		Find(&consultations).Error
