@@ -1,6 +1,8 @@
 package coverage
 
 import (
+	"time"
+
 	"github.com/lallene/medcore-his/backend/internal/core/repository"
 	"gorm.io/gorm"
 )
@@ -26,12 +28,20 @@ func NewRepository(db *gorm.DB) Repository {
 
 func (r *coverageRepository) FindActiveByPatient(patientID uint) ([]PatientCoverage, error) {
 	var items []PatientCoverage
+	today := time.Now().Format("2006-01-02")
 
 	err := r.db.
 		Preload("Patient").
 		Preload("Company").
 		Preload("Guarantor").
-		Where("patient_id = ? AND is_active = ?", patientID, true).
+		Where(
+			"patient_id = ? AND is_active = ? AND (valid_from IS NULL OR valid_from <= ?) AND (valid_to IS NULL OR valid_to >= ?)",
+			patientID,
+			true,
+			today,
+			today,
+		).
+		Order("is_principal DESC, valid_from DESC, id DESC").
 		Find(&items).Error
 
 	return items, err

@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 )
 
 type Handler struct {
@@ -15,6 +17,15 @@ type Handler struct {
 
 func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
+}
+
+func medicalAuthorID(c *gin.Context) (uint, bool) {
+	userID, err := rbac.CurrentUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return 0, false
+	}
+	return userID, true
 }
 
 // GetOrCreateByPatientID godoc
@@ -88,6 +99,10 @@ func (h *Handler) GetOverview(c *gin.Context) {
 // @Failure      500       {object}  map[string]interface{}
 // @Router       /medical-records/{recordId}/alerts [post]
 func (h *Handler) AddAlert(c *gin.Context) {
+	authorID, ok := medicalAuthorID(c)
+	if !ok {
+		return
+	}
 	recordID, err := strconv.ParseUint(c.Param("recordId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "recordId invalide"})
@@ -100,7 +115,7 @@ func (h *Handler) AddAlert(c *gin.Context) {
 		return
 	}
 
-	alert, err := h.service.AddAlert(uint(recordID), req)
+	alert, err := h.service.AddAlert(uint(recordID), req, authorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -124,6 +139,10 @@ func (h *Handler) AddAlert(c *gin.Context) {
 // @Failure      500       {object}  map[string]interface{}
 // @Router       /medical-records/{recordId}/allergies [post]
 func (h *Handler) AddAllergy(c *gin.Context) {
+	authorID, ok := medicalAuthorID(c)
+	if !ok {
+		return
+	}
 	recordID, err := strconv.ParseUint(c.Param("recordId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "recordId invalide"})
@@ -136,7 +155,7 @@ func (h *Handler) AddAllergy(c *gin.Context) {
 		return
 	}
 
-	allergy, err := h.service.AddAllergy(uint(recordID), req)
+	allergy, err := h.service.AddAllergy(uint(recordID), req, authorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -160,6 +179,10 @@ func (h *Handler) AddAllergy(c *gin.Context) {
 // @Failure      500       {object}  map[string]interface{}
 // @Router       /medical-records/{recordId}/histories [post]
 func (h *Handler) AddMedicalHistory(c *gin.Context) {
+	authorID, ok := medicalAuthorID(c)
+	if !ok {
+		return
+	}
 	recordID, err := strconv.ParseUint(c.Param("recordId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "recordId invalide"})
@@ -172,7 +195,7 @@ func (h *Handler) AddMedicalHistory(c *gin.Context) {
 		return
 	}
 
-	history, err := h.service.AddMedicalHistory(uint(recordID), req)
+	history, err := h.service.AddMedicalHistory(uint(recordID), req, authorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -196,6 +219,10 @@ func (h *Handler) AddMedicalHistory(c *gin.Context) {
 // @Failure      500       {object}  map[string]interface{}
 // @Router       /medical-records/{recordId}/vital-signs [post]
 func (h *Handler) AddVitalSign(c *gin.Context) {
+	authorID, ok := medicalAuthorID(c)
+	if !ok {
+		return
+	}
 	recordID, err := strconv.ParseUint(c.Param("recordId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "recordId invalide"})
@@ -208,7 +235,7 @@ func (h *Handler) AddVitalSign(c *gin.Context) {
 		return
 	}
 
-	vital, err := h.service.AddVitalSign(uint(recordID), req)
+	vital, err := h.service.AddVitalSign(uint(recordID), req, authorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -326,6 +353,10 @@ func (h *Handler) GetCommonMedicalRecord(c *gin.Context) {
 }
 
 func (h *Handler) UpdateCommonMedicalRecord(c *gin.Context) {
+	authorID, ok := medicalAuthorID(c)
+	if !ok {
+		return
+	}
 	patientID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -346,8 +377,18 @@ func (h *Handler) UpdateCommonMedicalRecord(c *gin.Context) {
 	record, err := h.service.UpdateCommonMedicalRecord(
 		uint(patientID),
 		req,
+		authorID,
 	)
 	if err != nil {
+		if errors.Is(err, ErrCommonMedicalRecordConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, ErrCommonMedicalRecordInvalid) ||
+			errors.Is(err, ErrCommonMedicalRecordChild) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})

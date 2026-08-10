@@ -68,7 +68,11 @@ func (s *Service) GetExams() ([]MedicalExam, error) {
 	return s.repo.FindExams()
 }
 
-func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultation, error) {
+func (s *Service) ListConsultations(filter ConsultationListFilter) (*ConsultationListResult, error) {
+	return s.repo.List(filter)
+}
+
+func (s *Service) CreateConsultation(req CreateConsultationRequest, authorID uint) (*Consultation, error) {
 	reasons, err := s.repo.FindReasonsByIDs(req.ReasonIDs)
 	if err != nil {
 		return nil, err
@@ -277,6 +281,7 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 			consultation.ID,
 			consultation.Service,
 			consultation.DoctorName,
+			authorID,
 		)
 		if err != nil {
 			return nil, err
@@ -290,6 +295,7 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 				consultation.ID,
 				exam.Name,
 				consultation.Service,
+				authorID,
 			)
 		}
 	}
@@ -302,6 +308,7 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest) (*Consultati
 				prescription.MedicationName,
 				prescription.Dosage,
 				consultation.Service,
+				authorID,
 			)
 		}
 	}
@@ -375,7 +382,7 @@ func canTransitionConsultationStatus(currentStatus, newStatus string) bool {
 	}
 }
 
-func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest) (*Consultation, error) {
+func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, authorID uint) (*Consultation, error) {
 
 	consultation, err := s.repo.FindByID(id)
 	if err != nil {
@@ -424,6 +431,7 @@ func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest) (*C
 			consultation.ID,
 			oldStatus,
 			req.Status,
+			authorID,
 		)
 	}
 
@@ -864,6 +872,7 @@ func (s *Service) GetSOAP(consultationID uint) (*ConsultationSOAP, error) {
 func (s *Service) UpsertSOAP(
 	consultationID uint,
 	req UpsertConsultationSOAPRequest,
+	authorID uint,
 ) (*ConsultationSOAP, error) {
 	consultation, err := s.repo.FindByID(consultationID)
 	if err != nil {
@@ -893,7 +902,7 @@ func (s *Service) UpsertSOAP(
 		PatientAdvice:     req.PatientAdvice,
 		Disposition:       req.Disposition,
 
-		UpdatedBy: req.UserID,
+		UpdatedBy: authorID,
 	}
 
 	existing, err := s.repo.GetSOAPByConsultationID(consultationID)
@@ -902,7 +911,7 @@ func (s *Service) UpsertSOAP(
 		soap.CreatedAt = existing.CreatedAt
 		soap.CreatedBy = existing.CreatedBy
 	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		soap.CreatedBy = req.UserID
+		soap.CreatedBy = authorID
 	} else {
 		return nil, err
 	}
@@ -915,7 +924,7 @@ func (s *Service) UpsertSOAP(
 		if err := s.medicalRecordsService.RecordConsultationSOAPUpdated(
 			consultation.PatientID,
 			consultation.ID,
-			req.UserID,
+			authorID,
 		); err != nil {
 			return nil, err
 		}
@@ -937,6 +946,7 @@ func (s *Service) GetSpecialtyData(
 func (s *Service) UpsertSpecialtyData(
 	consultationID uint,
 	req UpsertConsultationSpecialtyRequest,
+	authorID uint,
 ) (*ConsultationSpecialtyData, error) {
 	consultation, err := s.repo.FindByID(consultationID)
 	if err != nil {
@@ -952,7 +962,7 @@ func (s *Service) UpsertSpecialtyData(
 		ConsultationID: consultationID,
 		SpecialtyCode:  req.SpecialtyCode,
 		Data:           string(dataJSON),
-		UpdatedBy:      req.UserID,
+		UpdatedBy:      authorID,
 	}
 
 	existing, err := s.repo.GetSpecialtyDataByConsultationID(consultationID)
@@ -961,7 +971,7 @@ func (s *Service) UpsertSpecialtyData(
 		specialtyData.CreatedBy = existing.CreatedBy
 		specialtyData.CreatedAt = existing.CreatedAt
 	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		specialtyData.CreatedBy = req.UserID
+		specialtyData.CreatedBy = authorID
 	} else {
 		return nil, err
 	}
@@ -975,7 +985,7 @@ func (s *Service) UpsertSpecialtyData(
 			consultation.PatientID,
 			consultation.ID,
 			req.SpecialtyCode,
-			req.UserID,
+			authorID,
 		)
 	}
 

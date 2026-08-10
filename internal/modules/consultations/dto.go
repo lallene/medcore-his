@@ -1,5 +1,38 @@
 package consultations
 
+import "time"
+
+type ConsultationListFilter struct {
+	Page      int
+	Limit     int
+	PatientID *uint
+	Status    string
+	Service   string
+	Search    string
+}
+
+type ConsultationListItem struct {
+	ID            uint      `json:"id"`
+	PatientID     uint      `json:"patientId"`
+	PatientCode   string    `json:"patientCode"`
+	PatientRecord string    `json:"patientRecord"`
+	PatientName   string    `json:"patientName"`
+	DoctorName    string    `json:"doctorName"`
+	Service       string    `json:"service"`
+	Status        string    `json:"status"`
+	Diagnosis     string    `json:"diagnosis"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+type ConsultationListResult struct {
+	Data       []ConsultationListItem
+	Page       int
+	Limit      int
+	Total      int64
+	TotalPages int
+}
+
 type CreateConsultationRequest struct {
 	PatientID  uint   `json:"patientId" binding:"required"`
 	DoctorName string `json:"doctorName" binding:"required"`
@@ -204,12 +237,9 @@ type UpsertConsultationSOAPRequest struct {
 	FollowUpPlan      string `json:"followUpPlan"`
 	PatientAdvice     string `json:"patientAdvice"`
 	Disposition       string `json:"disposition"`
-
-	UserID uint `json:"userId"`
 }
 
 type UpsertConsultationSpecialtyRequest struct {
 	SpecialtyCode string         `json:"specialtyCode" binding:"required"`
 	Data          map[string]any `json:"data" binding:"required"`
-	UserID        uint           `json:"userId"`
 }

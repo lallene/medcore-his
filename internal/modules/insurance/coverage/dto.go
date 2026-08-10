@@ -53,7 +53,11 @@ type CoverageSummary struct {
 	CompanyName   string  `json:"companyName,omitempty"`
 	GuarantorName string  `json:"guarantorName,omitempty"`
 	MemberNumber  string  `json:"memberNumber"`
+	Subscriber    string  `json:"subscriber"`
+	Beneficiary   string  `json:"beneficiary"`
 	CoverageRate  float64 `json:"coverageRate"`
+	ValidFrom     string  `json:"validFrom,omitempty"`
+	ValidTo       string  `json:"validTo,omitempty"`
 	IsPrincipal   bool    `json:"isPrincipal"`
 	IsActive      bool    `json:"isActive"`
 }

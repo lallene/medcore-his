@@ -20,6 +20,7 @@ func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 		consultations.DELETE("/exams/:id", rbac.Permission("consultations.references.manage"), handler.DeleteExam)
 
 		consultations.POST("", handler.CreateConsultation)
+		consultations.GET("", handler.ListConsultations)
 		consultations.GET("/:id", handler.GetConsultation)
 		consultations.PUT("/:id", handler.UpdateConsultation)
 		consultations.PATCH("/:id/status", handler.UpdateStatus)

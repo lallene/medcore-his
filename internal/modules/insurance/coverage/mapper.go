@@ -53,6 +53,17 @@ func ToResponse(item *PatientCoverage) CoverageResponse {
 }
 
 func ToSummary(item PatientCoverage) CoverageSummary {
+	validFrom := ""
+	validTo := ""
+
+	if item.ValidFrom != nil {
+		validFrom = item.ValidFrom.Format("2006-01-02")
+	}
+
+	if item.ValidTo != nil {
+		validTo = item.ValidTo.Format("2006-01-02")
+	}
+
 	return CoverageSummary{
 		ID:            item.ID,
 		PatientID:     item.PatientID,
@@ -60,7 +71,11 @@ func ToSummary(item PatientCoverage) CoverageSummary {
 		CompanyName:   item.Company.Name,
 		GuarantorName: item.Guarantor.Name,
 		MemberNumber:  item.MemberNumber,
+		Subscriber:    item.Subscriber,
+		Beneficiary:   item.Beneficiary,
 		CoverageRate:  item.CoverageRate,
+		ValidFrom:     validFrom,
+		ValidTo:       validTo,
 		IsPrincipal:   item.IsPrincipal,
 		IsActive:      item.IsActive,
 	}

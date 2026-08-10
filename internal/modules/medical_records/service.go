@@ -14,10 +14,10 @@ type Service interface {
 	GetOrCreateMedicalRecord(patientID uint) (*MedicalRecord, error)
 	GetOverview(recordID uint) (*MedicalRecordOverviewResponse, error)
 
-	AddAlert(recordID uint, req CreateAlertRequest) (*MedicalAlert, error)
-	AddAllergy(recordID uint, req CreateAllergyRequest) (*Allergy, error)
-	AddMedicalHistory(recordID uint, req CreateMedicalHistoryRequest) (*MedicalHistory, error)
-	AddVitalSign(recordID uint, req CreateVitalSignRequest) (*VitalSign, error)
+	AddAlert(recordID uint, req CreateAlertRequest, authorID uint) (*MedicalAlert, error)
+	AddAllergy(recordID uint, req CreateAllergyRequest, authorID uint) (*Allergy, error)
+	AddMedicalHistory(recordID uint, req CreateMedicalHistoryRequest, authorID uint) (*MedicalHistory, error)
+	AddVitalSign(recordID uint, req CreateVitalSignRequest, authorID uint) (*VitalSign, error)
 	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
 	RecordConsultationSOAPUpdated(
 		patientID uint,
@@ -26,10 +26,10 @@ type Service interface {
 	) error
 
 	ListVitalSigns(recordID uint) ([]VitalSign, error)
-	RecordConsultationCreated(patientID uint, consultationID uint, department string, doctorName string) error
-	RecordConsultationStatusChanged(patientID uint, consultationID uint, oldStatus string, newStatus string) error
-	RecordExamRequested(patientID uint, consultationID uint, examName string, service string) error
-	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string) error
+	RecordConsultationCreated(patientID uint, consultationID uint, department string, doctorName string, authorID uint) error
+	RecordConsultationStatusChanged(patientID uint, consultationID uint, oldStatus string, newStatus string, authorID uint) error
+	RecordExamRequested(patientID uint, consultationID uint, examName string, service string, authorID uint) error
+	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string, authorID uint) error
 	GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error)
 	RecordConsultationSpecialtyUpdated(patientID uint, consultationID uint, specialtyCode string, updatedBy uint) error
 	GetPatientSummary(
@@ -43,6 +43,7 @@ type Service interface {
 	UpdateCommonMedicalRecord(
 		patientID uint,
 		req UpdateCommonMedicalRecordRequest,
+		authorID uint,
 	) (*CommonMedicalRecordResponse, error)
 }
 
@@ -107,7 +108,7 @@ func (s *service) GetOverview(recordID uint) (*MedicalRecordOverviewResponse, er
 	}, nil
 }
 
-func (s *service) AddAlert(recordID uint, req CreateAlertRequest) (*MedicalAlert, error) {
+func (s *service) AddAlert(recordID uint, req CreateAlertRequest, authorID uint) (*MedicalAlert, error) {
 	record, err := s.repo.GetMedicalRecordByID(recordID)
 	if err != nil {
 		return nil, err
@@ -125,7 +126,7 @@ func (s *service) AddAlert(recordID uint, req CreateAlertRequest) (*MedicalAlert
 		Description:     req.Description,
 		Severity:        req.Severity,
 		IsActive:        true,
-		CreatedBy:       req.CreatedBy,
+		CreatedBy:       authorID,
 	}
 
 	if err := s.repo.CreateAlert(alert); err != nil {
@@ -135,7 +136,7 @@ func (s *service) AddAlert(recordID uint, req CreateAlertRequest) (*MedicalAlert
 	return alert, nil
 }
 
-func (s *service) AddAllergy(recordID uint, req CreateAllergyRequest) (*Allergy, error) {
+func (s *service) AddAllergy(recordID uint, req CreateAllergyRequest, authorID uint) (*Allergy, error) {
 	record, err := s.repo.GetMedicalRecordByID(recordID)
 	if err != nil {
 		return nil, err
@@ -154,7 +155,7 @@ func (s *service) AddAllergy(recordID uint, req CreateAllergyRequest) (*Allergy,
 		Severity:        req.Severity,
 		Comment:         req.Comment,
 		IsActive:        true,
-		CreatedBy:       req.CreatedBy,
+		CreatedBy:       authorID,
 	}
 
 	if err := s.repo.CreateAllergy(allergy); err != nil {
@@ -174,13 +175,13 @@ func (s *service) AddAllergy(recordID uint, req CreateAllergyRequest) (*Allergy,
 		"allergy",
 		allergy.ID,
 		allergy.Severity,
-		req.CreatedBy,
+		authorID,
 	)
 
 	return allergy, nil
 }
 
-func (s *service) AddMedicalHistory(recordID uint, req CreateMedicalHistoryRequest) (*MedicalHistory, error) {
+func (s *service) AddMedicalHistory(recordID uint, req CreateMedicalHistoryRequest, authorID uint) (*MedicalHistory, error) {
 	record, err := s.repo.GetMedicalRecordByID(recordID)
 	if err != nil {
 		return nil, err
@@ -205,7 +206,7 @@ func (s *service) AddMedicalHistory(recordID uint, req CreateMedicalHistoryReque
 		Status:          req.Status,
 		Severity:        req.Severity,
 		Comment:         req.Comment,
-		CreatedBy:       req.CreatedBy,
+		CreatedBy:       authorID,
 	}
 
 	if err := s.repo.CreateMedicalHistory(history); err != nil {
@@ -220,13 +221,13 @@ func (s *service) AddMedicalHistory(recordID uint, req CreateMedicalHistoryReque
 		"medical_history",
 		history.ID,
 		history.Severity,
-		req.CreatedBy,
+		authorID,
 	)
 
 	return history, nil
 }
 
-func (s *service) AddVitalSign(recordID uint, req CreateVitalSignRequest) (*VitalSign, error) {
+func (s *service) AddVitalSign(recordID uint, req CreateVitalSignRequest, authorID uint) (*VitalSign, error) {
 	record, err := s.repo.GetMedicalRecordByID(recordID)
 	if err != nil {
 		return nil, err
@@ -252,7 +253,7 @@ func (s *service) AddVitalSign(recordID uint, req CreateVitalSignRequest) (*Vita
 		BloodGlucose:         req.BloodGlucose,
 		WaistCircumferenceCm: req.WaistCircumferenceCm,
 		PainScore:            req.PainScore,
-		MeasuredBy:           req.MeasuredBy,
+		MeasuredBy:           authorID,
 		MeasuredAt:           measuredAt,
 		Comment:              req.Comment,
 	}
@@ -284,7 +285,7 @@ func (s *service) AddVitalSign(recordID uint, req CreateVitalSignRequest) (*Vita
 		"vital_sign",
 		vital.ID,
 		"info",
-		req.MeasuredBy,
+		authorID,
 	)
 
 	return vital, nil
@@ -363,6 +364,7 @@ func (s *service) RecordConsultationCreated(
 	consultationID uint,
 	department string,
 	doctorName string,
+	authorID uint,
 ) error {
 	record, err := s.GetOrCreateMedicalRecord(patientID)
 	if err != nil {
@@ -396,7 +398,7 @@ func (s *service) RecordConsultationCreated(
 		"consultation",
 		consultationID,
 		"info",
-		0,
+		authorID,
 	)
 }
 func (s *service) RecordConsultationStatusChanged(
@@ -404,6 +406,7 @@ func (s *service) RecordConsultationStatusChanged(
 	consultationID uint,
 	oldStatus string,
 	newStatus string,
+	authorID uint,
 ) error {
 	record, err := s.GetOrCreateMedicalRecord(patientID)
 	if err != nil {
@@ -425,7 +428,7 @@ func (s *service) RecordConsultationStatusChanged(
 		"consultation",
 		consultationID,
 		"info",
-		0,
+		authorID,
 	)
 }
 
@@ -434,6 +437,7 @@ func (s *service) RecordExamRequested(
 	consultationID uint,
 	examName string,
 	service string,
+	authorID uint,
 ) error {
 	record, err := s.GetOrCreateMedicalRecord(patientID)
 	if err != nil {
@@ -459,7 +463,7 @@ func (s *service) RecordExamRequested(
 		"consultation",
 		consultationID,
 		"info",
-		0,
+		authorID,
 	)
 }
 
@@ -469,6 +473,7 @@ func (s *service) RecordMedicationPrescribed(
 	medicationName string,
 	dosage string,
 	service string,
+	authorID uint,
 ) error {
 	record, err := s.GetOrCreateMedicalRecord(patientID)
 	if err != nil {
@@ -498,7 +503,7 @@ func (s *service) RecordMedicationPrescribed(
 		"consultation",
 		consultationID,
 		"info",
-		0,
+		authorID,
 	)
 }
 
@@ -662,27 +667,31 @@ func (s *service) GetCommonMedicalRecord(
 func (s *service) UpdateCommonMedicalRecord(
 	patientID uint,
 	req UpdateCommonMedicalRecordRequest,
+	authorID uint,
 ) (*CommonMedicalRecordResponse, error) {
 	record, err := s.GetOrCreateMedicalRecord(patientID)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.repo.SaveCommonMedicalRecord(record, req); err != nil {
+	previousUpdatedAt := record.UpdatedAt
+	if err := s.repo.SaveCommonMedicalRecord(record, req, authorID); err != nil {
 		return nil, err
 	}
 
-	_ = s.createTimelineEvent(
-		record,
-		"common_medical_record_updated",
-		"medical_record",
-		"Dossier médical mis à jour",
-		"Les informations longitudinales du patient ont été mises à jour.",
-		"medical_record",
-		record.ID,
-		"info",
-		req.UpdatedBy,
-	)
+	if !record.UpdatedAt.Equal(previousUpdatedAt) {
+		_ = s.createTimelineEvent(
+			record,
+			"common_medical_record_updated",
+			"medical_record",
+			"Dossier médical mis à jour",
+			"Les informations longitudinales du patient ont été mises à jour.",
+			"medical_record",
+			record.ID,
+			"info",
+			authorID,
+		)
+	}
 
 	return s.repo.GetCommonMedicalRecord(record.ID)
 }

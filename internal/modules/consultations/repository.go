@@ -29,6 +29,49 @@ func (r *Repository) Create(consultation *Consultation) error {
 	return r.db.Create(consultation).Error
 }
 
+func (r *Repository) List(filter ConsultationListFilter) (*ConsultationListResult, error) {
+	consultationsTable := r.db.NamingStrategy.TableName("consultations")
+	patientsTable := r.db.NamingStrategy.TableName("patients")
+	query := r.db.Table(consultationsTable + " AS c").
+		Joins("JOIN " + patientsTable + " AS p ON p.id = c.patient_id")
+	if filter.PatientID != nil {
+		query = query.Where("c.patient_id = ?", *filter.PatientID)
+	}
+	if filter.Status != "" {
+		query = query.Where("c.status = ?", filter.Status)
+	}
+	if filter.Service != "" {
+		query = query.Where("LOWER(c.service) = LOWER(?)", filter.Service)
+	}
+	if search := filter.Search; search != "" {
+		like := "%" + search + "%"
+		query = query.Where(`
+			p.nom ILIKE ? OR p.prenoms ILIKE ? OR p.code_patient ILIKE ? OR
+			p.numero_dossier ILIKE ? OR c.doctor_name ILIKE ? OR c.service ILIKE ? OR
+			c.diagnosis ILIKE ?
+		`, like, like, like, like, like, like, like)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, err
+	}
+	items := make([]ConsultationListItem, 0)
+	err := query.Select(`
+		c.id, c.patient_id, p.code_patient AS patient_code,
+		p.numero_dossier AS patient_record,
+		TRIM(CONCAT(p.nom, ' ', p.prenoms)) AS patient_name,
+		c.doctor_name, c.service, c.status, c.diagnosis, c.created_at, c.updated_at
+	`).Order("c.created_at DESC").
+		Offset((filter.Page - 1) * filter.Limit).
+		Limit(filter.Limit).
+		Scan(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	totalPages := int((total + int64(filter.Limit) - 1) / int64(filter.Limit))
+	return &ConsultationListResult{Data: items, Page: filter.Page, Limit: filter.Limit, Total: total, TotalPages: totalPages}, nil
+}
+
 func (r *Repository) FindByID(id uint) (*Consultation, error) {
 	var consultation Consultation
 

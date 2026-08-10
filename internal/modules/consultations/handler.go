@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
+	"github.com/lallene/medcore-his/backend/internal/core/rbac"
+	"github.com/lallene/medcore-his/backend/internal/shared/pagination"
 	"gorm.io/gorm"
 )
 
@@ -18,6 +20,15 @@ type Handler struct {
 
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
+}
+
+func consultationAuthorID(c *gin.Context) (uint, bool) {
+	userID, err := rbac.CurrentUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return 0, false
+	}
+	return userID, true
 }
 
 // GetReasons godoc
@@ -71,6 +82,10 @@ func (h *Handler) GetExams(c *gin.Context) {
 //	@Failure		500		{object}	map[string]interface{}
 //	@Router			/api/consultations [post]
 func (h *Handler) CreateConsultation(c *gin.Context) {
+	authorID, ok := consultationAuthorID(c)
+	if !ok {
+		return
+	}
 	var req CreateConsultationRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -78,7 +93,7 @@ func (h *Handler) CreateConsultation(c *gin.Context) {
 		return
 	}
 
-	consultation, err := h.service.CreateConsultation(req)
+	consultation, err := h.service.CreateConsultation(req, authorID)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrPhysicalExamAreaNotFound):
@@ -101,6 +116,32 @@ func (h *Handler) CreateConsultation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, consultation)
+}
+
+func (h *Handler) ListConsultations(c *gin.Context) {
+	paging := pagination.FromContext(c)
+	filter := ConsultationListFilter{
+		Page: paging.Page, Limit: paging.Limit,
+		Status: c.Query("status"), Service: c.Query("service"), Search: c.Query("search"),
+	}
+	if rawPatientID := c.Query("patientId"); rawPatientID != "" {
+		patientID, err := strconv.ParseUint(rawPatientID, 10, 64)
+		if err != nil || patientID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant patient invalide"})
+			return
+		}
+		value := uint(patientID)
+		filter.PatientID = &value
+	}
+	result, err := h.service.ListConsultations(filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": result.Data,
+		"meta": gin.H{"page": result.Page, "limit": result.Limit, "total": result.Total, "totalPages": result.TotalPages},
+	})
 }
 
 // GetConsultation godoc
@@ -312,6 +353,10 @@ func (h *Handler) DeleteExam(c *gin.Context) {
 // @Success 200 {object} Consultation
 // @Router /consultations/{id}/status [patch]
 func (h *Handler) UpdateStatus(c *gin.Context) {
+	authorID, ok := consultationAuthorID(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -332,6 +377,7 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 	consultation, err := h.service.UpdateStatus(
 		uint(id),
 		req,
+		authorID,
 	)
 	if err != nil {
 		switch {
@@ -726,6 +772,10 @@ func (h *Handler) GetSOAP(c *gin.Context) {
 }
 
 func (h *Handler) UpsertSOAP(c *gin.Context) {
+	authorID, ok := consultationAuthorID(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
@@ -738,7 +788,7 @@ func (h *Handler) UpsertSOAP(c *gin.Context) {
 		return
 	}
 
-	soap, err := h.service.UpsertSOAP(uint(id), req)
+	soap, err := h.service.UpsertSOAP(uint(id), req, authorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -790,6 +840,10 @@ func (h *Handler) GetSpecialtyData(c *gin.Context) {
 }
 
 func (h *Handler) UpsertSpecialtyData(c *gin.Context) {
+	authorID, ok := consultationAuthorID(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -807,7 +861,7 @@ func (h *Handler) UpsertSpecialtyData(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.UpsertSpecialtyData(uint(id), req)
+	data, err := h.service.UpsertSpecialtyData(uint(id), req, authorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
