@@ -10,6 +10,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/database"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
+	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
@@ -77,6 +78,7 @@ func main() {
 		&consultations.ConsultationGynecoObstetricHistory{},
 		&consultations.ConsultationSOAP{},
 		&consultations.ConsultationSpecialtyData{},
+		&hospitalizations.Hospitalization{},
 	)
 
 	if err != nil {

@@ -391,9 +391,8 @@ func (r *repository) GetPatientSummaryStatistics(
 
 			(
 				SELECT COUNT(*)
-				FROM consultations
+				FROM hospitalizations
 				WHERE patient_id = ?
-				  AND hospitalization_required = TRUE
 			) AS hospitalizations,
 
 			(
