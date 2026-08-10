@@ -6,8 +6,10 @@ type CreateRoomRequest struct {
 	Department string `json:"department" binding:"required"`
 	Floor      string `json:"floor"`
 	RoomType   string `json:"roomType" binding:"required"`
+	IsActive   *bool  `json:"isActive"`
 }
 type UpdateRoomRequest struct {
+	Code       *string `json:"code"`
 	Name       *string `json:"name"`
 	Department *string `json:"department"`
 	Floor      *string `json:"floor"`
@@ -16,12 +18,14 @@ type UpdateRoomRequest struct {
 }
 
 type CreateBedRequest struct {
-	RoomID  uint   `json:"roomId" binding:"required"`
-	Code    string `json:"code" binding:"required"`
-	Label   string `json:"label" binding:"required"`
-	BedType string `json:"bedType" binding:"required"`
+	RoomID   uint   `json:"roomId" binding:"required"`
+	Code     string `json:"code" binding:"required"`
+	Label    string `json:"label" binding:"required"`
+	BedType  string `json:"bedType" binding:"required"`
+	IsActive *bool  `json:"isActive"`
 }
 type UpdateBedRequest struct {
+	Code     *string `json:"code"`
 	RoomID   *uint   `json:"roomId"`
 	Label    *string `json:"label"`
 	BedType  *string `json:"bedType"`

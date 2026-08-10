@@ -14,8 +14,36 @@ import (
 
 func normalize(value string) string { return strings.TrimSpace(value) }
 
+func requireText(value, field string) (string, error) {
+	value = normalize(value)
+	if value == "" {
+		return "", coreerrors.BadRequest(field + " est obligatoire")
+	}
+	return value, nil
+}
+
 func (s *Service) CreateRoom(req CreateRoomRequest, author uint) (*Room, error) {
-	room := Room{Code: normalize(req.Code), Name: normalize(req.Name), Department: normalize(req.Department), Floor: normalize(req.Floor), RoomType: normalize(req.RoomType), IsActive: true}
+	code, err := requireText(req.Code, "le code de chambre")
+	if err != nil {
+		return nil, err
+	}
+	name, err := requireText(req.Name, "le nom de chambre")
+	if err != nil {
+		return nil, err
+	}
+	department, err := requireText(req.Department, "le service")
+	if err != nil {
+		return nil, err
+	}
+	roomType, err := requireText(req.RoomType, "le type de chambre")
+	if err != nil {
+		return nil, err
+	}
+	active := true
+	if req.IsActive != nil {
+		active = *req.IsActive
+	}
+	room := Room{Code: code, Name: name, Department: department, Floor: normalize(req.Floor), RoomType: roomType, IsActive: active}
 	room.CreatedBy, room.UpdatedBy = &author, &author
 	if err := s.db.Create(&room).Error; err != nil {
 		if isDuplicate(err) {
@@ -27,8 +55,32 @@ func (s *Service) CreateRoom(req CreateRoomRequest, author uint) (*Room, error) 
 }
 func (s *Service) ListRooms() ([]Room, error) {
 	var rooms []Room
-	err := s.db.Order("department, code").Find(&rooms).Error
-	return rooms, err
+	if err := s.db.Order("department, code").Find(&rooms).Error; err != nil {
+		return nil, err
+	}
+	for i := range rooms {
+		var counts []struct {
+			Status string
+			Total  int64
+		}
+		if err := s.db.Model(&Bed{}).Select("status, count(*) AS total").Where("room_id = ?", rooms[i].ID).Group("status").Scan(&counts).Error; err != nil {
+			return nil, err
+		}
+		for _, count := range counts {
+			rooms[i].BedCount += count.Total
+			switch count.Status {
+			case BedAvailable:
+				rooms[i].AvailableBedCount = count.Total
+			case BedOccupied:
+				rooms[i].OccupiedBedCount = count.Total
+			case BedReserved:
+				rooms[i].ReservedBedCount = count.Total
+			case BedOutOfService:
+				rooms[i].OutOfServiceCount = count.Total
+			}
+		}
+	}
+	return rooms, nil
 }
 func (s *Service) FindRoom(id uint) (*Room, error) {
 	var room Room
@@ -53,23 +105,48 @@ func (s *Service) UpdateRoom(id uint, req UpdateRoomRequest, author uint) (*Room
 				return coreerrors.Conflict("une chambre occupée ou réservée ne peut pas être désactivée")
 			}
 		}
+		if req.Code != nil {
+			value, err := requireText(*req.Code, "le code de chambre")
+			if err != nil {
+				return err
+			}
+			room.Code = value
+		}
 		if req.Name != nil {
-			room.Name = normalize(*req.Name)
+			value, err := requireText(*req.Name, "le nom de chambre")
+			if err != nil {
+				return err
+			}
+			room.Name = value
 		}
 		if req.Department != nil {
-			room.Department = normalize(*req.Department)
+			value, err := requireText(*req.Department, "le service")
+			if err != nil {
+				return err
+			}
+			room.Department = value
 		}
 		if req.Floor != nil {
 			room.Floor = normalize(*req.Floor)
 		}
 		if req.RoomType != nil {
-			room.RoomType = normalize(*req.RoomType)
+			value, err := requireText(*req.RoomType, "le type de chambre")
+			if err != nil {
+				return err
+			}
+			room.RoomType = value
 		}
 		if req.IsActive != nil {
 			room.IsActive = *req.IsActive
 		}
 		room.UpdatedBy = &author
-		return tx.Save(&room).Error
+		if err := tx.Save(&room).Error; err != nil {
+			if isDuplicate(err) {
+				return coreerrors.Conflict("code de chambre déjà utilisé")
+			}
+			return err
+		}
+		return nil
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, coreerrors.NotFound("ROOM")
@@ -88,7 +165,23 @@ func (s *Service) CreateBed(req CreateBedRequest, author uint) (*Bed, error) {
 	if !room.IsActive {
 		return nil, coreerrors.Conflict("la chambre est inactive")
 	}
-	bed := Bed{RoomID: req.RoomID, Code: normalize(req.Code), Label: normalize(req.Label), BedType: normalize(req.BedType), Status: BedAvailable, IsActive: true}
+	code, err := requireText(req.Code, "le code de lit")
+	if err != nil {
+		return nil, err
+	}
+	label, err := requireText(req.Label, "le libellé du lit")
+	if err != nil {
+		return nil, err
+	}
+	bedType, err := requireText(req.BedType, "le type de lit")
+	if err != nil {
+		return nil, err
+	}
+	active := true
+	if req.IsActive != nil {
+		active = *req.IsActive
+	}
+	bed := Bed{RoomID: req.RoomID, Code: code, Label: label, BedType: bedType, Status: BedAvailable, IsActive: active}
 	bed.CreatedBy, bed.UpdatedBy = &author, &author
 	if err = s.db.Create(&bed).Error; err != nil {
 		if isDuplicate(err) {
@@ -155,8 +248,16 @@ func (s *Service) UpdateBed(id uint, req UpdateBedRequest, author uint) (*Bed, e
 		if err := tx.Model(&BedAssignment{}).Where("bed_id=? AND released_at IS NULL", id).Count(&n).Error; err != nil {
 			return err
 		}
-		if n > 0 && (req.RoomID != nil || req.IsActive != nil && !*req.IsActive || req.Status != nil && strings.ToUpper(*req.Status) != bed.Status) {
+		protectedStatus := bed.Status == BedOccupied || bed.Status == BedReserved
+		if (n > 0 || protectedStatus) && (req.RoomID != nil && *req.RoomID != bed.RoomID || req.IsActive != nil && !*req.IsActive || req.Status != nil && strings.ToUpper(*req.Status) != bed.Status) {
 			return coreerrors.Conflict("un lit occupé ou réservé ne peut pas être déplacé, désactivé ou changer de statut")
+		}
+		if req.Code != nil {
+			value, err := requireText(*req.Code, "le code de lit")
+			if err != nil {
+				return err
+			}
+			bed.Code = value
 		}
 		if req.RoomID != nil {
 			var room Room
@@ -168,11 +269,28 @@ func (s *Service) UpdateBed(id uint, req UpdateBedRequest, author uint) (*Bed, e
 			}
 			bed.RoomID = *req.RoomID
 		}
+		if req.IsActive != nil && *req.IsActive {
+			var room Room
+			if err := tx.First(&room, bed.RoomID).Error; err != nil {
+				return coreerrors.NotFound("ROOM")
+			}
+			if !room.IsActive {
+				return coreerrors.Conflict("un lit ne peut pas être activé dans une chambre inactive")
+			}
+		}
 		if req.Label != nil {
-			bed.Label = normalize(*req.Label)
+			value, err := requireText(*req.Label, "le libellé du lit")
+			if err != nil {
+				return err
+			}
+			bed.Label = value
 		}
 		if req.BedType != nil {
-			bed.BedType = normalize(*req.BedType)
+			value, err := requireText(*req.BedType, "le type de lit")
+			if err != nil {
+				return err
+			}
+			bed.BedType = value
 		}
 		if req.Status != nil {
 			v := strings.ToUpper(*req.Status)
@@ -185,7 +303,13 @@ func (s *Service) UpdateBed(id uint, req UpdateBedRequest, author uint) (*Bed, e
 			bed.IsActive = *req.IsActive
 		}
 		bed.UpdatedBy = &author
-		return tx.Save(&bed).Error
+		if err := tx.Save(&bed).Error; err != nil {
+			if isDuplicate(err) {
+				return coreerrors.Conflict("code de lit déjà utilisé")
+			}
+			return err
+		}
+		return nil
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, coreerrors.NotFound("BED")

@@ -196,6 +196,150 @@ func TestDischargeReleasesOccupiedBedAndAdmissionWithoutBedIsAllowed(t *testing.
 	}
 }
 
+func TestRoomAdministrationRulesAndCounts(t *testing.T) {
+	db := hospitalizationDB(t)
+	service := NewService(db, NewRepository(db))
+	room, err := service.CreateRoom(CreateRoomRequest{Code: " ADMIN-R1 ", Name: " Chambre 1 ", Department: " Médecine ", RoomType: " STANDARD "}, 70)
+	if err != nil || room.Code != "ADMIN-R1" || room.CreatedBy == nil || *room.CreatedBy != 70 {
+		t.Fatalf("création chambre: %#v %v", room, err)
+	}
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "ADMIN-R1", Name: "Doublon", Department: "Médecine", RoomType: "STANDARD"}, 70); err == nil {
+		t.Fatal("code chambre dupliqué accepté")
+	}
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "   ", Name: "Vide", Department: "Médecine", RoomType: "STANDARD"}, 70); err == nil {
+		t.Fatal("code chambre vide accepté")
+	}
+	newCode, newName := "ADMIN-R1B", "Chambre renommée"
+	room, err = service.UpdateRoom(room.ID, UpdateRoomRequest{Code: &newCode, Name: &newName}, 71)
+	if err != nil || room.Code != newCode || room.Name != newName || room.UpdatedBy == nil || *room.UpdatedBy != 71 {
+		t.Fatalf("édition chambre: %#v %v", room, err)
+	}
+	bed, err := service.CreateBed(CreateBedRequest{RoomID: room.ID, Code: "ADMIN-B1", Label: "Lit 1", BedType: "STANDARD"}, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rooms, err := service.ListRooms()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *Room
+	for i := range rooms {
+		if rooms[i].ID == room.ID {
+			found = &rooms[i]
+		}
+	}
+	if found == nil || found.BedCount != 1 || found.AvailableBedCount != 1 {
+		t.Fatalf("compteurs chambre: %#v", found)
+	}
+	inactive := false
+	if _, err := service.UpdateRoom(room.ID, UpdateRoomRequest{IsActive: &inactive}, 73); err != nil {
+		t.Fatalf("désactivation chambre vide: %v", err)
+	}
+	active := true
+	if _, err := service.UpdateRoom(room.ID, UpdateRoomRequest{IsActive: &active}, 73); err != nil {
+		t.Fatal(err)
+	}
+	f := seedHospitalization(t, db, "ADMIN-ROOM", true)
+	stay, _, _ := service.Create(CreateRequest{PatientID: f.patient.ID, SourceConsultationID: f.consultation.ID}, 74)
+	if _, err := service.AssignBed(stay.ID, bed.ID, 74); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateRoom(room.ID, UpdateRoomRequest{IsActive: &inactive}, 75); err == nil {
+		t.Fatal("chambre réservée désactivée")
+	}
+}
+
+func TestBedAdministrationSafeTransitions(t *testing.T) {
+	db := hospitalizationDB(t)
+	service := NewService(db, NewRepository(db))
+	room, first, _ := seedRoomAndBeds(t, db)
+	otherRoom, err := service.CreateRoom(CreateRoomRequest{Code: "ADMIN-R2", Name: "Autre chambre", Department: "Médecine", RoomType: "STANDARD"}, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateBed(CreateBedRequest{RoomID: room.ID, Code: " ADMIN-CREATE ", Label: " Nouveau ", BedType: " STANDARD "}, 80)
+	if err != nil || created.Code != "ADMIN-CREATE" {
+		t.Fatalf("création lit: %#v %v", created, err)
+	}
+	if _, err := service.CreateBed(CreateBedRequest{RoomID: room.ID, Code: "ADMIN-CREATE", Label: "Doublon", BedType: "STANDARD"}, 80); err == nil {
+		t.Fatal("code lit dupliqué accepté")
+	}
+	if _, err := service.CreateBed(CreateBedRequest{RoomID: 999999, Code: "ADMIN-NO-ROOM", Label: "Lit", BedType: "STANDARD"}, 80); err == nil {
+		t.Fatal("chambre inexistante acceptée")
+	}
+	newCode, newLabel := "ADMIN-EDIT", "Lit édité"
+	if _, err := service.UpdateBed(created.ID, UpdateBedRequest{Code: &newCode, Label: &newLabel, RoomID: &otherRoom.ID}, 81); err != nil {
+		t.Fatal(err)
+	}
+	inactive := false
+	if _, err := service.UpdateBed(created.ID, UpdateBedRequest{IsActive: &inactive}, 82); err != nil {
+		t.Fatalf("désactivation AVAILABLE: %v", err)
+	}
+	active := true
+	if _, err := service.UpdateBed(created.ID, UpdateBedRequest{IsActive: &active}, 82); err != nil {
+		t.Fatal(err)
+	}
+	off := BedOutOfService
+	if _, err := service.UpdateBed(created.ID, UpdateBedRequest{Status: &off}, 83); err != nil {
+		t.Fatal(err)
+	}
+	available := BedAvailable
+	if _, err := service.UpdateBed(created.ID, UpdateBedRequest{Status: &available}, 84); err != nil {
+		t.Fatal(err)
+	}
+	occupied, reserved := BedOccupied, BedReserved
+	if _, err := service.UpdateBed(created.ID, UpdateBedRequest{Status: &occupied}, 85); err == nil {
+		t.Fatal("AVAILABLE vers OCCUPIED accepté")
+	}
+	if _, err := service.UpdateBed(created.ID, UpdateBedRequest{Status: &reserved}, 85); err == nil {
+		t.Fatal("AVAILABLE vers RESERVED accepté")
+	}
+	f1 := seedHospitalization(t, db, "ADMIN-BED1", true)
+	s1, _, _ := service.Create(CreateRequest{PatientID: f1.patient.ID, SourceConsultationID: f1.consultation.ID}, 86)
+	if _, err := service.AssignBed(s1.ID, first.ID, 86); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateBed(first.ID, UpdateBedRequest{IsActive: &inactive}, 87); err == nil {
+		t.Fatal("lit réservé désactivé")
+	}
+	if _, err := service.UpdateBed(first.ID, UpdateBedRequest{RoomID: &otherRoom.ID}, 87); err == nil {
+		t.Fatal("lit réservé déplacé")
+	}
+	if _, err := service.Admit(s1.ID, AdmitRequest{}, 88); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateBed(first.ID, UpdateBedRequest{Status: &off}, 89); err == nil {
+		t.Fatal("lit occupé hors service")
+	}
+	if _, err := service.UpdateBed(first.ID, UpdateBedRequest{RoomID: &otherRoom.ID}, 89); err == nil {
+		t.Fatal("lit occupé déplacé")
+	}
+}
+
+func TestBedAdministrationHandlerUsesJWTAuthor(t *testing.T) {
+	db := hospitalizationDB(t)
+	_, _, _ = seedRoomAndBeds(t, db)
+	handler := NewBedHandler(NewService(db, NewRepository(db)))
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/rooms", func(c *gin.Context) { rbac.SetUser(c, 91, "admin", []string{"rooms.manage"}); c.Next() }, handler.CreateRoom)
+	body := bytes.NewBufferString(`{"code":"JWT-ROOM","name":"JWT","department":"Test","roomType":"STANDARD","createdBy":999}`)
+	request := httptest.NewRequest(http.MethodPost, "/rooms", body)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var room Room
+	if err := db.Where("code=?", "JWT-ROOM").First(&room).Error; err != nil {
+		t.Fatal(err)
+	}
+	if room.CreatedBy == nil || *room.CreatedBy != 91 {
+		t.Fatalf("auteur client accepté: %#v", room)
+	}
+}
+
 type hospitalizationFixture struct {
 	patient      patients.Patient
 	record       medical_records.MedicalRecord
