@@ -79,10 +79,21 @@ func main() {
 		&consultations.ConsultationSOAP{},
 		&consultations.ConsultationSpecialtyData{},
 		&hospitalizations.Hospitalization{},
+		&hospitalizations.Room{},
+		&hospitalizations.Bed{},
+		&hospitalizations.BedAssignment{},
 	)
 
 	if err != nil {
 		log.Fatal("Erreur migration:", err)
+	}
+	for _, statement := range []string{
+		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_bed ON hospitalization_bed_assignments (bed_id) WHERE released_at IS NULL AND deleted_at IS NULL",
+		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_stay ON hospitalization_bed_assignments (hospitalization_id) WHERE released_at IS NULL AND deleted_at IS NULL",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			log.Fatal("Erreur index bed management:", err)
+		}
 	}
 
 	log.Println("Migrations exécutées avec succès")

@@ -20,7 +20,6 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/schema"
 )
 
 func hospitalizationDB(t *testing.T) *gorm.DB {
@@ -42,14 +41,159 @@ func hospitalizationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := gorm.Open(postgres.Open(parsed.String()), &gorm.Config{NamingStrategy: schema.NamingStrategy{TablePrefix: `"` + schemaName + `.`, SingularTable: false}})
+	query := parsed.Query()
+	query.Set("search_path", schemaName)
+	parsed.RawQuery = query.Encode()
+	db, err := gorm.Open(postgres.Open(parsed.String()), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&patients.Patient{}, &medical_records.MedicalRecord{}, &consultations.Consultation{}, &medical_records.MedicalTimelineEvent{}, &Hospitalization{}); err != nil {
+	if err := db.AutoMigrate(&patients.Patient{}, &medical_records.MedicalRecord{}, &consultations.Consultation{}, &medical_records.MedicalTimelineEvent{}, &Hospitalization{}, &Room{}, &Bed{}, &BedAssignment{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX ux_test_active_bed ON hospitalization_bed_assignments (bed_id) WHERE released_at IS NULL AND deleted_at IS NULL").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX ux_test_active_stay ON hospitalization_bed_assignments (hospitalization_id) WHERE released_at IS NULL AND deleted_at IS NULL").Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func seedRoomAndBeds(t *testing.T, db *gorm.DB) (Room, Bed, Bed) {
+	t.Helper()
+	room := Room{Code: "R-" + fmt.Sprint(time.Now().UnixNano()), Name: "Chambre test", Department: "Médecine", Floor: "1", RoomType: "STANDARD", IsActive: true}
+	if err := db.Create(&room).Error; err != nil {
+		t.Fatal(err)
+	}
+	first := Bed{RoomID: room.ID, Code: room.Code + "-A", Label: "Lit A", BedType: "STANDARD", Status: BedAvailable, IsActive: true}
+	second := Bed{RoomID: room.ID, Code: room.Code + "-B", Label: "Lit B", BedType: "STANDARD", Status: BedAvailable, IsActive: true}
+	if err := db.Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&second).Error; err != nil {
+		t.Fatal(err)
+	}
+	return room, first, second
+}
+
+func TestBedReservationAdmissionTransferReleaseAndTimeline(t *testing.T) {
+	db := hospitalizationDB(t)
+	f := seedHospitalization(t, db, "BED-LIFE", true)
+	_, first, second := seedRoomAndBeds(t, db)
+	service := NewService(db, NewRepository(db))
+	stay, _, err := service.Create(CreateRequest{PatientID: f.patient.ID, SourceConsultationID: f.consultation.ID}, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := service.AssignBed(stay.ID, first.ID, 41)
+	if err != nil || reservation.AssignmentType != AssignmentReserved || reservation.CreatedBy == nil || *reservation.CreatedBy != 41 {
+		t.Fatalf("réservation: %#v %v", reservation, err)
+	}
+	if bed, _ := service.FindBed(first.ID); bed.Status != BedReserved {
+		t.Fatalf("statut après réservation=%s", bed.Status)
+	}
+	if _, err = service.Admit(stay.ID, AdmitRequest{}, 42); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := service.ListAssignments(stay.ID)
+	if len(items) != 1 || items[0].AssignmentType != AssignmentOccupied || items[0].UpdatedBy == nil || *items[0].UpdatedBy != 42 {
+		t.Fatalf("conversion réservation: %#v", items)
+	}
+	transferred, err := service.TransferBed(stay.ID, second.ID, 43)
+	if err != nil || transferred.BedID != second.ID {
+		t.Fatalf("transfert: %#v %v", transferred, err)
+	}
+	items, _ = service.ListAssignments(stay.ID)
+	if len(items) != 2 || items[1].ReleasedAt == nil {
+		t.Fatalf("historique transfert perdu: %#v", items)
+	}
+	released, err := service.ReleaseBed(stay.ID, 44)
+	if err != nil || released.ReleasedAt == nil || released.UpdatedBy == nil || *released.UpdatedBy != 44 {
+		t.Fatalf("libération: %#v %v", released, err)
+	}
+	if bed, _ := service.FindBed(second.ID); bed.Status != BedAvailable {
+		t.Fatalf("lit non disponible: %s", bed.Status)
+	}
+	var eventTypes []string
+	db.Model(&medical_records.MedicalTimelineEvent{}).Where("reference_id=?", stay.ID).Order("id").Pluck("event_type", &eventTypes)
+	for _, expected := range []string{"bed_reserved", "bed_assigned", "bed_transferred", "bed_released"} {
+		found := false
+		for _, actual := range eventTypes {
+			if actual == expected {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("événement %s absent: %#v", expected, eventTypes)
+		}
+	}
+}
+
+func TestBedIntegrityRulesAndAutomaticRelease(t *testing.T) {
+	db := hospitalizationDB(t)
+	service := NewService(db, NewRepository(db))
+	f1 := seedHospitalization(t, db, "BED-I1", true)
+	f2 := seedHospitalization(t, db, "BED-I2", true)
+	room, first, second := seedRoomAndBeds(t, db)
+	s1, _, _ := service.Create(CreateRequest{PatientID: f1.patient.ID, SourceConsultationID: f1.consultation.ID}, 50)
+	s2, _, _ := service.Create(CreateRequest{PatientID: f2.patient.ID, SourceConsultationID: f2.consultation.ID}, 50)
+	if _, err := service.AssignBed(s1.ID, first.ID, 51); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AssignBed(s2.ID, first.ID, 52); err == nil {
+		t.Fatal("double affectation du lit acceptée")
+	}
+	if _, err := service.AssignBed(s1.ID, second.ID, 52); err == nil {
+		t.Fatal("double affectation du séjour acceptée")
+	}
+	out := BedOutOfService
+	if _, err := service.UpdateBed(second.ID, UpdateBedRequest{Status: &out}, 53); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AssignBed(s2.ID, second.ID, 54); err == nil {
+		t.Fatal("lit hors service accepté")
+	}
+	inactive := false
+	if _, err := service.UpdateRoom(room.ID, UpdateRoomRequest{IsActive: &inactive}, 55); err == nil {
+		t.Fatal("chambre avec réservation désactivée")
+	}
+	if _, err := service.Cancel(s1.ID, 56); err != nil {
+		t.Fatal(err)
+	}
+	if bed, _ := service.FindBed(first.ID); bed.Status != BedAvailable {
+		t.Fatalf("annulation sans libération: %s", bed.Status)
+	}
+	if _, err := service.AssignBed(s1.ID, first.ID, 57); err == nil {
+		t.Fatal("séjour annulé réaffecté")
+	}
+}
+
+func TestDischargeReleasesOccupiedBedAndAdmissionWithoutBedIsAllowed(t *testing.T) {
+	db := hospitalizationDB(t)
+	service := NewService(db, NewRepository(db))
+	f := seedHospitalization(t, db, "BED-D", true)
+	_, bed, _ := seedRoomAndBeds(t, db)
+	stay, _, _ := service.Create(CreateRequest{PatientID: f.patient.ID, SourceConsultationID: f.consultation.ID}, 60)
+	if _, err := service.Admit(stay.ID, AdmitRequest{}, 61); err != nil {
+		t.Fatalf("admission sans lit refusée: %v", err)
+	}
+	if _, err := service.AssignBed(stay.ID, bed.ID, 62); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Discharge(stay.ID, DischargeRequest{DischargeDiagnosis: "OK", DischargeSummary: "Sortie"}, 63); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := service.ListAssignments(stay.ID)
+	if len(items) != 1 || items[0].ReleasedAt == nil {
+		t.Fatalf("sortie sans libération: %#v", items)
+	}
+	if actual, _ := service.FindBed(bed.ID); actual.Status != BedAvailable {
+		t.Fatalf("statut=%s", actual.Status)
+	}
+	if _, err := service.AssignBed(stay.ID, bed.ID, 64); err == nil {
+		t.Fatal("séjour sorti réaffecté")
+	}
 }
 
 type hospitalizationFixture struct {

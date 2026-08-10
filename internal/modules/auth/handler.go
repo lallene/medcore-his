@@ -86,6 +86,9 @@ func permissionsForRole(role string) []string {
 			"patients:create",
 			"patients:update",
 			"hospitalizations.read",
+			"rooms.read",
+			"beds.read",
+			"bed_assignments.read",
 		}
 	}
 

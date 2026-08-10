@@ -12,6 +12,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Service struct {
@@ -189,8 +190,47 @@ func (s *Service) transition(id uint, from, to string, authorID uint, eventType,
 		if err := tx.Save(item).Error; err != nil {
 			return err
 		}
+		if err := s.syncBedForTransition(tx, item, to, authorID, eventDate); err != nil {
+			return err
+		}
 		return createTimeline(tx, item, eventType, title, authorID, eventDate)
 	})
+}
+
+func (s *Service) syncBedForTransition(tx *gorm.DB, item *Hospitalization, to string, authorID uint, at time.Time) error {
+	var assignment BedAssignment
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("hospitalization_id = ? AND released_at IS NULL", item.ID).First(&assignment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// A bed is deliberately optional: admission remains possible while capacity is being arranged.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if to == StatusAdmitted {
+		bed, err := lockBed(tx, assignment.BedID)
+		if err != nil {
+			return err
+		}
+		if assignment.AssignmentType != AssignmentReserved || bed.Status != BedReserved {
+			return coreerrors.Conflict("la réservation de lit est incohérente")
+		}
+		assignment.AssignmentType = AssignmentOccupied
+		assignment.UpdatedBy = &authorID
+		if err := tx.Save(&assignment).Error; err != nil {
+			return err
+		}
+		bed.Status = BedOccupied
+		bed.UpdatedBy = &authorID
+		if err := tx.Save(bed).Error; err != nil {
+			return err
+		}
+		return createBedTimeline(tx, item, "bed_assigned", "Lit affecté", fmt.Sprintf("%s — %s", bed.Room.Name, bed.Label), authorID, at)
+	}
+	if to == StatusDischarged || to == StatusCancelled {
+		return releaseActiveAssignment(tx, item, authorID, at, "bed_released", "Lit libéré", nil)
+	}
+	return nil
 }
 
 func createTimeline(tx *gorm.DB, item *Hospitalization, eventType, title string, authorID uint, eventDate time.Time) error {
