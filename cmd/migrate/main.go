@@ -11,6 +11,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
+	"github.com/lallene/medcore-his/backend/internal/modules/imaging"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
@@ -86,6 +87,8 @@ func main() {
 		&laboratory.Order{},
 		&laboratory.Sample{},
 		&laboratory.Result{},
+		&imaging.Order{},
+		&imaging.Report{},
 	)
 
 	if err != nil {

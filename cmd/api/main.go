@@ -8,6 +8,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/dashboard"
 	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
+	"github.com/lallene/medcore-his/backend/internal/modules/imaging"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance"
 	"github.com/lallene/medcore-his/backend/internal/modules/laboratory"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
@@ -42,6 +43,7 @@ func main() {
 	app.RegisterModule(medical_records.Module{})
 	app.RegisterModule(hospitalizations.Module{})
 	app.RegisterModule(laboratory.Module{})
+	app.RegisterModule(imaging.Module{})
 
 	app.Run()
 }
