@@ -4,6 +4,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/application"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/insurance/authorization"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
@@ -20,6 +21,7 @@ func (Module) Register(app *application.Application) {
 		&guarantor.InsuranceGuarantor{},
 		&coverage.PatientCoverage{},
 		&voucher.InsuranceVoucher{},
+		&authorization.InsuranceAuthorization{},
 	)
 
 	Provider{}.Register(app)
@@ -37,6 +39,7 @@ func (Module) Register(app *application.Application) {
 
 	voucherHandler := application.Make[*voucher.Handler](app)
 	voucher.RegisterRoutes(protected, voucherHandler)
+	authorization.RegisterRoutes(protected, authorization.NewHandler(authorization.NewService(app.DB)))
 
 	company.RegisterRoutes(protected, companyHandler)
 }

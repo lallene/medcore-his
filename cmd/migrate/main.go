@@ -12,6 +12,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
 	"github.com/lallene/medcore-his/backend/internal/modules/imaging"
+	"github.com/lallene/medcore-his/backend/internal/modules/insurance/authorization"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
@@ -39,6 +40,7 @@ func main() {
 		&guarantor.InsuranceGuarantor{},
 		&coverage.PatientCoverage{},
 		&voucher.InsuranceVoucher{},
+		&authorization.InsuranceAuthorization{},
 
 		&medical_records.MedicalRecord{},
 		&medical_records.MedicalAlert{},
