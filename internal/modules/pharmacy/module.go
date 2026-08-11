@@ -20,6 +20,8 @@ func (Module) Register(app *application.Application) {
 		&StockMovement{},
 		&PharmacyDispensation{},
 		&PharmacyDispensationItem{},
+		&PharmacyVoucher{},
+		&PharmacyVoucherLine{},
 	)
 
 	repository := NewRepository(app.DB)

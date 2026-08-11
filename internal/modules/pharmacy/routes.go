@@ -59,6 +59,7 @@ func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 		)
 
 		pharmacy.GET("/presentations", handler.GetPresentations)
+		pharmacy.GET("/presentations/availability", handler.GetPresentationAvailability)
 
 		pharmacy.POST(
 			"/presentations",
@@ -134,7 +135,6 @@ func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 
 		pharmacy.GET(
 			"/prescriptions/:id/dispensation-status",
-			rbac.Permission("pharmacy.dispensation.read"),
 			handler.GetPrescriptionDispensationStatus,
 		)
 
@@ -143,5 +143,7 @@ func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 			rbac.Permission("pharmacy.dispensation.read"),
 			handler.GetPrescriptionQueue,
 		)
+		pharmacy.GET("/vouchers", rbac.Permission("pharmacy.dispensation.read"), handler.GetVouchers)
+		pharmacy.GET("/vouchers/:id", rbac.Permission("pharmacy.dispensation.read"), handler.GetVoucher)
 	}
 }

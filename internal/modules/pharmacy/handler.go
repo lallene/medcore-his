@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
@@ -289,6 +290,15 @@ func (h *Handler) GetPresentations(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, presentations)
+}
+
+func (h *Handler) GetPresentationAvailability(c *gin.Context) {
+	items, err := h.service.GetPresentationAvailability()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
 }
 
 // CreatePresentation godoc
@@ -675,6 +685,8 @@ func (h *Handler) CreateDispensation(c *gin.Context) {
 
 		case errors.Is(err, ErrPrescriptionNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, ErrPrescriptionRequired):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 
 		case errors.Is(err, ErrPrescriptionPatientMismatch):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -767,4 +779,37 @@ func (h *Handler) GetPrescriptionQueue(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) GetVouchers(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	items, err := h.service.GetVouchers(VoucherFilter{
+		Search: strings.TrimSpace(c.Query("search")), Status: strings.ToUpper(strings.TrimSpace(c.Query("status"))),
+		Service: strings.TrimSpace(c.Query("service")), Prescriber: strings.TrimSpace(c.Query("prescriber")),
+		Date: strings.TrimSpace(c.Query("date")), Page: page, PageSize: pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) GetVoucher(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant de bon invalide"})
+		return
+	}
+	item, err := h.service.GetVoucher(uint(id))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "bon pharmacie introuvable"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, item)
 }

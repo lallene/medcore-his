@@ -2,6 +2,7 @@ package consultations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
@@ -51,10 +53,71 @@ func consultationIntegrationDB(t *testing.T) *gorm.DB {
 		&ConsultationPreviousMedication{}, &ConsultationSurgicalHistory{},
 		&ConsultationGynecoObstetricHistory{}, &ConsultationSOAP{}, &ConsultationSpecialtyData{},
 		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
+		&pharmacy.PharmacyDispensation{},
 	); err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func TestDispensedPrescriptionUpdateGuardsAndRollback(t *testing.T) {
+	db := consultationIntegrationDB(t)
+	c := Consultation{PatientID: 1, DoctorName: "Dr Guard", Service: "Médecine", Status: ConsultationStatusDraft, Diagnosis: "initial"}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatal(err)
+	}
+	presentationA, presentationB := uint(11), uint(12)
+	p1 := ConsultationPrescription{ConsultationID: c.ID, PresentationID: &presentationA, MedicationName: "COMMERCIAL A", Quantity: 10}
+	p2 := ConsultationPrescription{ConsultationID: c.ID, PresentationID: &presentationB, MedicationName: "COMMERCIAL B", Quantity: 5}
+	if err := db.Create(&[]ConsultationPrescription{p1, p2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var saved []ConsultationPrescription
+	db.Where("consultation_id = ?", c.ID).Order("id").Find(&saved)
+	p1 = saved[0]
+	p2 = saved[1]
+	ref := p1.ID
+	if err := db.Create(&pharmacy.PharmacyDispensation{PresentationID: presentationA, Quantity: 4, Status: pharmacy.DispensationStatusCompleted, ReferenceType: "CONSULTATION_PRESCRIPTION", ReferenceID: &ref}).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+	update := func(quantity float64, presentation *uint, include bool, diagnosis string) error {
+		lines := []ConsultationPrescription{{ID: p2.ID, ConsultationID: c.ID, PresentationID: p2.PresentationID, MedicationName: p2.MedicationName, Quantity: p2.Quantity}}
+		if include {
+			lines = append(lines, ConsultationPrescription{ID: p1.ID, ConsultationID: c.ID, PresentationID: presentation, MedicationName: p1.MedicationName, Quantity: quantity})
+		}
+		return repo.UpdateConsultation(c.ID, 1, map[string]interface{}{"diagnosis": diagnosis}, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil)
+	}
+	if err := update(8, &presentationA, true, "authorized-8"); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(4, &presentationA, true, "authorized-4"); err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func() error{
+		"below dispensed":       func() error { return update(3, &presentationA, true, "invalid-below") },
+		"removed":               func() error { return update(4, &presentationA, false, "invalid-remove") },
+		"presentation replaced": func() error { return update(4, &presentationB, true, "invalid-presentation") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := run(); !errors.Is(err, ErrDispensedPrescriptionConflict) {
+				t.Fatalf("erreur=%v", err)
+			}
+		})
+	}
+	var after Consultation
+	db.First(&after, c.ID)
+	if after.Diagnosis != "authorized-4" {
+		t.Fatalf("rollback absent: %s", after.Diagnosis)
+	}
+	// Après réduction autorisée à 4, la prescription est totalement dispensée : structure verrouillée, instructions cliniques éditables.
+	if err := update(12, &presentationA, true, "invalid-complete"); !errors.Is(err, ErrDispensedPrescriptionConflict) {
+		t.Fatalf("prescription complète modifiable: %v", err)
+	}
+	lines := []ConsultationPrescription{{ID: p1.ID, ConsultationID: c.ID, PresentationID: &presentationA, MedicationName: p1.MedicationName, Quantity: 4, Instructions: "clinique modifiée"}, {ID: p2.ID, ConsultationID: c.ID, PresentationID: p2.PresentationID, MedicationName: p2.MedicationName, Quantity: p2.Quantity}}
+	if err := repo.UpdateConsultation(c.ID, 1, nil, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil); err != nil {
+		t.Fatalf("champ clinique refusé: %v", err)
+	}
 }
 
 func TestConsultationTimelineUsesAuthenticatedAuthor(t *testing.T) {

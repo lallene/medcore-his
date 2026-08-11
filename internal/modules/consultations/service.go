@@ -39,10 +39,11 @@ var (
 		"un ou plusieurs examens sont invalides ou inactifs",
 	)
 
-	ErrInvalidPresentationID    = errors.New("présentation pharmaceutique invalide")
-	ErrInactivePresentation     = errors.New("présentation pharmaceutique inactive")
-	ErrPhysicalExamAreaNotFound = errors.New("zone d'examen physique introuvable")
-	ErrInactivePhysicalExamArea = errors.New("zone d'examen physique inactive")
+	ErrInvalidPresentationID         = errors.New("présentation pharmaceutique invalide")
+	ErrInactivePresentation          = errors.New("présentation pharmaceutique inactive")
+	ErrDispensedPrescriptionConflict = errors.New("prescription déjà dispensée : modification structurelle incohérente")
+	ErrPhysicalExamAreaNotFound      = errors.New("zone d'examen physique introuvable")
+	ErrInactivePhysicalExamArea      = errors.New("zone d'examen physique inactive")
 )
 
 type Service struct {
@@ -552,10 +553,15 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 			}
 
 			presentationID := presentation.ID
+			prescriptionID := uint(0)
+			if item.ID != nil {
+				prescriptionID = *item.ID
+			}
 
 			prescriptions = append(
 				prescriptions,
 				ConsultationPrescription{
+					ID:             prescriptionID,
 					PresentationID: &presentationID,
 
 					MedicationName: presentation.Medication.Name,
@@ -748,6 +754,14 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 
 	if err != nil {
 		return nil, err
+	}
+	if updatePrescriptions && s.medicalRecordsService != nil {
+		for _, prescription := range prescriptions {
+			_ = s.medicalRecordsService.RecordMedicationPrescribed(
+				consultation.PatientID, consultation.ID, prescription.MedicationName,
+				prescription.Dosage, consultation.Service, authorID,
+			)
+		}
 	}
 
 	return s.repo.FindByID(id)

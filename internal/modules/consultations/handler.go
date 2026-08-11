@@ -483,6 +483,10 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 			})
 			return
 
+		case errors.Is(err, ErrDispensedPrescriptionConflict):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+
 		case errors.Is(err, ErrPhysicalExamAreaNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return

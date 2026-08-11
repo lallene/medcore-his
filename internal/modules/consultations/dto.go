@@ -160,6 +160,7 @@ type CreateDispensationRequest struct {
 }
 
 type PrescriptionRequest struct {
+	ID             *uint   `json:"id"`
 	PresentationID uint    `json:"presentationId" binding:"required"`
 	Quantity       float64 `json:"quantity" binding:"required,gt=0"`
 	Duration       string  `json:"duration" binding:"required"`

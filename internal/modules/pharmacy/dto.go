@@ -16,18 +16,22 @@ type UpdateMedicationFamilyRequest struct {
 }
 
 type CreateMedicationRequest struct {
-	FamilyID    uint   `json:"familyId" binding:"required"`
-	Code        string `json:"code" binding:"required"`
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
+	FamilyID     uint   `json:"familyId" binding:"required"`
+	Code         string `json:"code" binding:"required"`
+	Name         string `json:"name" binding:"required"`
+	GenericName  string `json:"genericName"`
+	Manufacturer string `json:"manufacturer"`
+	Description  string `json:"description"`
 }
 
 type UpdateMedicationRequest struct {
-	FamilyID    *uint   `json:"familyId"`
-	Code        *string `json:"code"`
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	IsActive    *bool   `json:"isActive"`
+	FamilyID     *uint   `json:"familyId"`
+	Code         *string `json:"code"`
+	Name         *string `json:"name"`
+	GenericName  *string `json:"genericName"`
+	Manufacturer *string `json:"manufacturer"`
+	Description  *string `json:"description"`
+	IsActive     *bool   `json:"isActive"`
 }
 
 type CreateMedicationPresentationRequest struct {
@@ -37,6 +41,7 @@ type CreateMedicationPresentationRequest struct {
 	Form         string `json:"form" binding:"required"`
 	Route        string `json:"route" binding:"required"`
 	Unit         string `json:"unit"`
+	Packaging    string `json:"packaging"`
 }
 
 type UpdateMedicationPresentationRequest struct {
@@ -46,6 +51,7 @@ type UpdateMedicationPresentationRequest struct {
 	Form         *string `json:"form"`
 	Route        *string `json:"route"`
 	Unit         *string `json:"unit"`
+	Packaging    *string `json:"packaging"`
 	IsActive     *bool   `json:"isActive"`
 }
 
@@ -105,7 +111,24 @@ type CreateDispensationRequest struct {
 	PatientID      *uint `json:"patientId"`
 	PrescriptionID *uint `json:"prescriptionId"`
 
-	Notes string `json:"notes"`
+	Notes          string `json:"notes"`
+	IdempotencyKey string `json:"idempotencyKey" binding:"omitempty,max=100"`
+}
+
+type PresentationAvailabilityResponse struct {
+	PresentationID    uint    `json:"presentationId"`
+	CommercialName    string  `json:"commercialName"`
+	GenericName       string  `json:"genericName"`
+	Family            string  `json:"family"`
+	Dosage            string  `json:"dosage"`
+	Form              string  `json:"form"`
+	Route             string  `json:"route"`
+	Unit              string  `json:"unit"`
+	Packaging         string  `json:"packaging"`
+	AvailableQuantity float64 `json:"availableQuantity"`
+	AlertThreshold    float64 `json:"alertThreshold"`
+	StockStatus       string  `json:"stockStatus"`
+	IsActive          bool    `json:"isActive"`
 }
 
 type PrescriptionDispensationStatusResponse struct {
@@ -122,10 +145,20 @@ type PharmacyPrescriptionQueueItem struct {
 	ConsultationID uint  `json:"consultationId"`
 	PresentationID *uint `json:"presentationId"`
 
-	MedicationName string `json:"medicationName"`
-	Dosage         string `json:"dosage"`
-	Form           string `json:"form"`
-	Route          string `json:"route"`
+	MedicationName    string    `json:"medicationName"`
+	GenericName       string    `json:"genericName"`
+	Family            string    `json:"family"`
+	PatientID         uint      `json:"patientId"`
+	PatientName       string    `json:"patientName"`
+	PatientCode       string    `json:"patientCode"`
+	DoctorName        string    `json:"doctorName"`
+	Service           string    `json:"service"`
+	PrescribedAt      time.Time `json:"prescribedAt"`
+	AvailableQuantity float64   `json:"availableQuantity"`
+	StockStatus       string    `json:"stockStatus"`
+	Dosage            string    `json:"dosage"`
+	Form              string    `json:"form"`
+	Route             string    `json:"route"`
 
 	PrescribedQuantity float64 `json:"prescribedQuantity"`
 	DispensedQuantity  float64 `json:"dispensedQuantity"`

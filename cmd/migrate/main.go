@@ -64,6 +64,8 @@ func main() {
 		&pharmacy.StockMovement{},
 		&pharmacy.PharmacyDispensation{},
 		&pharmacy.PharmacyDispensationItem{},
+		&pharmacy.PharmacyVoucher{},
+		&pharmacy.PharmacyVoucherLine{},
 
 		&consultations.ConsultationReason{},
 		&consultations.MedicalExam{},
@@ -93,6 +95,9 @@ func main() {
 
 	if err != nil {
 		log.Fatal("Erreur migration:", err)
+	}
+	if err := pharmacy.BackfillVouchers(db); err != nil {
+		log.Fatal("Erreur matérialisation bons pharmacie:", err)
 	}
 	for _, statement := range []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_bed ON hospitalization_bed_assignments (bed_id) WHERE released_at IS NULL AND deleted_at IS NULL",

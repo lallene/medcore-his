@@ -16,10 +16,12 @@ type Medication struct {
 	FamilyID uint             `gorm:"not null;index" json:"familyId"`
 	Family   MedicationFamily `gorm:"foreignKey:FamilyID" json:"family"`
 
-	Code        string `gorm:"size:50;uniqueIndex;not null" json:"code"`
-	Name        string `gorm:"size:200;not null;index" json:"name"`
-	Description string `gorm:"type:text" json:"description"`
-	IsActive    bool   `gorm:"default:true;index" json:"isActive"`
+	Code         string `gorm:"size:50;uniqueIndex;not null" json:"code"`
+	Name         string `gorm:"size:200;not null;index" json:"name"`
+	GenericName  string `gorm:"size:200;index" json:"genericName"`
+	Manufacturer string `gorm:"size:200" json:"manufacturer"`
+	Description  string `gorm:"type:text" json:"description"`
+	IsActive     bool   `gorm:"default:true;index" json:"isActive"`
 }
 
 type MedicationPresentation struct {
@@ -30,10 +32,11 @@ type MedicationPresentation struct {
 
 	Code string `gorm:"size:100;uniqueIndex;not null" json:"code"`
 
-	Dosage string `gorm:"size:100;not null" json:"dosage"`
-	Form   string `gorm:"size:100;not null" json:"form"`
-	Route  string `gorm:"size:100;not null" json:"route"`
-	Unit   string `gorm:"size:50" json:"unit"`
+	Dosage    string `gorm:"size:100;not null" json:"dosage"`
+	Form      string `gorm:"size:100;not null" json:"form"`
+	Route     string `gorm:"size:100;not null" json:"route"`
+	Unit      string `gorm:"size:50" json:"unit"`
+	Packaging string `gorm:"size:150" json:"packaging"`
 
 	IsActive bool `gorm:"default:true;index" json:"isActive"`
 
@@ -149,7 +152,8 @@ type PharmacyDispensation struct {
 	ReferenceType string `gorm:"size:100;index" json:"referenceType"`
 	ReferenceID   *uint  `gorm:"index" json:"referenceId"`
 
-	Notes string `gorm:"type:text" json:"notes"`
+	Notes          string `gorm:"type:text" json:"notes"`
+	IdempotencyKey string `gorm:"size:100;uniqueIndex" json:"idempotencyKey"`
 
 	DispensedByID   *uint  `gorm:"index" json:"dispensedById"`
 	DispensedByName string `gorm:"size:150" json:"dispensedByName"`
@@ -171,6 +175,27 @@ type PharmacyDispensationItem struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type PharmacyVoucher struct {
+	ID                 uint                  `gorm:"primaryKey" json:"id"`
+	Number             string                `gorm:"size:30;uniqueIndex;not null" json:"number"`
+	ConsultationID     uint                  `gorm:"uniqueIndex;not null" json:"consultationId"`
+	PatientID          uint                  `gorm:"index;not null" json:"patientId"`
+	CreatedByID        *uint                 `gorm:"index" json:"createdById"`
+	CancelledAt        *time.Time            `gorm:"index" json:"cancelledAt"`
+	CancelledByID      *uint                 `gorm:"index" json:"cancelledById"`
+	CancellationReason string                `gorm:"type:text" json:"cancellationReason"`
+	Lines              []PharmacyVoucherLine `gorm:"foreignKey:VoucherID" json:"lines"`
+	CreatedAt          time.Time             `gorm:"index" json:"createdAt"`
+	UpdatedAt          time.Time             `json:"updatedAt"`
+}
+
+type PharmacyVoucherLine struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	VoucherID      uint      `gorm:"not null;index" json:"voucherId"`
+	PrescriptionID uint      `gorm:"not null;uniqueIndex" json:"prescriptionId"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
 type ConsultationPrescriptionRef struct {
 	ID             uint `gorm:"primaryKey"`
 	ConsultationID uint
@@ -190,3 +215,14 @@ type ConsultationPrescriptionRef struct {
 func (ConsultationPrescriptionRef) TableName() string {
 	return "consultation_prescriptions"
 }
+
+func (MedicationFamily) TableName() string         { return "medication_families" }
+func (Medication) TableName() string               { return "medications" }
+func (MedicationPresentation) TableName() string   { return "medication_presentations" }
+func (PharmacyStock) TableName() string            { return "pharmacy_stocks" }
+func (PharmacyBatch) TableName() string            { return "pharmacy_batches" }
+func (StockMovement) TableName() string            { return "stock_movements" }
+func (PharmacyDispensation) TableName() string     { return "pharmacy_dispensations" }
+func (PharmacyDispensationItem) TableName() string { return "pharmacy_dispensation_items" }
+func (PharmacyVoucher) TableName() string          { return "pharmacy_vouchers" }
+func (PharmacyVoucherLine) TableName() string      { return "pharmacy_voucher_lines" }

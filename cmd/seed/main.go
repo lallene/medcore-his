@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -23,9 +25,17 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if strings.EqualFold(cfg.AppEnv, "production") {
+		log.Fatal("seed DEMO interdit en environnement production")
+	}
 	logger.Init(cfg.AppEnv)
 
 	db := database.Connect(cfg.DatabaseURL)
+	if len(os.Args) > 1 && os.Args[1] == "--pharmacy-only" {
+		seedPharmacyCatalog(db)
+		log.Println("Seed DEMO pharmacie exécuté avec succès")
+		return
+	}
 	rand.Seed(20260713)
 
 	seedAdmin(db)

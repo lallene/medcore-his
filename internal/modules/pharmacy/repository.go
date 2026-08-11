@@ -6,11 +6,14 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Repository struct {
 	db *gorm.DB
 }
+
+const dispensationColumns = "id, presentation_id, quantity, status, patient_id, reference_type, reference_id, notes, idempotency_key, dispensed_by_id, dispensed_by_name, created_at"
 
 func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
@@ -149,6 +152,29 @@ func (r *Repository) FindAllStocks() ([]PharmacyStock, error) {
 		Find(&stocks).Error
 
 	return stocks, err
+}
+
+// FindDispensableQuantities returns the physical quantity that can actually be
+// dispensed: only active, non-expired batches with a positive remainder, whose
+// presentation and medication are active.
+func (r *Repository) FindDispensableQuantities(now time.Time) (map[uint]float64, error) {
+	type row struct {
+		PresentationID uint
+		Quantity       float64
+	}
+	var rows []row
+	err := r.db.Table("pharmacy_batches b").
+		Select("b.presentation_id, COALESCE(SUM(b.quantity_remaining), 0) AS quantity").
+		Joins("JOIN medication_presentations p ON p.id = b.presentation_id AND p.is_active = ?", true).
+		Joins("JOIN medications m ON m.id = p.medication_id AND m.is_active = ?", true).
+		Where("b.is_active = ? AND b.quantity_remaining > 0", true).
+		Where("b.expiration_date IS NULL OR b.expiration_date >= ?", now).
+		Group("b.presentation_id").Scan(&rows).Error
+	result := make(map[uint]float64, len(rows))
+	for _, item := range rows {
+		result[item.PresentationID] = item.Quantity
+	}
+	return result, err
 }
 
 func (r *Repository) FindStockByID(id uint) (*PharmacyStock, error) {
@@ -323,6 +349,7 @@ func (r *Repository) FindAllDispensations() ([]PharmacyDispensation, error) {
 	var dispensations []PharmacyDispensation
 
 	err := r.db.
+		Select(dispensationColumns).
 		Preload("Presentation").
 		Preload("Presentation.Medication").
 		Preload("Presentation.Medication.Family").
@@ -343,6 +370,7 @@ func (r *Repository) FindDispensationByID(
 	var dispensation PharmacyDispensation
 
 	if err := r.db.
+		Select(dispensationColumns).
 		Preload("Presentation").
 		Preload("Presentation.Medication").
 		Preload("Presentation.Medication.Family").
@@ -364,7 +392,17 @@ func (r *Repository) Dispense(
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var stock PharmacyStock
 
-		if err := tx.
+		if dispensation.IdempotencyKey != "" {
+			var existing PharmacyDispensation
+			if err := tx.Select("id").Where("idempotency_key = ?", dispensation.IdempotencyKey).First(&existing).Error; err == nil {
+				dispensation.ID = existing.ID
+				return nil
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("presentation_id = ?", dispensation.PresentationID).
 			First(&stock).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -386,7 +424,7 @@ func (r *Repository) Dispense(
 
 		var batches []PharmacyBatch
 
-		if err := tx.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
 				"presentation_id = ? AND is_active = ? AND quantity_remaining > 0",
 				dispensation.PresentationID,
@@ -485,8 +523,45 @@ func (r *Repository) Dispense(
 			return err
 		}
 
+		if dispensation.ReferenceType == "CONSULTATION_PRESCRIPTION" && dispensation.ReferenceID != nil && dispensation.PatientID != nil {
+			var record struct{ ID uint }
+			if err := tx.Table("medical_records").Select("id").Where("patient_id = ?", *dispensation.PatientID).First(&record).Error; err != nil {
+				return err
+			}
+			eventType, title := "medication_dispensed", "Médicament dispensé"
+			var prescribed, total float64
+			if err := tx.Table("consultation_prescriptions").Select("quantity").Where("id = ?", *dispensation.ReferenceID).Scan(&prescribed).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&PharmacyDispensation{}).Where("reference_type = ? AND reference_id = ?", "CONSULTATION_PRESCRIPTION", *dispensation.ReferenceID).Select("COALESCE(SUM(quantity),0)").Scan(&total).Error; err != nil {
+				return err
+			}
+			if total < prescribed {
+				eventType, title = "medication_partially_dispensed", "Médicament partiellement dispensé"
+			}
+			var commercialName string
+			if err := tx.Table("medication_presentations mp").Select("m.name").Joins("JOIN medications m ON m.id = mp.medication_id").Where("mp.id = ?", dispensation.PresentationID).Scan(&commercialName).Error; err != nil {
+				return err
+			}
+			if err := tx.Table("medical_timeline_events").Create(map[string]interface{}{
+				"medical_record_id": record.ID, "patient_id": *dispensation.PatientID,
+				"event_type": eventType, "category": "prescription", "title": title,
+				"description": commercialName, "reference_type": "pharmacy_dispensation",
+				"reference_id": dispensation.ID, "severity": "info", "event_date": time.Now(), "created_by": dispensation.DispensedByID,
+			}).Error; err != nil {
+				return err
+			}
+		}
 		return nil
 	})
+}
+
+func (r *Repository) FindDispensationByIdempotencyKey(key string) (*PharmacyDispensation, error) {
+	var d PharmacyDispensation
+	if err := r.db.Select(dispensationColumns).Where("idempotency_key = ?", key).First(&d).Error; err != nil {
+		return nil, err
+	}
+	return r.FindDispensationByID(d.ID)
 }
 
 func (r *Repository) FindUserByID(id uint) (*auth.User, error) {
@@ -536,4 +611,23 @@ func (r *Repository) FindAllConsultationPrescriptions() ([]ConsultationPrescript
 		Find(&prescriptions).Error
 
 	return prescriptions, err
+}
+
+type prescriptionContext struct {
+	PatientID   uint
+	PatientName string
+	PatientCode string
+	DoctorName  string
+	Service     string
+	CreatedAt   time.Time
+}
+
+func (r *Repository) FindPrescriptionContext(id uint) (*prescriptionContext, error) {
+	var value prescriptionContext
+	err := r.db.Table("consultation_prescriptions cp").
+		Select("c.patient_id, CONCAT(p.nom, ' ', p.prenoms) patient_name, p.code_patient patient_code, c.doctor_name, c.service, cp.created_at").
+		Joins("JOIN consultations c ON c.id = cp.consultation_id").
+		Joins("JOIN patients p ON p.id = c.patient_id").
+		Where("cp.id = ?", id).Scan(&value).Error
+	return &value, err
 }

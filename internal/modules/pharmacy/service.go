@@ -2,6 +2,8 @@ package pharmacy
 
 import (
 	"errors"
+	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -18,6 +20,7 @@ var (
 	ErrStockNotManaged       = errors.New("stock non géré par la pharmacie")
 
 	ErrPrescriptionNotFound             = errors.New("prescription introuvable")
+	ErrPrescriptionRequired             = errors.New("une prescription MedCore interne est obligatoire")
 	ErrPrescriptionPatientMismatch      = errors.New("la prescription ne correspond pas au patient")
 	ErrPrescriptionPresentationMismatch = errors.New("la présentation ne correspond pas à la prescription")
 	ErrPrescriptionQuantityExceeded     = errors.New("quantité délivrée supérieure au reste à délivrer")
@@ -118,11 +121,13 @@ func (s *Service) CreateMedication(req CreateMedicationRequest) (*Medication, er
 	}
 
 	medication := Medication{
-		FamilyID:    req.FamilyID,
-		Code:        req.Code,
-		Name:        req.Name,
-		Description: req.Description,
-		IsActive:    true,
+		FamilyID:     req.FamilyID,
+		Code:         req.Code,
+		Name:         req.Name,
+		GenericName:  req.GenericName,
+		Manufacturer: req.Manufacturer,
+		Description:  req.Description,
+		IsActive:     true,
 	}
 
 	if err := s.repo.CreateMedication(&medication); err != nil {
@@ -158,6 +163,12 @@ func (s *Service) UpdateMedication(id uint, req UpdateMedicationRequest) (*Medic
 	if req.Name != nil {
 		updates["name"] = *req.Name
 	}
+	if req.GenericName != nil {
+		updates["generic_name"] = *req.GenericName
+	}
+	if req.Manufacturer != nil {
+		updates["manufacturer"] = *req.Manufacturer
+	}
 
 	if req.Description != nil {
 		updates["description"] = *req.Description
@@ -192,6 +203,59 @@ func (s *Service) GetPresentations() ([]MedicationPresentation, error) {
 	return s.repo.FindAllPresentations()
 }
 
+func (s *Service) GetPresentationAvailability() ([]PresentationAvailabilityResponse, error) {
+	presentations, err := s.repo.FindAllPresentations()
+	if err != nil {
+		return nil, err
+	}
+	stocks, err := s.repo.FindAllStocks()
+	if err != nil {
+		return nil, err
+	}
+	stockByPresentation := make(map[uint]PharmacyStock, len(stocks))
+	for _, stock := range stocks {
+		stockByPresentation[stock.PresentationID] = stock
+	}
+	dispensable, err := s.repo.FindDispensableQuantities(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	result := make([]PresentationAvailabilityResponse, 0, len(presentations))
+	for _, p := range presentations {
+		stock, ok := stockByPresentation[p.ID]
+		availableQuantity := dispensable[p.ID]
+		status := "OUT_OF_STOCK"
+		if ok && p.IsActive && p.Medication.IsActive && availableQuantity > 0 {
+			status = "AVAILABLE"
+			if availableQuantity <= stock.AlertThreshold {
+				status = "LOW_STOCK"
+			}
+		}
+		result = append(result, PresentationAvailabilityResponse{
+			PresentationID: p.ID, CommercialName: p.Medication.Name, GenericName: p.Medication.GenericName,
+			Family: p.Medication.Family.Name, Dosage: p.Dosage, Form: p.Form, Route: p.Route, Unit: p.Unit,
+			Packaging: p.Packaging, AvailableQuantity: availableQuantity, AlertThreshold: stock.AlertThreshold,
+			StockStatus: status, IsActive: p.IsActive && p.Medication.IsActive,
+		})
+	}
+	rank := func(v string) int {
+		if v == "AVAILABLE" {
+			return 0
+		}
+		if v == "LOW_STOCK" {
+			return 1
+		}
+		return 2
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if rank(result[i].StockStatus) != rank(result[j].StockStatus) {
+			return rank(result[i].StockStatus) < rank(result[j].StockStatus)
+		}
+		return strings.ToLower(result[i].CommercialName) < strings.ToLower(result[j].CommercialName)
+	})
+	return result, nil
+}
+
 func (s *Service) CreatePresentation(
 	req CreateMedicationPresentationRequest,
 ) (*MedicationPresentation, error) {
@@ -206,6 +270,7 @@ func (s *Service) CreatePresentation(
 		Form:         req.Form,
 		Route:        req.Route,
 		Unit:         req.Unit,
+		Packaging:    req.Packaging,
 		IsActive:     true,
 	}
 
@@ -257,6 +322,9 @@ func (s *Service) UpdatePresentation(
 	if req.Unit != nil {
 		updates["unit"] = *req.Unit
 	}
+	if req.Packaging != nil {
+		updates["packaging"] = *req.Packaging
+	}
 
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
@@ -302,11 +370,25 @@ func (s *Service) GetStocks() ([]PharmacyStockResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	dispensable, err := s.repo.FindDispensableQuantities(time.Now())
+	if err != nil {
+		return nil, err
+	}
 
 	responses := make([]PharmacyStockResponse, 0, len(stocks))
 
 	for i := range stocks {
-		responses = append(responses, *toStockResponse(&stocks[i]))
+		response := *toStockResponse(&stocks[i])
+		response.QuantityAvailable = dispensable[stocks[i].PresentationID]
+		response.Status = "out_of_stock"
+		if !stocks[i].IsStockManaged {
+			response.Status = "not_managed"
+		} else if response.QuantityAvailable > 0 && response.QuantityAvailable <= response.AlertThreshold {
+			response.Status = "low_stock"
+		} else if response.QuantityAvailable > response.AlertThreshold {
+			response.Status = "available"
+		}
+		responses = append(responses, response)
 	}
 
 	return responses, nil
@@ -485,6 +567,16 @@ func (s *Service) CreateDispensation(
 	req CreateDispensationRequest,
 	userID uint,
 ) (*PharmacyDispensation, error) {
+	if req.PrescriptionID == nil {
+		return nil, ErrPrescriptionRequired
+	}
+	if req.IdempotencyKey != "" {
+		if existing, err := s.repo.FindDispensationByIdempotencyKey(req.IdempotencyKey); err == nil {
+			return existing, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
 	if _, err := s.repo.FindPresentationByID(req.PresentationID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPresentationNotFound
@@ -506,6 +598,7 @@ func (s *Service) CreateDispensation(
 		ReferenceType:   "",
 		ReferenceID:     nil,
 		Notes:           req.Notes,
+		IdempotencyKey:  req.IdempotencyKey,
 		DispensedByID:   &user.ID,
 		DispensedByName: user.Name,
 	}
@@ -524,6 +617,14 @@ func (s *Service) CreateDispensation(
 			*prescription.PresentationID != req.PresentationID {
 			return nil, ErrPrescriptionPresentationMismatch
 		}
+		context, err := s.repo.FindPrescriptionContext(*req.PrescriptionID)
+		if err != nil {
+			return nil, err
+		}
+		if req.PatientID != nil && *req.PatientID != context.PatientID {
+			return nil, ErrPrescriptionPatientMismatch
+		}
+		dispensation.PatientID = &context.PatientID
 
 		alreadyDispensed, err :=
 			s.repo.SumDispensedQuantityForPrescription(*req.PrescriptionID)
@@ -602,8 +703,30 @@ func (s *Service) GetPrescriptionQueue(
 	}
 
 	items := make([]PharmacyPrescriptionQueueItem, 0, len(prescriptions))
+	dispensable, err := s.repo.FindDispensableQuantities(time.Now())
+	if err != nil {
+		return nil, err
+	}
 
 	for _, prescription := range prescriptions {
+		context, err := s.repo.FindPrescriptionContext(prescription.ID)
+		if err != nil {
+			return nil, err
+		}
+		presentation, err := s.repo.FindPresentationByID(*prescription.PresentationID)
+		if err != nil {
+			return nil, err
+		}
+		stock, stockErr := s.repo.FindStockByPresentationID(*prescription.PresentationID)
+		stockStatus, available := "OUT_OF_STOCK", float64(0)
+		if stockErr == nil && presentation.IsActive && presentation.Medication.IsActive {
+			available = dispensable[*prescription.PresentationID]
+			if available > stock.AlertThreshold {
+				stockStatus = "AVAILABLE"
+			} else if available > 0 {
+				stockStatus = "LOW_STOCK"
+			}
+		}
 		dispensedQuantity, err := s.repo.SumDispensedQuantityForPrescription(
 			prescription.ID,
 		)
@@ -634,7 +757,17 @@ func (s *Service) GetPrescriptionQueue(
 			PrescriptionID:     prescription.ID,
 			ConsultationID:     prescription.ConsultationID,
 			PresentationID:     prescription.PresentationID,
-			MedicationName:     prescription.MedicationName,
+			MedicationName:     presentation.Medication.Name,
+			GenericName:        presentation.Medication.GenericName,
+			Family:             presentation.Medication.Family.Name,
+			PatientID:          context.PatientID,
+			PatientName:        context.PatientName,
+			PatientCode:        context.PatientCode,
+			DoctorName:         context.DoctorName,
+			Service:            context.Service,
+			PrescribedAt:       context.CreatedAt,
+			AvailableQuantity:  available,
+			StockStatus:        stockStatus,
 			Dosage:             prescription.Dosage,
 			Form:               prescription.Form,
 			Route:              prescription.Route,

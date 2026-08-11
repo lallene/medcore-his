@@ -341,20 +341,69 @@ func (r *Repository) UpdateConsultation(
 		}
 
 		if updatePrescriptions {
-			if err := tx.
-				Where("consultation_id = ?", id).
-				Delete(&ConsultationPrescription{}).Error; err != nil {
+			var existing []ConsultationPrescription
+			if err := tx.Where("consultation_id = ?", id).Find(&existing).Error; err != nil {
 				return err
 			}
-
-			for i := range prescriptions {
-				prescriptions[i].ConsultationID = id
-			}
-
-			if len(prescriptions) > 0 {
-				if err := tx.Create(&prescriptions).Error; err != nil {
+			existingByID := make(map[uint]ConsultationPrescription, len(existing))
+			dispensedByID := make(map[uint]float64, len(existing))
+			for _, current := range existing {
+				existingByID[current.ID] = current
+				var dispensed float64
+				if err := tx.Model(&pharmacy.PharmacyDispensation{}).Where("reference_type = ? AND reference_id = ?", "CONSULTATION_PRESCRIPTION", current.ID).Select("COALESCE(SUM(quantity),0)").Scan(&dispensed).Error; err != nil {
 					return err
 				}
+				dispensedByID[current.ID] = dispensed
+			}
+			seen := make(map[uint]bool, len(prescriptions))
+			for i := range prescriptions {
+				incoming := &prescriptions[i]
+				incoming.ConsultationID = id
+				if incoming.ID == 0 {
+					continue
+				}
+				current, ok := existingByID[incoming.ID]
+				if !ok {
+					return ErrDispensedPrescriptionConflict
+				}
+				seen[incoming.ID] = true
+				dispensed := dispensedByID[incoming.ID]
+				if dispensed > 0 {
+					if incoming.PresentationID == nil || current.PresentationID == nil || *incoming.PresentationID != *current.PresentationID || incoming.Quantity < dispensed {
+						return ErrDispensedPrescriptionConflict
+					}
+					if dispensed >= current.Quantity && incoming.Quantity != current.Quantity {
+						return ErrDispensedPrescriptionConflict
+					}
+				}
+			}
+			for _, current := range existing {
+				if !seen[current.ID] && dispensedByID[current.ID] > 0 {
+					return ErrDispensedPrescriptionConflict
+				}
+			}
+			for i := range prescriptions {
+				incoming := &prescriptions[i]
+				if incoming.ID == 0 {
+					if err := tx.Create(incoming).Error; err != nil {
+						return err
+					}
+					continue
+				}
+				updates := map[string]interface{}{"presentation_id": incoming.PresentationID, "medication_name": incoming.MedicationName, "dosage": incoming.Dosage, "form": incoming.Form, "route": incoming.Route, "quantity": incoming.Quantity, "frequency": incoming.Frequency, "duration": incoming.Duration, "instructions": incoming.Instructions}
+				if err := tx.Model(&ConsultationPrescription{}).Where("id = ? AND consultation_id = ?", incoming.ID, id).Updates(updates).Error; err != nil {
+					return err
+				}
+			}
+			for _, current := range existing {
+				if !seen[current.ID] {
+					if err := tx.Delete(&ConsultationPrescription{}, current.ID).Error; err != nil {
+						return err
+					}
+				}
+			}
+			if err := pharmacy.MaterializeVoucher(tx, id, &authorID); err != nil {
+				return err
 			}
 		}
 

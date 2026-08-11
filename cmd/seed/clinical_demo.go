@@ -714,53 +714,87 @@ func seedMedicalExams(
 func seedPharmacyCatalog(
 	db *gorm.DB,
 ) map[string]pharmacy.MedicationPresentation {
-	type medicationSeed struct {
-		FamilyCode       string
-		FamilyName       string
-		MedicationCode   string
-		MedicationName   string
-		PresentationCode string
-		Dosage           string
-		Form             string
-		Route            string
-		Unit             string
-		Stock            float64
-		Threshold        float64
+	type batchSeed struct {
+		Number    string
+		Quantity  float64
+		DayOffset int
+		Active    bool
 	}
+	type medicationSeed struct {
+		FamilyCode         string
+		FamilyName         string
+		MedicationCode     string
+		MedicationName     string
+		GenericName        string
+		PresentationCode   string
+		Dosage             string
+		Form               string
+		Route              string
+		Unit               string
+		Packaging          string
+		Stock              float64
+		Threshold          float64
+		MedicationActive   bool
+		PresentationActive bool
+		Batches            []batchSeed
+	}
+	type familySeed struct{ Code, Name string }
 
+	families := []familySeed{{"ANALGESIC", "Antalgiques"}, {"ANTIINFLAMMATORY", "Anti-inflammatoires"}, {"ANTIBIOTIC", "Antibiotiques"}, {"DIABETES", "Antidiabétiques"}, {"CARDIO", "Cardiovasculaires"}, {"DIGESTIVE", "Gastro-entérologie"}, {"RESPIRATORY", "Respiratoire"}, {"ANTIHISTAMINE", "Antihistaminiques"}, {"CORTICOID", "Corticoïdes"}, {"ANTICOAGULANT", "Anticoagulants"}, {"ANTIEMETIC", "Antiémétiques"}, {"OTHER", "Autres"}}
+	for _, f := range families {
+		family := pharmacy.MedicationFamily{Code: f.Code, Name: f.Name, Description: "Référentiel DEMO MedCore", IsActive: true}
+		must(db.Where("code = ?", f.Code).Assign(family).FirstOrCreate(&family).Error)
+	}
+	valid := func(q float64, days int, number string) []batchSeed { return []batchSeed{{number, q, days, true}} }
 	items := []medicationSeed{
-		{"ANALGESIC", "Antalgiques", "PARACETAMOL", "Paracétamol", "PARA-500-TAB", "500 mg", "Comprimé", "Orale", "comprimé", 1200, 200},
-		{"ANALGESIC", "Antalgiques", "PARACETAMOL", "Paracétamol", "PARA-1000-TAB", "1 g", "Comprimé", "Orale", "comprimé", 800, 150},
-		{"ANTIBIOTIC", "Antibiotiques", "AMOXICILLIN", "Amoxicilline", "AMOX-500-CAP", "500 mg", "Gélule", "Orale", "gélule", 500, 100},
-		{"CARDIO", "Cardiovasculaires", "AMLODIPINE", "Amlodipine", "AMLO-5-TAB", "5 mg", "Comprimé", "Orale", "comprimé", 400, 80},
-		{"DIABETES", "Antidiabétiques", "METFORMIN", "Metformine", "METF-500-TAB", "500 mg", "Comprimé", "Orale", "comprimé", 600, 100},
-		{"DIGESTIVE", "Gastro-entérologie", "OMEPRAZOLE", "Oméprazole", "OMEP-20-CAP", "20 mg", "Gélule", "Orale", "gélule", 350, 70},
-		{"RESPIRATORY", "Respiratoire", "SALBUTAMOL", "Salbutamol", "SALB-INH", "100 µg", "Inhalateur", "Inhalée", "dose", 80, 20},
-		{"ANTIINFLAMMATORY", "Anti-inflammatoires", "IBUPROFEN", "Ibuprofène", "IBU-400-TAB", "400 mg", "Comprimé", "Orale", "comprimé", 300, 50},
+		{FamilyCode: "ANALGESIC", MedicationCode: "PARACETAMOL", MedicationName: "DOLIPRANE", GenericName: "Paracétamol", PresentationCode: "PARA-500-TAB", Dosage: "500 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 16 comprimés", Stock: 320, Threshold: 50, MedicationActive: true, PresentationActive: true, Batches: []batchSeed{{"LOT-DOL-500-A", 120, 180, true}, {"LOT-DOL-500-B", 200, 365, true}}},
+		{FamilyCode: "ANALGESIC", MedicationCode: "PARACETAMOL", MedicationName: "DOLIPRANE", GenericName: "Paracétamol", PresentationCode: "PARA-1000-TAB", Dosage: "1 g", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 8 comprimés", Stock: 104, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: []batchSeed{{"LOT-DOL-1G-A", 4, 120, true}, {"LOT-DOL-1G-B", 100, 300, true}}},
+		{FamilyCode: "ANALGESIC", MedicationCode: "EFFERALGAN", MedicationName: "EFFERALGAN", GenericName: "Paracétamol", PresentationCode: "EFF-1G-EFF", Dosage: "1 g", Form: "Comprimé effervescent", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 8 comprimés", Stock: 60, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(60, 240, "LOT-EFF-1G-A")},
+		{FamilyCode: "ANALGESIC", MedicationCode: "SPASFON", MedicationName: "SPASFON", GenericName: "Phloroglucinol", PresentationCode: "SPA-80-TAB", Dosage: "80 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 30 comprimés", Stock: 90, Threshold: 15, MedicationActive: true, PresentationActive: true, Batches: valid(90, 300, "LOT-SPA-80-A")},
+		{FamilyCode: "ANTIINFLAMMATORY", MedicationCode: "IBUPROFEN", MedicationName: "ADVIL", GenericName: "Ibuprofène", PresentationCode: "IBU-400-TAB", Dosage: "400 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 20 comprimés", Stock: 8, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(8, 150, "LOT-ADV-400-A")},
+		{FamilyCode: "ANTIBIOTIC", MedicationCode: "AUGMENTIN", MedicationName: "AUGMENTIN", GenericName: "Amoxicilline + Acide clavulanique", PresentationCode: "AUG-TAB", Dosage: "875/125 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 14 comprimés", Stock: 70, Threshold: 14, MedicationActive: true, PresentationActive: true, Batches: valid(70, 200, "LOT-AUG-A")},
+		{FamilyCode: "ANTIBIOTIC", MedicationCode: "AMOXICILLIN", MedicationName: "AMOXIL", GenericName: "Amoxicilline", PresentationCode: "AMOX-500-CAP", Dosage: "500 mg", Form: "Gélule", Route: "Orale", Unit: "gélule", Packaging: "Boîte de 12 gélules", Stock: 0, Threshold: 12, MedicationActive: true, PresentationActive: true},
+		{FamilyCode: "ANTIBIOTIC", MedicationCode: "ROCEPHINE", MedicationName: "ROCEPHINE", GenericName: "Ceftriaxone", PresentationCode: "ROC-1G-INJ", Dosage: "1 g", Form: "Injectable", Route: "Injectable", Unit: "flacon", Packaging: "Flacon", Stock: 12, Threshold: 5, MedicationActive: true, PresentationActive: true, Batches: valid(12, 20, "LOT-ROC-1G-SOON")},
+		{FamilyCode: "ANTIBIOTIC", MedicationCode: "FLAGYL", MedicationName: "FLAGYL", GenericName: "Métronidazole", PresentationCode: "FLA-500-TAB", Dosage: "500 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 20 comprimés", Stock: 0, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: []batchSeed{{"LOT-FLA-EXPIRED", 25, -10, true}}},
+		{FamilyCode: "CARDIO", MedicationCode: "AMLODIPINE", MedicationName: "NORVASC", GenericName: "Amlodipine", PresentationCode: "AMLO-5-TAB", Dosage: "5 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 30 comprimés", Stock: 0, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: []batchSeed{{"LOT-NOR-DEPLETED", 0, 240, true}}},
+		{FamilyCode: "CARDIO", MedicationCode: "COZAAR", MedicationName: "COZAAR", GenericName: "Losartan", PresentationCode: "COZ-50-TAB", Dosage: "50 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 30 comprimés", Stock: 60, Threshold: 15, MedicationActive: true, PresentationActive: true, Batches: valid(60, 260, "LOT-COZ-A")},
+		{FamilyCode: "CARDIO", MedicationCode: "LASILIX", MedicationName: "LASILIX", GenericName: "Furosémide", PresentationCode: "LAS-40-TAB", Dosage: "40 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 30 comprimés", Stock: 50, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(50, 280, "LOT-LAS-A")},
+		{FamilyCode: "DIABETES", MedicationCode: "METFORMIN", MedicationName: "GLUCOPHAGE", GenericName: "Metformine", PresentationCode: "METF-500-TAB", Dosage: "500 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 30 comprimés", Stock: 120, Threshold: 20, MedicationActive: true, PresentationActive: true, Batches: valid(120, 300, "LOT-GLU-500-A")},
+		{FamilyCode: "DIABETES", MedicationCode: "METFORMIN", MedicationName: "GLUCOPHAGE", GenericName: "Metformine", PresentationCode: "METF-850-TAB", Dosage: "850 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 30 comprimés", Stock: 8, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(8, 220, "LOT-GLU-850-A")},
+		{FamilyCode: "DIGESTIVE", MedicationCode: "OMEPRAZOLE", MedicationName: "MOPRAL", GenericName: "Oméprazole", PresentationCode: "OMEP-20-CAP", Dosage: "20 mg", Form: "Gélule", Route: "Orale", Unit: "gélule", Packaging: "Boîte de 14 gélules", Stock: 56, Threshold: 14, MedicationActive: true, PresentationActive: true, Batches: valid(56, 250, "LOT-MOP-A")},
+		{FamilyCode: "DIGESTIVE", MedicationCode: "SMECTA", MedicationName: "SMECTA", GenericName: "Diosmectite", PresentationCode: "SME-SACH", Dosage: "3 g", Form: "Sachet", Route: "Orale", Unit: "sachet", Packaging: "Boîte de 30 sachets", Stock: 60, Threshold: 15, MedicationActive: true, PresentationActive: true, Batches: valid(60, 300, "LOT-SME-A")},
+		{FamilyCode: "RESPIRATORY", MedicationCode: "SALBUTAMOL", MedicationName: "VENTOLINE", GenericName: "Salbutamol", PresentationCode: "SALB-INH", Dosage: "100 µg", Form: "Inhalateur", Route: "Inhalée", Unit: "dose", Packaging: "Inhalateur", Stock: 40, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(40, 180, "LOT-VEN-A")},
+		{FamilyCode: "RESPIRATORY", MedicationCode: "PULMICORT", MedicationName: "PULMICORT", GenericName: "Budésonide", PresentationCode: "PUL-INH", Dosage: "200 µg", Form: "Inhalation", Route: "Inhalée", Unit: "dose", Packaging: "Inhalateur", Stock: 30, Threshold: 8, MedicationActive: true, PresentationActive: true, Batches: valid(30, 200, "LOT-PUL-A")},
+		{FamilyCode: "ANTIHISTAMINE", MedicationCode: "ZYRTEC", MedicationName: "ZYRTEC", GenericName: "Cétirizine", PresentationCode: "ZYR-10-TAB", Dosage: "10 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 15 comprimés", Stock: 45, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(45, 210, "LOT-ZYR-A")},
+		{FamilyCode: "CORTICOID", MedicationCode: "SOLUPRED", MedicationName: "SOLUPRED", GenericName: "Prednisolone", PresentationCode: "SOL-20-TAB", Dosage: "20 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 20 comprimés", Stock: 40, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(40, 230, "LOT-SOL-A")},
+		{FamilyCode: "ANTICOAGULANT", MedicationCode: "LOVENOX", MedicationName: "LOVENOX", GenericName: "Énoxaparine", PresentationCode: "LOV-40-SYR", Dosage: "40 mg", Form: "Seringue préremplie", Route: "Injectable", Unit: "seringue", Packaging: "Boîte de 6 seringues", Stock: 24, Threshold: 6, MedicationActive: true, PresentationActive: true, Batches: valid(24, 190, "LOT-LOV-A")},
+		{FamilyCode: "ANTIEMETIC", MedicationCode: "PRIMPERAN", MedicationName: "PRIMPERAN", GenericName: "Métoclopramide", PresentationCode: "PRI-10-TAB", Dosage: "10 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte de 20 comprimés", Stock: 40, Threshold: 10, MedicationActive: true, PresentationActive: true, Batches: valid(40, 260, "LOT-PRI-A")},
+		{FamilyCode: "OTHER", MedicationCode: "DEMO-SYRUP", MedicationName: "DEMO SIROP", GenericName: "Solution orale DEMO", PresentationCode: "DEM-SYR", Dosage: "100 ml", Form: "Sirop", Route: "Orale", Unit: "flacon", Packaging: "Flacon", Stock: 12, Threshold: 3, MedicationActive: true, PresentationActive: true, Batches: valid(12, 180, "LOT-DEM-SYR")},
+		{FamilyCode: "OTHER", MedicationCode: "DEMO-CREAM", MedicationName: "DEMO CRÈME", GenericName: "Crème cutanée DEMO", PresentationCode: "DEM-CREAM", Dosage: "30 g", Form: "Crème", Route: "Cutanée", Unit: "tube", Packaging: "Tube", Stock: 10, Threshold: 2, MedicationActive: true, PresentationActive: true, Batches: valid(10, 240, "LOT-DEM-CREAM")},
+		{FamilyCode: "OTHER", MedicationCode: "DEMO-EYE", MedicationName: "DEMO COLLYRE", GenericName: "Solution ophtalmique DEMO", PresentationCode: "DEM-EYE", Dosage: "10 ml", Form: "Collyre", Route: "Ophtalmique", Unit: "flacon", Packaging: "Flacon", Stock: 6, Threshold: 2, MedicationActive: true, PresentationActive: true, Batches: valid(6, 160, "LOT-DEM-EYE")},
+		{FamilyCode: "OTHER", MedicationCode: "DEMO-INACTIVE", MedicationName: "DEMO INACTIF", GenericName: "Produit DEMO inactif", PresentationCode: "DEM-INACTIVE", Dosage: "10 mg", Form: "Pommade", Route: "Cutanée", Unit: "tube", Packaging: "Tube", Stock: 0, Threshold: 0, MedicationActive: false, PresentationActive: true},
+		{FamilyCode: "OTHER", MedicationCode: "DEMO-SOLUTION", MedicationName: "DEMO SOLUTION", GenericName: "Solution DEMO", PresentationCode: "DEM-PRES-INACTIVE", Dosage: "5 ml", Form: "Solution", Route: "Injectable", Unit: "ampoule", Packaging: "Ampoule", Stock: 0, Threshold: 0, MedicationActive: true, PresentationActive: false},
 	}
 
 	result := make(map[string]pharmacy.MedicationPresentation)
 
 	for _, item := range items {
-		family := pharmacy.MedicationFamily{
-			Code:     item.FamilyCode,
-			Name:     item.FamilyName,
-			IsActive: true,
-		}
+		family := pharmacy.MedicationFamily{}
 
 		must(
 			db.
-				Where("code = ?", family.Code).
-				Assign(family).
-				FirstOrCreate(&family).
+				Where("code = ?", item.FamilyCode).
+				First(&family).
 				Error,
 		)
 
 		medication := pharmacy.Medication{
-			FamilyID: family.ID,
-			Code:     item.MedicationCode,
-			Name:     item.MedicationName,
-			IsActive: true,
+			FamilyID:    family.ID,
+			Code:        item.MedicationCode,
+			Name:        item.MedicationName,
+			GenericName: item.GenericName,
+			Description: "Donnée DEMO MedCore",
+			IsActive:    item.MedicationActive,
 		}
 
 		medication.FamilyID = family.ID
@@ -772,6 +806,10 @@ func seedPharmacyCatalog(
 				FirstOrCreate(&medication).
 				Error,
 		)
+		must(db.Model(&medication).Updates(map[string]interface{}{
+			"family_id": family.ID, "name": item.MedicationName, "generic_name": item.GenericName,
+			"description": "Donnée DEMO MedCore", "is_active": item.MedicationActive,
+		}).Error)
 
 		presentation := pharmacy.MedicationPresentation{
 			MedicationID: medication.ID,
@@ -780,7 +818,8 @@ func seedPharmacyCatalog(
 			Form:         item.Form,
 			Route:        item.Route,
 			Unit:         item.Unit,
-			IsActive:     true,
+			Packaging:    item.Packaging,
+			IsActive:     item.PresentationActive,
 		}
 
 		must(
@@ -790,6 +829,11 @@ func seedPharmacyCatalog(
 				FirstOrCreate(&presentation).
 				Error,
 		)
+		must(db.Model(&presentation).Updates(map[string]interface{}{
+			"medication_id": medication.ID, "dosage": item.Dosage, "form": item.Form,
+			"route": item.Route, "unit": item.Unit, "packaging": item.Packaging,
+			"is_active": item.PresentationActive,
+		}).Error)
 
 		stock := pharmacy.PharmacyStock{
 			PresentationID:    presentation.ID,
@@ -801,12 +845,25 @@ func seedPharmacyCatalog(
 		must(
 			db.
 				Where("presentation_id = ?", presentation.ID).
-				Assign(stock).
 				FirstOrCreate(&stock).
 				Error,
 		)
+		must(db.Model(&stock).Updates(map[string]interface{}{
+			"quantity_available": item.Stock, "alert_threshold": item.Threshold,
+			"is_stock_managed": true,
+		}).Error)
 
 		result[presentation.Code] = presentation
+		for _, b := range item.Batches {
+			expires := time.Now().AddDate(0, 0, b.DayOffset)
+			batch := pharmacy.PharmacyBatch{PresentationID: presentation.ID, BatchNumber: b.Number, QuantityReceived: b.Quantity, QuantityRemaining: b.Quantity, ExpirationDate: &expires, Supplier: "DEMO", IsActive: b.Active}
+			must(db.Where("batch_number = ?", b.Number).FirstOrCreate(&batch).Error)
+			must(db.Model(&batch).Updates(map[string]interface{}{
+				"presentation_id": presentation.ID, "quantity_received": b.Quantity,
+				"quantity_remaining": b.Quantity, "expiration_date": expires,
+				"supplier": "DEMO", "is_active": b.Active,
+			}).Error)
+		}
 	}
 
 	return result
