@@ -25,8 +25,15 @@ func (r *Repository) FindExams() ([]MedicalExam, error) {
 	return exams, err
 }
 
-func (r *Repository) Create(consultation *Consultation) error {
-	return r.db.Create(consultation).Error
+func (r *Repository) Create(consultation *Consultation, authorID uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(consultation).Error; err != nil {
+			return err
+		}
+		return tx.Model(&ConsultationExamRequest{}).
+			Where("consultation_id = ?", consultation.ID).
+			Updates(map[string]interface{}{"prescribed_by": authorID, "priority": "ROUTINE"}).Error
+	})
 }
 
 func (r *Repository) List(filter ConsultationListFilter) (*ConsultationListResult, error) {
@@ -218,6 +225,7 @@ func (r *Repository) UpdateStatus(
 
 func (r *Repository) UpdateConsultation(
 	id uint,
+	authorID uint,
 	updates map[string]interface{},
 	vitals *ConsultationVitalsRequest,
 	reasons []ConsultationReason,
@@ -323,6 +331,11 @@ func (r *Repository) UpdateConsultation(
 				Model(&consultation).
 				Association("Exams").
 				Replace(exams); err != nil {
+				return err
+			}
+			if err := tx.Model(&ConsultationExamRequest{}).
+				Where("consultation_id = ? AND prescribed_by = 0", id).
+				Updates(map[string]interface{}{"prescribed_by": authorID, "priority": "ROUTINE"}).Error; err != nil {
 				return err
 			}
 		}

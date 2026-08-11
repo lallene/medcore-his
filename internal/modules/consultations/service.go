@@ -270,7 +270,7 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest, authorID uin
 		)
 	}
 
-	err = s.repo.Create(consultation)
+	err = s.repo.Create(consultation, authorID)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +438,7 @@ func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, aut
 	return s.repo.FindByID(id)
 }
 
-func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*Consultation, error) {
+func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, authorID uint) (*Consultation, error) {
 
 	var antecedent *ConsultationAntecedent
 	var physicalExams *[]ConsultationPhysicalExam
@@ -729,6 +729,7 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest) (*C
 
 	err = s.repo.UpdateConsultation(
 		id,
+		authorID,
 		updates,
 		req.Vitals,
 		reasons,

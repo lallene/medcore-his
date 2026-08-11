@@ -424,6 +424,10 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 //	@Failure		500		{object}	map[string]interface{}
 //	@Router			/api/consultations/{id} [put]
 func (h *Handler) UpdateConsultation(c *gin.Context) {
+	authorID, ok := consultationAuthorID(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -444,6 +448,7 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 	consultation, err := h.service.UpdateConsultation(
 		uint(id),
 		req,
+		authorID,
 	)
 
 	if err != nil {

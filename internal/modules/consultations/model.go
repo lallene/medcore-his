@@ -94,10 +94,14 @@ type ConsultationVitals struct {
 }
 
 type ConsultationExamRequest struct {
-	ConsultationID uint   `gorm:"primaryKey" json:"consultationId"`
-	MedicalExamID  uint   `gorm:"primaryKey" json:"examId"`
-	Status         string `gorm:"default:requested" json:"status"`
-	Notes          string `gorm:"type:text" json:"notes"`
+	ConsultationID uint      `gorm:"primaryKey" json:"consultationId"`
+	MedicalExamID  uint      `gorm:"primaryKey" json:"examId"`
+	Status         string    `gorm:"default:requested" json:"status"`
+	Notes          string    `gorm:"type:text" json:"notes"`
+	Priority       string    `gorm:"size:20;not null;default:'ROUTINE'" json:"priority"`
+	PrescribedBy   uint      `gorm:"index" json:"prescribedBy"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type ConsultationPrescription struct {
