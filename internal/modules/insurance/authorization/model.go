@@ -50,3 +50,20 @@ type InsuranceAuthorization struct {
 }
 
 func (InsuranceAuthorization) TableName() string { return "insurance_authorizations" }
+
+const RelationCovered = "COVERED"
+
+type InsuranceAuthorizationAct struct {
+	ID                       uint      `gorm:"primaryKey" json:"id"`
+	InsuranceAuthorizationID uint      `gorm:"not null;index" json:"insuranceAuthorizationId"`
+	PatientID                uint      `gorm:"not null;index;uniqueIndex:ux_active_authorization_act,where:is_active = true" json:"patientId"`
+	PatientCoverageID        uint      `gorm:"not null;index;uniqueIndex:ux_active_authorization_act,where:is_active = true" json:"patientCoverageId"`
+	ReferenceType            string    `gorm:"size:30;not null;uniqueIndex:ux_active_authorization_act,where:is_active = true" json:"referenceType"`
+	ReferenceID              uint      `gorm:"not null;uniqueIndex:ux_active_authorization_act,where:is_active = true" json:"referenceId"`
+	RelationType             string    `gorm:"size:20;not null;default:'COVERED'" json:"relationType"`
+	IsActive                 bool      `gorm:"not null;default:true;index" json:"isActive"`
+	CreatedBy                uint      `gorm:"not null;index" json:"createdBy"`
+	CreatedAt                time.Time `json:"createdAt"`
+}
+
+func (InsuranceAuthorizationAct) TableName() string { return "insurance_authorization_acts" }

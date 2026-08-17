@@ -28,3 +28,10 @@ func TestCalculateValidation(t *testing.T) {
 		t.Fatal("empty decision accepted")
 	}
 }
+
+func TestEmptyPageUsesJSONArray(t *testing.T) {
+	page := Page{Items: []Response{}}
+	if page.Items == nil {
+		t.Fatal("items must serialize as [] instead of null")
+	}
+}

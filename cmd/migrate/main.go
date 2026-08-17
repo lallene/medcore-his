@@ -41,6 +41,7 @@ func main() {
 		&coverage.PatientCoverage{},
 		&voucher.InsuranceVoucher{},
 		&authorization.InsuranceAuthorization{},
+		&authorization.InsuranceAuthorizationAct{},
 
 		&medical_records.MedicalRecord{},
 		&medical_records.MedicalAlert{},

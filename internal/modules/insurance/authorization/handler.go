@@ -48,6 +48,58 @@ func (h *Handler) Find(c *gin.Context) {
 	}
 	response.Success(c, "PEC chargée", result)
 }
+func (h *Handler) FindForAct(c *gin.Context) {
+	patientID, patientErr := strconv.ParseUint(c.Query("patientId"), 10, 64)
+	coverageID, coverageErr := strconv.ParseUint(c.Query("coverageId"), 10, 64)
+	referenceID, referenceErr := strconv.ParseUint(c.Query("referenceId"), 10, 64)
+	if patientErr != nil || coverageErr != nil || referenceErr != nil || patientID == 0 || coverageID == 0 || referenceID == 0 {
+		response.Error(c, coreerrors.BadRequest("Identité d'acte invalide"))
+		return
+	}
+	result, e := h.service.FindAuthorizationForAct(uint(patientID), uint(coverageID), c.Query("referenceType"), uint(referenceID))
+	if e != nil {
+		response.Error(c, e)
+		return
+	}
+	response.Success(c, "Recherche PEC terminée", result)
+}
+func (h *Handler) EligibleActs(c *gin.Context) {
+	patientID, patientErr := strconv.ParseUint(c.Query("patientId"), 10, 64)
+	coverageID, coverageErr := strconv.ParseUint(c.Query("coverageId"), 10, 64)
+	if patientErr != nil || coverageErr != nil || patientID == 0 || coverageID == 0 {
+		response.Error(c, coreerrors.BadRequest("Patient ou couverture invalide"))
+		return
+	}
+	result, e := h.service.EligibleActs(uint(patientID), uint(coverageID), c.Query("type"), c.Query("search"))
+	if e != nil {
+		response.Error(c, e)
+		return
+	}
+	response.Success(c, "Actes éligibles chargés", result)
+}
+func (h *Handler) LinkAct(c *gin.Context) {
+	u, e := user(c)
+	if e != nil {
+		response.Error(c, e)
+		return
+	}
+	n, e := id(c)
+	if e != nil {
+		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
+		return
+	}
+	var req ActRequest
+	if e = validator.Bind(c, &req); e != nil {
+		response.Error(c, e)
+		return
+	}
+	result, e := h.service.LinkAct(n, req, u)
+	if e != nil {
+		response.Error(c, e)
+		return
+	}
+	response.Success(c, "Acte couvert rattaché", result)
+}
 func (h *Handler) Create(c *gin.Context) {
 	u, e := user(c)
 	if e != nil {

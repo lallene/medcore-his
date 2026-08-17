@@ -2,8 +2,8 @@ package authorization
 
 import (
 	"fmt"
-	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,11 +19,53 @@ import (
 )
 
 type authorizationConsultation struct {
-	ID, PatientID uint
-	Service       string
+	ID, PatientID               uint
+	Service, DoctorName, Status string
+	CreatedAt                   time.Time
 }
 
 func (authorizationConsultation) TableName() string { return "consultations" }
+
+type authorizationMedicalExam struct {
+	ID             uint
+	Name, Category string
+}
+
+func (authorizationMedicalExam) TableName() string { return "medical_exams" }
+
+type authorizationLaboratoryOrder struct {
+	ID, PatientID, MedicalExamID uint
+	RequestNumber, Status        string
+	CreatedAt                    time.Time
+}
+
+func (authorizationLaboratoryOrder) TableName() string { return "laboratory_orders" }
+
+type authorizationImagingOrder struct {
+	ID, PatientID, MedicalExamID  uint
+	OrderNumber, Modality, Status string
+	CreatedAt                     time.Time
+}
+
+func (authorizationImagingOrder) TableName() string { return "imaging_orders" }
+
+type authorizationHospitalization struct {
+	ID, PatientID                                        uint
+	AdmissionNumber, Department, AdmissionReason, Status string
+	CreatedAt                                            time.Time
+}
+
+func (authorizationHospitalization) TableName() string { return "hospitalizations" }
+
+type authorizationPrescription struct {
+	ID, ConsultationID     uint
+	MedicationName, Dosage string
+	CreatedAt              time.Time
+}
+
+func (authorizationPrescription) TableName() string { return "consultation_prescriptions" }
+
+type authorizationPharmacyRow struct{ ID uint }
 
 func authorizationDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -39,19 +81,179 @@ func authorizationDB(t *testing.T) *gorm.DB {
 	if e = admin.Exec(`CREATE SCHEMA "` + schema + `"`).Error; e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { _ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error })
-	u, _ := url.Parse(dsn)
-	q := u.Query()
-	q.Set("search_path", schema)
-	u.RawQuery = q.Encode()
-	db, e := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	db, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = db.AutoMigrate(&patients.Patient{}, &company.InsuranceCompany{}, &guarantor.InsuranceGuarantor{}, &coverage.PatientCoverage{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &authorizationConsultation{}, &InsuranceAuthorization{}); e != nil {
+	sqlDB, e := db.DB()
+	if e != nil {
+		t.Fatal(e)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if e = db.Exec(`SET search_path TO "` + schema + `"`).Error; e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() {
+		_ = db.Exec("RESET search_path").Error
+		_ = sqlDB.Close()
+		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
+	})
+	if e = db.AutoMigrate(&patients.Patient{}, &company.InsuranceCompany{}, &guarantor.InsuranceGuarantor{}, &coverage.PatientCoverage{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &authorizationConsultation{}, &authorizationMedicalExam{}, &authorizationLaboratoryOrder{}, &authorizationImagingOrder{}, &authorizationHospitalization{}, &authorizationPrescription{}, &InsuranceAuthorization{}, &InsuranceAuthorizationAct{}); e != nil {
 		t.Fatal(e)
 	}
 	return db
+}
+
+func TestEligibleActsCoversSupportedClinicalSources(t *testing.T) {
+	db := authorizationDB(t)
+	f := seedAuthorization(t, db)
+	exam := authorizationMedicalExam{Name: "Radiographie thoracique", Category: "Imagerie"}
+	db.Create(&exam)
+	lab := authorizationLaboratoryOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, RequestNumber: "LAB-1", Status: "VALIDATED"}
+	db.Create(&lab)
+	img := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, OrderNumber: "IMG-1", Modality: "XR", Status: "VALIDATED"}
+	db.Create(&img)
+	hosp := authorizationHospitalization{PatientID: f.patient.ID, AdmissionNumber: "HOSP-1", Department: "Urgences", AdmissionReason: "Test", Status: "DISCHARGED"}
+	db.Create(&hosp)
+	prescription := authorizationPrescription{ConsultationID: f.act.ID, MedicationName: "DOLIPRANE", Dosage: "1 g"}
+	db.Create(&prescription)
+	s := NewService(db)
+	for typ, expected := range map[string]string{"CONSULTATION": "#", "LABORATORY": "LAB-1", "IMAGING": "IMG-1", "HOSPITALIZATION": "HOSP-1", "MEDICATION": "DOLIPRANE"} {
+		rows, err := s.EligibleActs(f.patient.ID, f.coverage.ID, typ, expected)
+		if err != nil || len(rows) != 1 || rows[0].AuthorizationResolution != "NONE" || !strings.Contains(rows[0].Label, expected) {
+			t.Fatalf("%s rows=%#v err=%v", typ, rows, err)
+		}
+	}
+	if _, err := s.EligibleActs(f.other.ID, f.coverage.ID, "MEDICATION", ""); !IsConflict(err) {
+		t.Fatalf("foreign coverage=%v", err)
+	}
+	if _, err := s.EligibleActs(f.patient.ID, f.coverage.ID, "OTHER", ""); err == nil {
+		t.Fatal("invalid type accepted")
+	}
+}
+
+func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
+	db := authorizationDB(t)
+	for _, table := range []string{"pharmacy_dispensations", "pharmacy_vouchers", "pharmacy_stocks", "pharmacy_batches", "stock_movements"} {
+		if err := db.Exec("CREATE TABLE " + table + " (id bigserial primary key)").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := seedAuthorization(t, db)
+	s := NewService(db)
+	amount := 1000.0
+	primary, err := s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: f.act.ID, RequestedAmount: &amount}, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := s.FindAuthorizationForAct(f.patient.ID, f.coverage.ID, "CONSULTATION", f.act.ID)
+	if err != nil || direct.MatchType != "DIRECT" || direct.Authorization.ID != primary.ID {
+		t.Fatalf("direct=%#v err=%v", direct, err)
+	}
+	exam := authorizationMedicalExam{Name: "Radiographie thoracique"}
+	db.Create(&exam)
+	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID}
+	db.Create(&imaging)
+	none, err := s.FindAuthorizationForAct(f.patient.ID, f.coverage.ID, "IMAGING", imaging.ID)
+	if err != nil || none.MatchType != "NONE" {
+		t.Fatalf("none=%#v err=%v", none, err)
+	}
+	linked, err := s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: imaging.ID}, 72)
+	if err != nil || linked.CreatedBy != 72 || linked.ReferenceLabel != exam.Name {
+		t.Fatalf("linked=%#v err=%v", linked, err)
+	}
+	covered, err := s.FindAuthorizationForAct(f.patient.ID, f.coverage.ID, "IMAGING", imaging.ID)
+	if err != nil || covered.MatchType != "COVERED" || covered.Authorization.ID != primary.ID || len(covered.Authorization.CoveredActs) != 1 {
+		t.Fatalf("covered=%#v err=%v", covered, err)
+	}
+	again, err := s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: imaging.ID}, 99)
+	if err != nil || again.ID != linked.ID {
+		t.Fatalf("idempotent=%#v err=%v", again, err)
+	}
+	foreignImaging := authorizationImagingOrder{PatientID: f.other.ID, MedicalExamID: exam.ID}
+	db.Create(&foreignImaging)
+	if _, err = s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: foreignImaging.ID}, 72); !IsConflict(err) {
+		t.Fatalf("foreign act=%v", err)
+	}
+	var events []medical_records.MedicalTimelineEvent
+	db.Where("event_type=? AND reference_id=?", "insurance_authorization_act_linked", primary.ID).Find(&events)
+	if len(events) != 1 || events[0].CreatedBy != 72 {
+		t.Fatalf("events=%#v", events)
+	}
+	if _, err = s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "IMAGING", ReferenceID: imaging.ID, RequestedAmount: &amount}, 11); !IsConflict(err) {
+		t.Fatalf("covered act duplicate=%v", err)
+	}
+	if err = db.Model(&InsuranceAuthorization{}).Where("id=?", primary.ID).Update("status", StatusRejected).Error; err != nil {
+		t.Fatal(err)
+	}
+	rejected, err := s.FindAuthorizationForAct(f.patient.ID, f.coverage.ID, "CONSULTATION", f.act.ID)
+	if err != nil || rejected.MatchType != "DIRECT" || rejected.Authorization.Status != StatusRejected {
+		t.Fatalf("rejected decision not reused: %#v err=%v", rejected, err)
+	}
+	secondAct := authorizationConsultation{PatientID: f.patient.ID, Service: "Urgences"}
+	db.Create(&secondAct)
+	secondAuthorization, err := s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: secondAct.ID, RequestedAmount: &amount}, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	concurrentImaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID}
+	db.Create(&concurrentImaging)
+	results := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, authorizationID := range []uint{primary.ID, secondAuthorization.ID} {
+		wg.Add(1)
+		go func(candidate uint) {
+			defer wg.Done()
+			_, linkErr := s.LinkAct(candidate, ActRequest{ReferenceType: "IMAGING", ReferenceID: concurrentImaging.ID}, 72)
+			results <- linkErr
+		}(authorizationID)
+	}
+	wg.Wait()
+	close(results)
+	successes := 0
+	conflicts := 0
+	for linkErr := range results {
+		if linkErr == nil {
+			successes++
+		} else if IsConflict(linkErr) {
+			conflicts++
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("concurrent links: successes=%d conflicts=%d", successes, conflicts)
+	}
+	for _, table := range []string{"pharmacy_dispensations", "pharmacy_vouchers", "pharmacy_stocks", "pharmacy_batches", "stock_movements"} {
+		var count int64
+		if err := db.Table(table).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("unexpected pharmacy mutation %s: count=%d err=%v", table, count, err)
+		}
+	}
+}
+
+func TestAuthorizationUsesClinicalExamLabels(t *testing.T) {
+	db := authorizationDB(t)
+	f := seedAuthorization(t, db)
+	examLab := authorizationMedicalExam{Name: "Numération formule sanguine"}
+	examImaging := authorizationMedicalExam{Name: "Radiographie thoracique"}
+	db.Create(&examLab)
+	db.Create(&examImaging)
+	lab := authorizationLaboratoryOrder{PatientID: f.patient.ID, MedicalExamID: examLab.ID}
+	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: examImaging.ID}
+	db.Create(&lab)
+	db.Create(&imaging)
+	s := NewService(db)
+	amount := 1000.0
+	labAuthorization, err := s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "LABORATORY", ReferenceID: lab.ID, RequestedAmount: &amount}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagingAuthorization, err := s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "IMAGING", ReferenceID: imaging.ID, RequestedAmount: &amount}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if labAuthorization.ReferenceLabel != examLab.Name || imagingAuthorization.ReferenceLabel != examImaging.Name {
+		t.Fatalf("labels: laboratory=%q imaging=%q", labAuthorization.ReferenceLabel, imagingAuthorization.ReferenceLabel)
+	}
 }
 
 type fixture struct {
@@ -178,7 +380,7 @@ func TestAuthorizationTableNameAndRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	RegisterRoutes(router.Group("/api"), NewHandler(nil))
-	want := map[string]bool{"GET /api/insurance/authorizations": false, "GET /api/insurance/authorizations/:id": false, "POST /api/insurance/authorizations": false, "POST /api/insurance/authorizations/:id/submit": false, "POST /api/insurance/authorizations/:id/pending": false, "POST /api/insurance/authorizations/:id/decision": false, "POST /api/insurance/authorizations/:id/cancel": false}
+	want := map[string]bool{"GET /api/insurance/authorizations": false, "GET /api/insurance/authorizations/for-act": false, "GET /api/insurance/authorizations/eligible-acts": false, "GET /api/insurance/authorizations/:id": false, "POST /api/insurance/authorizations": false, "POST /api/insurance/authorizations/:id/submit": false, "POST /api/insurance/authorizations/:id/pending": false, "POST /api/insurance/authorizations/:id/decision": false, "POST /api/insurance/authorizations/:id/cancel": false, "POST /api/insurance/authorizations/:id/acts": false}
 	for _, r := range router.Routes() {
 		want[r.Method+" "+r.Path] = true
 	}

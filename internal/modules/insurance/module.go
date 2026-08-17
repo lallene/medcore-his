@@ -22,6 +22,7 @@ func (Module) Register(app *application.Application) {
 		&coverage.PatientCoverage{},
 		&voucher.InsuranceVoucher{},
 		&authorization.InsuranceAuthorization{},
+		&authorization.InsuranceAuthorizationAct{},
 	)
 
 	Provider{}.Register(app)

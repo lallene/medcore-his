@@ -8,6 +8,8 @@ import (
 func RegisterRoutes(router *gin.RouterGroup, h *Handler) {
 	g := router.Group("/insurance/authorizations")
 	g.GET("", rbac.Permission("insurance.authorization.read"), h.List)
+	g.GET("/for-act", rbac.Permission("insurance.authorization.read"), h.FindForAct)
+	g.GET("/eligible-acts", rbac.Permission("insurance.authorization.read"), h.EligibleActs)
 	g.GET("/:id", rbac.Permission("insurance.authorization.read"), h.Find)
 	g.POST("", rbac.Permission("insurance.authorization.create"), h.Create)
 	g.PUT("/:id", rbac.Permission("insurance.authorization.create"), h.Update)
@@ -15,4 +17,5 @@ func RegisterRoutes(router *gin.RouterGroup, h *Handler) {
 	g.POST("/:id/pending", rbac.Permission("insurance.authorization.submit"), h.Pending)
 	g.POST("/:id/decision", rbac.Permission("insurance.authorization.decide"), h.Decide)
 	g.POST("/:id/cancel", rbac.Permission("insurance.authorization.cancel"), h.Cancel)
+	g.POST("/:id/acts", rbac.Permission("insurance.authorization.link_act"), h.LinkAct)
 }

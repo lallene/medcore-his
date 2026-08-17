@@ -34,6 +34,33 @@ type DecisionRequest struct {
 	Comment              string   `json:"comment"`
 }
 
+type ActRequest struct {
+	ReferenceType string `json:"referenceType" binding:"required"`
+	ReferenceID   uint   `json:"referenceId" binding:"required"`
+}
+
+type ActResponse struct {
+	InsuranceAuthorizationAct
+	ReferenceLabel string `json:"referenceLabel"`
+}
+
+type ActMatch struct {
+	MatchType     string    `json:"matchType"`
+	Authorization *Response `json:"authorization,omitempty"`
+}
+
+type EligibleAct struct {
+	ReferenceType               string `json:"referenceType"`
+	ReferenceID                 uint   `json:"referenceId"`
+	Label                       string `json:"label"`
+	SecondaryLabel              string `json:"secondaryLabel"`
+	Date                        string `json:"date"`
+	Status                      string `json:"status"`
+	AuthorizationResolution     string `json:"authorizationResolution"`
+	ExistingAuthorizationID     uint   `json:"existingAuthorizationId,omitempty"`
+	ExistingAuthorizationNumber string `json:"existingAuthorizationNumber,omitempty"`
+}
+
 type ListQuery struct {
 	Search        string
 	Status        string
@@ -49,13 +76,14 @@ type ListQuery struct {
 
 type Response struct {
 	InsuranceAuthorization
-	PatientName    string  `json:"patientName"`
-	PatientCode    string  `json:"patientCode"`
-	CompanyName    string  `json:"companyName"`
-	MemberNumber   string  `json:"memberNumber"`
-	ContractRate   float64 `json:"contractRate"`
-	GuarantorName  string  `json:"guarantorName"`
-	ReferenceLabel string  `json:"referenceLabel"`
+	PatientName    string        `json:"patientName"`
+	PatientCode    string        `json:"patientCode"`
+	CompanyName    string        `json:"companyName"`
+	MemberNumber   string        `json:"memberNumber"`
+	ContractRate   float64       `json:"contractRate"`
+	GuarantorName  string        `json:"guarantorName"`
+	ReferenceLabel string        `json:"referenceLabel"`
+	CoveredActs    []ActResponse `gorm:"-" json:"coveredActs"`
 }
 
 type Page struct {
