@@ -9,6 +9,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/workflow"
 	"github.com/lallene/medcore-his/backend/internal/database"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
 	"github.com/lallene/medcore-his/backend/internal/modules/imaging"
@@ -34,6 +35,11 @@ func main() {
 		&audit.AuditLog{},
 		&workflow.History{},
 		&auth.User{},
+		&billing.Tariff{},
+		&billing.Invoice{},
+		&billing.InvoiceLine{},
+		&billing.AuthorizationAllocation{},
+		&billing.Payment{},
 		&patients.Patient{},
 
 		&company.InsuranceCompany{},
@@ -103,6 +109,7 @@ func main() {
 		log.Fatal("Erreur matérialisation bons pharmacie:", err)
 	}
 	for _, statement := range []string{
+		"CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active = true",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_bed ON hospitalization_bed_assignments (bed_id) WHERE released_at IS NULL AND deleted_at IS NULL",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_stay ON hospitalization_bed_assignments (hospitalization_id) WHERE released_at IS NULL AND deleted_at IS NULL",
 	} {
