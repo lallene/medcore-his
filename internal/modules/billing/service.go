@@ -16,7 +16,7 @@ import (
 )
 
 var actTypes = map[string]bool{"CONSULTATION": true, "LABORATORY": true, "IMAGING": true, "HOSPITALIZATION": true, "MEDICATION": true}
-var paymentMethods = map[string]bool{"CASH": true, "CARD": true, "MOBILE_MONEY": true, "BANK_TRANSFER": true, "OTHER": true}
+var paymentMethods = map[string]bool{"CASH": true, "CARD": true, "MOBILE_MONEY": true, "BANK_TRANSFER": true, "CHECK": true, "OTHER": true}
 
 type Service struct {
 	db             *gorm.DB
@@ -424,61 +424,64 @@ func (s *Service) Issue(id, user uint) (*Invoice, error) {
 	return s.GetInvoice(id)
 }
 func (s *Service) Pay(id uint, req PaymentRequest, user uint) (*Invoice, error) {
-	method := strings.ToUpper(req.PaymentMethod)
-	if !paymentMethods[method] || req.Amount <= 0 || strings.TrimSpace(req.IdempotencyKey) == "" {
-		return nil, coreerrors.BadRequest("Paiement invalide")
-	}
 	e := s.db.Transaction(func(tx *gorm.DB) error {
-		var prior Payment
-		if e := tx.Where("idempotency_key=?", req.IdempotencyKey).First(&prior).Error; e == nil {
-			if prior.InvoiceID != id || prior.Amount != req.Amount {
-				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
-			}
-			return nil
-		}
-		var x Invoice
-		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
-			return coreerrors.NotFound("INVOICE")
-		}
-		if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
-			return coreerrors.Conflict("La facture n'accepte pas de paiement")
-		}
-		if e := tx.Where("idempotency_key=?", req.IdempotencyKey).First(&prior).Error; e == nil {
-			if prior.InvoiceID != id || prior.Amount != req.Amount {
-				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
-			}
-			return nil
-		}
-		if req.Amount > x.BalanceAmount {
-			return coreerrors.Conflict("Le paiement dépasse le reste dû")
-		}
-		p := Payment{InvoiceID: id, Amount: req.Amount, PaymentMethod: method, Reference: strings.TrimSpace(req.Reference), IdempotencyKey: req.IdempotencyKey, PaidAt: time.Now(), ReceivedBy: user}
-		if e := tx.Create(&p).Error; e != nil {
-			return e
-		}
-		x.PaidAmount += req.Amount
-		x.BalanceAmount -= req.Amount
-		if x.BalanceAmount == 0 {
-			x.Status = InvoicePaid
-		} else {
-			x.Status = InvoicePartiallyPaid
-		}
-		x.UpdatedBy = user
-		if e := tx.Save(&x).Error; e != nil {
-			return e
-		}
-		event := "payment_received"
-		title := "Paiement reçu"
-		if x.Status == InvoicePaid {
-			event = "invoice_paid"
-			title = "Facture payée"
-		}
-		return s.timeline(tx, &x, event, title, user)
+		_, e := s.PayInTransaction(tx, id, req, user, nil)
+		return e
 	})
 	if e != nil {
 		return nil, e
 	}
 	return s.GetInvoice(id)
+}
+
+// PayInTransaction is the single financial payment primitive used by Billing and Cash.
+func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, user uint, sessionID *uint) (*Payment, error) {
+	method := strings.ToUpper(req.PaymentMethod)
+	if !paymentMethods[method] || req.Amount <= 0 || strings.TrimSpace(req.IdempotencyKey) == "" {
+		return nil, coreerrors.BadRequest("Paiement invalide")
+	}
+	var prior Payment
+	if e := tx.Where("idempotency_key=?", req.IdempotencyKey).First(&prior).Error; e == nil {
+		if prior.InvoiceID != id || prior.Amount != req.Amount || prior.PaymentMethod != method {
+			return nil, coreerrors.Conflict("Clé d'idempotence déjà utilisée")
+		}
+		return &prior, nil
+	}
+	var x Invoice
+	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
+		return nil, coreerrors.NotFound("INVOICE")
+	}
+	if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
+		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
+	}
+	if req.Amount > x.BalanceAmount {
+		return nil, coreerrors.Conflict("Le paiement dépasse le reste dû")
+	}
+	p := Payment{InvoiceID: id, Amount: req.Amount, PaymentMethod: method, Reference: strings.TrimSpace(req.Reference), IdempotencyKey: req.IdempotencyKey, PaidAt: time.Now(), ReceivedBy: user, CashSessionID: sessionID, MobileOperator: strings.TrimSpace(req.MobileOperator)}
+	if e := tx.Create(&p).Error; e != nil {
+		return nil, e
+	}
+	x.PaidAmount += req.Amount
+	x.BalanceAmount -= req.Amount
+	if x.BalanceAmount == 0 {
+		x.Status = InvoicePaid
+	} else {
+		x.Status = InvoicePartiallyPaid
+	}
+	x.UpdatedBy = user
+	if e := tx.Save(&x).Error; e != nil {
+		return nil, e
+	}
+	event := "payment_received"
+	title := "Paiement reçu"
+	if x.Status == InvoicePaid {
+		event = "invoice_paid"
+		title = "Facture payée"
+	}
+	if e := s.timeline(tx, &x, event, title, user); e != nil {
+		return nil, e
+	}
+	return &p, nil
 }
 func (s *Service) Cancel(id uint, reason string, user uint) (*Invoice, error) {
 	e := s.db.Transaction(func(tx *gorm.DB) error {

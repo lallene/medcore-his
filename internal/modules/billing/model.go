@@ -102,6 +102,8 @@ type Payment struct {
 	IdempotencyKey string    `gorm:"size:120;not null;uniqueIndex" json:"idempotencyKey"`
 	PaidAt         time.Time `gorm:"not null;index" json:"paidAt"`
 	ReceivedBy     uint      `gorm:"not null;index" json:"receivedBy"`
+	CashSessionID  *uint     `gorm:"index" json:"cashSessionId,omitempty"`
+	MobileOperator string    `gorm:"size:80" json:"mobileOperator,omitempty"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
 

@@ -24,6 +24,7 @@ type PaymentRequest struct {
 	PaymentMethod  string `json:"paymentMethod" binding:"required"`
 	Reference      string `json:"reference"`
 	IdempotencyKey string `json:"idempotencyKey" binding:"required"`
+	MobileOperator string `json:"mobileOperator"`
 }
 type CancelRequest struct {
 	Reason string `json:"reason" binding:"required"`
