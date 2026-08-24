@@ -159,6 +159,11 @@ func TestPrescriptionDoesNotTouchStockAndDispensationIsFEFOJWTPartialIdempotent(
 func TestConcurrentDispensationNeverMakesStockNegative(t *testing.T) {
 	db := pharmacyDB(t)
 	s, p, userID := seedPharmacy(t, db)
+	// The concurrency scenario exercises stock locking, not the prescription
+	// over-dispensation guard: make the prescribed quantity match the stock.
+	if err := db.Model(&testPrescription{}).Where("id=?", p.ID).Update("quantity", 100).Error; err != nil {
+		t.Fatal(err)
+	}
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	for i := 0; i < 2; i++ {
@@ -206,6 +211,12 @@ func TestAvailabilityUsesOnlyAdmissibleBatches(t *testing.T) {
 	makePresentation := func(code string, active bool, stock float64, batches ...PharmacyBatch) MedicationPresentation {
 		presentation := MedicationPresentation{MedicationID: medication.ID, Code: code, Dosage: "10 mg", Form: "Comprimé", Route: "Orale", Unit: "comprimé", Packaging: "Boîte DEMO", IsActive: active}
 		db.Create(&presentation)
+		// GORM's default:true tag intentionally turns a zero bool into true on
+		// insert. Persist false explicitly for the inactive presentation case.
+		if !active {
+			db.Model(&presentation).Update("is_active", false)
+			presentation.IsActive = false
+		}
 		db.Create(&PharmacyStock{PresentationID: presentation.ID, QuantityAvailable: stock, AlertThreshold: 10, IsStockManaged: true})
 		for i := range batches {
 			batches[i].PresentationID = presentation.ID

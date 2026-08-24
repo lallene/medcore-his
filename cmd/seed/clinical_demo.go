@@ -849,8 +849,7 @@ func seedPharmacyCatalog(
 				Error,
 		)
 		must(db.Model(&stock).Updates(map[string]interface{}{
-			"quantity_available": item.Stock, "alert_threshold": item.Threshold,
-			"is_stock_managed": true,
+			"alert_threshold": item.Threshold, "is_stock_managed": true,
 		}).Error)
 
 		result[presentation.Code] = presentation
@@ -859,9 +858,7 @@ func seedPharmacyCatalog(
 			batch := pharmacy.PharmacyBatch{PresentationID: presentation.ID, BatchNumber: b.Number, QuantityReceived: b.Quantity, QuantityRemaining: b.Quantity, ExpirationDate: &expires, Supplier: "DEMO", IsActive: b.Active}
 			must(db.Where("batch_number = ?", b.Number).FirstOrCreate(&batch).Error)
 			must(db.Model(&batch).Updates(map[string]interface{}{
-				"presentation_id": presentation.ID, "quantity_received": b.Quantity,
-				"quantity_remaining": b.Quantity, "expiration_date": expires,
-				"supplier": "DEMO", "is_active": b.Active,
+				"presentation_id": presentation.ID, "supplier": "DEMO", "is_active": b.Active,
 			}).Error)
 		}
 	}

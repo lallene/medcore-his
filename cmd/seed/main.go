@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -25,8 +24,8 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if strings.EqualFold(cfg.AppEnv, "production") {
-		log.Fatal("seed DEMO interdit en environnement production")
+	if err := validateSeedEnvironment(cfg.AppEnv); err != nil {
+		log.Fatal(err)
 	}
 	logger.Init(cfg.AppEnv)
 

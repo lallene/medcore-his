@@ -47,6 +47,9 @@ func seedFullDemo(db *gorm.DB) {
 		{"P-DEMO-003", "CNAM", "Carole", "F"}, {"P-DEMO-004", "PEC-REFUSEE", "David", "M"},
 		{"P-DEMO-005", "PEC-PARTIELLE", "Emma", "F"}, {"P-DEMO-006", "HOSPITALISE", "Fabrice", "M"},
 		{"P-DEMO-007", "PHARMACIE", "Grace", "F"},
+		{"P-DEMO-008", "CREANCE-PATIENT", "Hector", "M"},
+		{"P-DEMO-009", "CREANCE-ASSUREUR", "Ines", "F"},
+		{"P-DEMO-010", "PARCOURS-TERMINE", "Jules", "M"},
 	}
 	for i, p := range profiles {
 		item := patients.Patient{CodePatient: p.code, NumeroDossier: "D-" + p.code, Nom: p.nom, Prenoms: p.prenoms, Sexe: p.sexe, Telephone: fmt.Sprintf("070000%04d", i+1), Quartier: "DEMO", IsAssure: i > 0}
@@ -89,7 +92,7 @@ func seedFullDemo(db *gorm.DB) {
 	addDemoCoverage(db, patientsByCode["P-DEMO-002"].ID, companies["DEMO-NSIA"].ID, "DEMO-MEMBER-SECONDARY", 70, false, now.AddDate(1, 0, 0))
 	addDemoCoverage(db, patientsByCode["P-DEMO-003"].ID, companies["DEMO-ALLIANZ"].ID, "DEMO-MEMBER-EXPIRED", 90, false, now.AddDate(0, -1, 0))
 
-	services := []string{"Urgences", "Médecine générale", "Cardiologie", "ORL", "Gynécologie", "Chirurgie", "Pharmacie"}
+	services := []string{"Urgences", "Médecine générale", "Cardiologie", "ORL", "Gynécologie", "Chirurgie", "Pharmacie", "Médecine générale", "Facturation", "Médecine générale"}
 	consults := map[string]*consultations.Consultation{}
 	for i, p := range profiles {
 		key := "DEMO-CONSULTATION-" + p.code
@@ -145,10 +148,62 @@ func seedFullDemo(db *gorm.DB) {
 			log.Fatal(err)
 		}
 	}
+	seedDemoSupportedScenarios(db, adminID, patientsByCode, consults, exams, companies)
 	seedDemoAuthorizations(db, adminID)
 	seedDemoBillingAndCash(db, adminID, consults)
 	seedPharmacyCatalog(db)
 	seedDemoPharmacyWorkflow(db, adminID, consults["P-DEMO-007"])
+	seedDemoVoucherStates(db, adminID, consults)
+	seedDemoClinicalBilling(db, adminID)
+}
+
+func seedDemoClinicalBilling(db *gorm.DB, actor uint) {
+	service := billing.NewService(db)
+	type billable struct {
+		actType, tariffCode string
+		referenceID         uint
+		patientID           uint
+	}
+	items := []billable{}
+	appendReference := func(table, numberColumn, number, actType, tariff string) {
+		var row struct{ ID, PatientID uint }
+		if err := db.Table(table).Select("id,patient_id").Where(numberColumn+"=?", number).Scan(&row).Error; err != nil || row.ID == 0 {
+			log.Fatalf("acte DEMO %s/%s introuvable: %v", table, number, err)
+		}
+		items = append(items, billable{actType: actType, tariffCode: tariff, referenceID: row.ID, patientID: row.PatientID})
+	}
+	appendReference("laboratory_orders", "request_number", "LAB-DEMO-STATE-01", "LABORATORY", "DEMO-TAR-03")
+	appendReference("imaging_orders", "order_number", "IMG-DEMO-STATE-01", "IMAGING", "DEMO-TAR-05")
+	appendReference("hospitalizations", "admission_number", "HOSP-DEMO-003", "HOSPITALIZATION", "DEMO-TAR-07")
+	var dispensations []pharmacy.PharmacyDispensation
+	must(db.Where("idempotency_key LIKE ?", "DEMO-%").Order("id").Find(&dispensations).Error)
+	for _, dispensation := range dispensations {
+		if dispensation.PatientID != nil {
+			items = append(items, billable{actType: "MEDICATION", tariffCode: "DEMO-TAR-08", referenceID: dispensation.ID, patientID: *dispensation.PatientID})
+		}
+	}
+	for _, item := range items {
+		key := fmt.Sprintf("%s:%d", item.actType, item.referenceID)
+		if item.actType == "MEDICATION" {
+			key = fmt.Sprintf("MEDICATION_DISPENSATION:%d", item.referenceID)
+		}
+		var count int64
+		db.Model(&billing.InvoiceLine{}).Where("billable_key=? AND is_active", key).Count(&count)
+		if count > 0 {
+			continue
+		}
+		var tariff billing.Tariff
+		must(db.Where("code=?", item.tariffCode).First(&tariff).Error)
+		invoice, err := service.CreateInvoice(billing.CreateInvoiceRequest{PatientID: item.patientID, Lines: []billing.InvoiceLineRequest{{ActType: item.actType, ReferenceID: item.referenceID, TariffID: tariff.ID}}}, actor)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !invoice.CoveragePending {
+			if _, err = service.Issue(invoice.ID, actor); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
 }
 
 func seedDemoStaff(db *gorm.DB, actor uint) {
@@ -373,6 +428,36 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 			log.Fatal(e)
 		}
 	}
+	secondaryActive := true
+	var secondary cash.Register
+	if db.Where("code=?", "DEMO-CAISSE-URGENCES").First(&secondary).Error != nil {
+		created, err := cashService.SaveRegister(0, cash.RegisterRequest{Code: "DEMO-CAISSE-URGENCES", Name: "Caisse Urgences DEMO", Location: "Urgences", Active: &secondaryActive}, user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		secondary = *created
+	}
+	var balanced cash.Session
+	if db.Where("cash_register_id=? AND opening_note=?", secondary.ID, "Session DEMO équilibrée").First(&balanced).Error != nil {
+		if !secondary.Active {
+			updated, err := cashService.SaveRegister(secondary.ID, cash.RegisterRequest{Code: secondary.Code, Name: secondary.Name, Location: secondary.Location, Active: &secondaryActive}, user)
+			if err != nil {
+				log.Fatal(err)
+			}
+			secondary = *updated
+		}
+		opened, err := cashService.Open(cash.OpenRequest{CashRegisterID: secondary.ID, OpeningFloat: 25000, Note: "Session DEMO équilibrée"}, user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err = cashService.Close(opened.Session.ID, cash.CloseRequest{CountedCashAmount: 25000, Note: "Écart nul DEMO"}, user); err != nil {
+			log.Fatal(err)
+		}
+	}
+	inactive := false
+	if _, err := cashService.SaveRegister(secondary.ID, cash.RegisterRequest{Code: secondary.Code, Name: secondary.Name, Location: secondary.Location, Active: &inactive}, user); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service, cashService *cash.Service, sessionID uint) {
@@ -463,19 +548,19 @@ func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service
 	twenty := ensureTariff("DEMO-REC-20K", 20000)
 	fifty := ensureTariff("DEMO-REC-50K", 50000)
 	// A/F: non assuré, 20 000, sans paiement, échéance future.
-	invoiceA := ensureInvoice("P-DEMO-001", "DEMO-RECEIVABLE-A-UNPAID", twenty, nil)
+	invoiceA := ensureInvoice("P-DEMO-008", "DEMO-RECEIVABLE-A-UNPAID", twenty, nil)
 	// B/E: non assuré, 20 000, payé 5 000, échéance dépassée.
-	invoiceB := ensureInvoice("P-DEMO-001", "DEMO-RECEIVABLE-B-PARTIAL", twenty, nil)
+	invoiceB := ensureInvoice("P-DEMO-008", "DEMO-RECEIVABLE-B-PARTIAL", twenty, nil)
 	payOnce(invoiceB, 5000, "DEMO-RECEIVABLE-B-PAY-5K")
 	// C/I: assuré à 70 %, 50 000 / assurance 35 000 / patient 15 000 / payé 10 000.
 	rate70 := 70.0
-	invoiceC := ensureInvoice("P-DEMO-006", "DEMO-RECEIVABLE-C-INSURED", fifty, &rate70)
+	invoiceC := ensureInvoice("P-DEMO-009", "DEMO-RECEIVABLE-C-INSURED", fifty, &rate70)
 	if invoiceC.InsuranceAmount != 35000 || invoiceC.PatientAmount != 15000 {
 		log.Fatalf("fixture assurée LOT 13B incohérente: assurance=%d patient=%d", invoiceC.InsuranceAmount, invoiceC.PatientAmount)
 	}
 	payOnce(invoiceC, 10000, "DEMO-RECEIVABLE-C-PAY-10K")
 	// D: facture entièrement payée, conservée dans Billing mais absente des créances actives.
-	invoiceD := ensureInvoice("P-DEMO-001", "DEMO-RECEIVABLE-D-PAID", twenty, nil)
+	invoiceD := ensureInvoice("P-DEMO-010", "DEMO-RECEIVABLE-D-PAID", twenty, nil)
 	payOnce(invoiceD, 20000, "DEMO-RECEIVABLE-D-PAY-20K")
 
 	var uninsured, insured billing.Invoice
@@ -543,7 +628,7 @@ func seedDemoInsuranceReceivables(
 	t25 := ensureTariff("DEMO-INSREC-25K", 25000)
 	t60 := ensureTariff("DEMO-INSREC-60K", 60000)
 	makeLine := func(marker string, tariff billing.Tariff, rate *float64) (billing.Invoice, billing.InvoiceLine) {
-		inv := ensureInvoice("P-DEMO-006", marker, tariff, rate)
+		inv := ensureInvoice("P-DEMO-009", marker, tariff, rate)
 		var line billing.InvoiceLine
 		if e := db.Where("invoice_id=? AND is_active", inv.ID).First(&line).Error; e != nil {
 			log.Fatal(e)
@@ -595,9 +680,28 @@ func seedDemoInsuranceReceivables(
 	settle("DEMO-INSREC-C-35K", "DEMO-VIR-C-35K", 35000, map[uint]int64{c.ID: 35000})
 	settle("DEMO-INSREC-D-100K", "DEMO-VIR-D-100K", 100000, map[uint]int64{d1.ID: 35000, d2.ID: 25000, d3.ID: 40000})
 	settle("DEMO-INSREC-E-30K", "DEMO-VIR-E-30K", 30000, map[uint]int64{eLine.ID: 10000})
+	if _, err := service.CreateSettlement(insurance_receivables.SettlementRequest{InsuranceCompanyID: companyID, ExternalReference: "DEMO-VIR-DRAFT", ReceivedAt: time.Now().Format("2006-01-02"), TotalAmount: 15000, PaymentMethod: "BANK_TRANSFER", Comment: "Règlement brouillon DEMO", IdempotencyKey: "DEMO-INSREC-SETTLEMENT-DRAFT"}, user); err != nil {
+		log.Fatal(err)
+	}
+	cancelledSettlement, err := service.CreateSettlement(insurance_receivables.SettlementRequest{InsuranceCompanyID: companyID, ExternalReference: "DEMO-VIR-CANCELLED", ReceivedAt: time.Now().Format("2006-01-02"), TotalAmount: 12000, PaymentMethod: "CHECK", Comment: "Règlement annulé DEMO", IdempotencyKey: "DEMO-INSREC-SETTLEMENT-CANCELLED"}, user)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cancelledSettlement.Status == insurance_receivables.SettlementDraft {
+		if _, err = service.Cancel(cancelledSettlement.ID, user); err != nil {
+			log.Fatal(err)
+		}
+	}
 	past := time.Now().AddDate(0, 0, -15)
 	if _, err := service.SetDue(a.ID, insurance_receivables.DueDateRequest{DueDate: ptrString(past.Format("2006-01-02")), Note: "Échéance dépassée DEMO"}, user); err != nil {
 		log.Fatal(err)
+	}
+	var followUpCount int64
+	db.Model(&insurance_receivables.FollowUp{}).Where("invoice_line_id=? AND note=?", a.ID, "Relance assureur DEMO").Count(&followUpCount)
+	if followUpCount == 0 {
+		if _, err := service.AddFollowUp(a.ID, insurance_receivables.FollowUpRequest{Type: "REMINDER", Note: "Relance assureur DEMO"}, user); err != nil {
+			log.Fatal(err)
+		}
 	}
 	ensureBatch := func(ref string, line billing.InvoiceLine, submit bool) {
 		var existing insurance_receivables.SubmissionBatch
@@ -661,7 +765,30 @@ func seedDemoPharmacyWorkflow(db *gorm.DB, user uint, consultation *consultation
 	if completed.IsFullyDispensed {
 		finalStatus = "COMPLETED"
 	}
+	reconcileDemoFEFOStock(db, presentation.ID)
 	log.Printf("Pharmacy DEMO final: délivré %.0f / %.0f, reste %.0f, statut %s", completed.DispensedQuantity, completed.PrescribedQuantity, completed.RemainingQuantity, finalStatus)
+}
+
+func reconcileDemoFEFOStock(db *gorm.DB, presentationID uint) {
+	initial := map[string]float64{"LOT-DOL-1G-A": 4, "LOT-DOL-1G-B": 100}
+	remainingTotal := 0.0
+	for batchNumber, received := range initial {
+		var batch pharmacy.PharmacyBatch
+		if err := db.Where("presentation_id=? AND batch_number=?", presentationID, batchNumber).First(&batch).Error; err != nil {
+			log.Fatal(err)
+		}
+		var consumed float64
+		if err := db.Table("pharmacy_dispensation_items").Select("COALESCE(SUM(quantity),0)").Where("batch_id=?", batch.ID).Scan(&consumed).Error; err != nil {
+			log.Fatal(err)
+		}
+		remaining := received - consumed
+		if remaining < 0 {
+			log.Fatalf("fixture FEFO incohérente pour %s: %.2f unités au-delà du lot", batchNumber, -remaining)
+		}
+		must(db.Model(&batch).Updates(map[string]any{"quantity_received": received, "quantity_remaining": remaining}).Error)
+		remainingTotal += remaining
+	}
+	must(db.Model(&pharmacy.PharmacyStock{}).Where("presentation_id=?", presentationID).Update("quantity_available", remainingTotal).Error)
 }
 
 func seedFullDemoPharmacy(db *gorm.DB) {
@@ -683,7 +810,25 @@ func requireDemoDatabase(db *gorm.DB) {
 	if err := db.Raw("SELECT current_database()").Scan(&name).Error; err != nil {
 		log.Fatal(err)
 	}
-	if name != "medcore_full_demo" && name != "medcore_lot12_demo" {
-		log.Fatalf("seed DEMO refusé sur la base %q", name)
+	if err := validateDemoTarget(name); err != nil {
+		log.Fatal(err)
 	}
+	log.Printf("Base DEMO locale ciblée: %s", name)
+}
+
+func validateDemoTarget(databaseName string) error {
+	if strings.EqualFold(strings.TrimSpace(databaseName), "neondb") || strings.Contains(strings.ToLower(databaseName), "neon") {
+		return fmt.Errorf("seed DEMO refusé sur la base %q (Neon interdit)", databaseName)
+	}
+	if databaseName != "medcore_full_demo" && databaseName != "medcore_lot12_demo" {
+		return fmt.Errorf("seed DEMO refusé sur la base %q", databaseName)
+	}
+	return nil
+}
+
+func validateSeedEnvironment(appEnvironment string) error {
+	if strings.EqualFold(strings.TrimSpace(appEnvironment), "production") {
+		return errors.New("seed DEMO interdit en environnement production")
+	}
+	return nil
 }
