@@ -19,6 +19,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/voucher"
+	"github.com/lallene/medcore-his/backend/internal/modules/insurance_receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/laboratory"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
@@ -44,6 +45,12 @@ func main() {
 		&billing.Payment{},
 		&receivables.Metadata{},
 		&receivables.FollowUp{},
+		&insurance_receivables.Settlement{},
+		&insurance_receivables.SettlementAllocation{},
+		&insurance_receivables.ReceivableMetadata{},
+		&insurance_receivables.FollowUp{},
+		&insurance_receivables.SubmissionBatch{},
+		&insurance_receivables.SubmissionBatchItem{},
 		&cash.Register{},
 		&cash.Session{},
 		&cash.Receipt{},

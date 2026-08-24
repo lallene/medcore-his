@@ -16,6 +16,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
+	insurance_receivables "github.com/lallene/medcore-his/backend/internal/modules/insurance_receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/laboratory"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
@@ -470,7 +471,102 @@ func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service
 			log.Fatal(err)
 		}
 	}
+	seedDemoInsuranceReceivables(db, user, ensureTariff, ensureInvoice, payOnce)
 }
+
+func seedDemoInsuranceReceivables(
+	db *gorm.DB,
+	user uint,
+	ensureTariff func(string, int64) billing.Tariff,
+	ensureInvoice func(string, string, billing.Tariff, *float64) billing.Invoice,
+	payOnce func(billing.Invoice, int64, string),
+) {
+	service := insurance_receivables.NewService(db)
+	rate70, rate100 := 70.0, 100.0
+	fifty := ensureTariff("DEMO-INSREC-50K", 50000)
+	t35 := ensureTariff("DEMO-INSREC-35K", 35000)
+	t25 := ensureTariff("DEMO-INSREC-25K", 25000)
+	t60 := ensureTariff("DEMO-INSREC-60K", 60000)
+	makeLine := func(marker string, tariff billing.Tariff, rate *float64) (billing.Invoice, billing.InvoiceLine) {
+		inv := ensureInvoice("P-DEMO-006", marker, tariff, rate)
+		var line billing.InvoiceLine
+		if e := db.Where("invoice_id=? AND is_active", inv.ID).First(&line).Error; e != nil {
+			log.Fatal(e)
+		}
+		return inv, line
+	}
+	aInv, a := makeLine("DEMO-INSREC-A-UNPAID", fifty, &rate70)
+	payOnce(aInv, aInv.PatientAmount, "DEMO-INSREC-A-PATIENT-PAID")
+	_, b := makeLine("DEMO-INSREC-B-PARTIAL", fifty, &rate70)
+	_, c := makeLine("DEMO-INSREC-C-PAID", fifty, &rate70)
+	_, d1 := makeLine("DEMO-INSREC-D1-MULTI", t35, &rate100)
+	_, d2 := makeLine("DEMO-INSREC-D2-MULTI", t25, &rate100)
+	_, d3 := makeLine("DEMO-INSREC-D3-MULTI", t60, &rate100)
+	_, eLine := makeLine("DEMO-INSREC-E-UNALLOCATED", fifty, &rate70)
+	_, g := makeLine("DEMO-INSREC-G-BATCH-DRAFT", fifty, &rate70)
+	_, h := makeLine("DEMO-INSREC-H-BATCH-SUBMITTED", fifty, &rate70)
+	e2eInv, _ := makeLine("DEMO-INSREC-E2E-PATIENT-PAID", fifty, &rate70)
+	payOnce(e2eInv, e2eInv.PatientAmount, "DEMO-INSREC-E2E-PATIENT-PAID")
+	if a.InsuranceAmount != 35000 || b.InsuranceAmount != 35000 || c.InsuranceAmount != 35000 {
+		log.Fatalf("fixtures Insurance Receivables incohérentes: A=%d B=%d C=%d", a.InsuranceAmount, b.InsuranceAmount, c.InsuranceAmount)
+	}
+	var companyID uint
+	db.Table("insurance_authorizations").Select("insurance_company_id").Where("id=?", a.AuthorizationID).Scan(&companyID)
+	if companyID == 0 {
+		log.Fatal("assureur DEMO Insurance Receivables introuvable")
+	}
+	settle := func(key, ref string, total int64, allocations map[uint]int64) {
+		view, err := service.CreateSettlement(insurance_receivables.SettlementRequest{InsuranceCompanyID: companyID, ExternalReference: ref, ReceivedAt: time.Now().Format("2006-01-02"), TotalAmount: total, PaymentMethod: "BANK_TRANSFER", Comment: "Fixture DEMO LOT 13C", IdempotencyKey: key}, user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if view.Status == insurance_receivables.SettlementPosted {
+			return
+		}
+		for lineID, amount := range allocations {
+			var count int64
+			db.Model(&insurance_receivables.SettlementAllocation{}).Where("settlement_id=? AND invoice_line_id=?", view.ID, lineID).Count(&count)
+			if count == 0 {
+				if _, err = service.Allocate(view.ID, insurance_receivables.AllocationRequest{InvoiceLineID: lineID, Amount: amount}, user); err != nil {
+					log.Fatal(err)
+				}
+			}
+		}
+		if _, err = service.Post(view.ID, user); err != nil {
+			log.Fatal(err)
+		}
+	}
+	settle("DEMO-INSREC-B-20K", "DEMO-VIR-B-20K", 20000, map[uint]int64{b.ID: 20000})
+	settle("DEMO-INSREC-C-35K", "DEMO-VIR-C-35K", 35000, map[uint]int64{c.ID: 35000})
+	settle("DEMO-INSREC-D-100K", "DEMO-VIR-D-100K", 100000, map[uint]int64{d1.ID: 35000, d2.ID: 25000, d3.ID: 40000})
+	settle("DEMO-INSREC-E-30K", "DEMO-VIR-E-30K", 30000, map[uint]int64{eLine.ID: 10000})
+	past := time.Now().AddDate(0, 0, -15)
+	if _, err := service.SetDue(a.ID, insurance_receivables.DueDateRequest{DueDate: ptrString(past.Format("2006-01-02")), Note: "Échéance dépassée DEMO"}, user); err != nil {
+		log.Fatal(err)
+	}
+	ensureBatch := func(ref string, line billing.InvoiceLine, submit bool) {
+		var existing insurance_receivables.SubmissionBatch
+		if err := db.Where("external_reference=?", ref).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			created, createErr := service.CreateBatch(insurance_receivables.BatchRequest{InsuranceCompanyID: companyID, ExternalReference: ref, Comment: "Fixture DEMO LOT 13C", InvoiceLineIDs: []uint{line.ID}}, user)
+			if createErr != nil {
+				log.Fatal(createErr)
+			}
+			existing = created.SubmissionBatch
+		} else if err != nil {
+			log.Fatal(err)
+		}
+		if submit && existing.Status == insurance_receivables.BatchDraft {
+			if _, err := service.SubmitBatch(existing.ID, user); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+	ensureBatch("DEMO-BORD-DRAFT", g, false)
+	ensureBatch("DEMO-BORD-SUBMITTED", h, true)
+	log.Printf("Insurance Receivables DEMO: A=%d B=%d C=%d multi=%d/%d/%d", a.ID, b.ID, c.ID, d1.ID, d2.ID, d3.ID)
+}
+
+func ptrString(value string) *string { return &value }
 
 func seedDemoPharmacyWorkflow(db *gorm.DB, user uint, consultation *consultations.Consultation) {
 	var presentation pharmacy.MedicationPresentation
