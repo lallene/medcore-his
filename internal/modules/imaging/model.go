@@ -1,6 +1,9 @@
 package imaging
 
-import "time"
+import (
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"time"
+)
 
 const (
 	StatusOrdered       = "ORDERED"
@@ -12,40 +15,44 @@ const (
 )
 
 type Order struct {
-	ID                uint       `gorm:"primaryKey" json:"id"`
-	OrderNumber       string     `gorm:"size:40;uniqueIndex;not null" json:"orderNumber"`
-	AccessionNumber   string     `gorm:"size:40;uniqueIndex;not null" json:"accessionNumber"`
-	ConsultationID    uint       `gorm:"not null;uniqueIndex:ux_imaging_orders_prescription;index" json:"consultationId"`
-	MedicalExamID     uint       `gorm:"not null;uniqueIndex:ux_imaging_orders_prescription;index" json:"medicalExamId"`
-	PatientID         uint       `gorm:"not null;index" json:"patientId"`
-	MedicalRecordID   *uint      `gorm:"index" json:"medicalRecordId"`
-	Modality          string     `gorm:"size:30;not null;index" json:"modality"`
-	Priority          string     `gorm:"size:20;not null;default:'ROUTINE';index" json:"priority"`
-	Status            string     `gorm:"size:30;not null;default:'ORDERED';index" json:"status"`
-	PrescribedBy      uint       `gorm:"index" json:"prescribedBy"`
-	CreatedBy         uint       `gorm:"not null;index" json:"createdBy"`
-	UpdatedBy         uint       `gorm:"not null;index" json:"updatedBy"`
-	ScheduledAt       *time.Time `gorm:"index" json:"scheduledAt"`
-	ScheduledBy       *uint      `gorm:"index" json:"scheduledBy"`
-	ScheduleComment   string     `gorm:"type:text" json:"scheduleComment"`
-	PerformedAt       *time.Time `gorm:"index" json:"performedAt"`
-	PerformedBy       *uint      `gorm:"index" json:"performedBy"`
-	TechnicalNotes    string     `gorm:"type:text" json:"technicalNotes"`
-	ContrastUsed      bool       `gorm:"not null;default:false" json:"contrastUsed"`
-	ContrastProduct   string     `gorm:"size:160" json:"contrastProduct"`
-	StudyInstanceUID  string     `gorm:"size:160" json:"studyInstanceUid"`
-	ExternalViewerURL string     `gorm:"size:500" json:"externalViewerUrl"`
-	CancelledReason   string     `gorm:"type:text" json:"cancelledReason"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
-	Report            *Report    `gorm:"foreignKey:OrderID" json:"report,omitempty"`
-	PatientName       string     `gorm:"-" json:"patientName"`
-	PatientCode       string     `gorm:"-" json:"patientCode"`
-	ExamName          string     `gorm:"-" json:"examName"`
-	ExamCode          string     `gorm:"-" json:"examCode"`
-	Category          string     `gorm:"-" json:"category"`
-	Service           string     `gorm:"-" json:"service"`
-	Prescriber        string     `gorm:"-" json:"prescriber"`
+	ID                  uint                  `gorm:"primaryKey" json:"id"`
+	OrderNumber         string                `gorm:"size:40;uniqueIndex;not null" json:"orderNumber"`
+	AccessionNumber     string                `gorm:"size:40;uniqueIndex;not null" json:"accessionNumber"`
+	ConsultationID      uint                  `gorm:"not null;uniqueIndex:ux_imaging_orders_prescription;index" json:"consultationId"`
+	MedicalExamID       uint                  `gorm:"not null;uniqueIndex:ux_imaging_orders_prescription;index" json:"medicalExamId"`
+	PatientID           uint                  `gorm:"not null;index" json:"patientId"`
+	MedicalRecordID     *uint                 `gorm:"index" json:"medicalRecordId"`
+	Modality            string                `gorm:"size:30;not null;index" json:"modality"`
+	Priority            string                `gorm:"size:20;not null;default:'ROUTINE';index" json:"priority"`
+	Status              string                `gorm:"size:30;not null;default:'ORDERED';index" json:"status"`
+	PrescribedBy        uint                  `gorm:"index" json:"prescribedBy"`
+	CreatedBy           uint                  `gorm:"not null;index" json:"createdBy"`
+	UpdatedBy           uint                  `gorm:"not null;index" json:"updatedBy"`
+	RequestingServiceID *uint                 `gorm:"index" json:"requestingServiceId"`
+	ExecutingServiceID  *uint                 `gorm:"index" json:"executingServiceId"`
+	RequestingService   *organization.Service `gorm:"foreignKey:RequestingServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"requestingService,omitempty"`
+	ExecutingService    *organization.Service `gorm:"foreignKey:ExecutingServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"executingService,omitempty"`
+	ScheduledAt         *time.Time            `gorm:"index" json:"scheduledAt"`
+	ScheduledBy         *uint                 `gorm:"index" json:"scheduledBy"`
+	ScheduleComment     string                `gorm:"type:text" json:"scheduleComment"`
+	PerformedAt         *time.Time            `gorm:"index" json:"performedAt"`
+	PerformedBy         *uint                 `gorm:"index" json:"performedBy"`
+	TechnicalNotes      string                `gorm:"type:text" json:"technicalNotes"`
+	ContrastUsed        bool                  `gorm:"not null;default:false" json:"contrastUsed"`
+	ContrastProduct     string                `gorm:"size:160" json:"contrastProduct"`
+	StudyInstanceUID    string                `gorm:"size:160" json:"studyInstanceUid"`
+	ExternalViewerURL   string                `gorm:"size:500" json:"externalViewerUrl"`
+	CancelledReason     string                `gorm:"type:text" json:"cancelledReason"`
+	CreatedAt           time.Time             `json:"createdAt"`
+	UpdatedAt           time.Time             `json:"updatedAt"`
+	Report              *Report               `gorm:"foreignKey:OrderID" json:"report,omitempty"`
+	PatientName         string                `gorm:"-" json:"patientName"`
+	PatientCode         string                `gorm:"-" json:"patientCode"`
+	ExamName            string                `gorm:"-" json:"examName"`
+	ExamCode            string                `gorm:"-" json:"examCode"`
+	Category            string                `gorm:"-" json:"category"`
+	Service             string                `gorm:"-" json:"service"`
+	Prescriber          string                `gorm:"-" json:"prescriber"`
 }
 
 func (Order) TableName() string { return "imaging_orders" }

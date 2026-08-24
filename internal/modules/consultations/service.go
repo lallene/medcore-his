@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"gorm.io/gorm"
 )
 
@@ -74,6 +76,14 @@ func (s *Service) ListConsultations(filter ConsultationListFilter) (*Consultatio
 }
 
 func (s *Service) CreateConsultation(req CreateConsultationRequest, authorID uint) (*Consultation, error) {
+	serviceName := strings.TrimSpace(req.Service)
+	if req.ServiceID != nil {
+		selected, e := organization.ValidateService(s.repo.db, *req.ServiceID, "consultation")
+		if e != nil {
+			return nil, e
+		}
+		serviceName = selected.Name
+	}
 	reasons, err := s.repo.FindReasonsByIDs(req.ReasonIDs)
 	if err != nil {
 		return nil, err
@@ -131,7 +141,8 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest, authorID uin
 	consultation := &Consultation{
 		PatientID:  req.PatientID,
 		DoctorName: req.DoctorName,
-		Service:    req.Service,
+		Service:    serviceName,
+		ServiceID:  req.ServiceID,
 		Status:     "draft",
 
 		Diagnosis:    req.Diagnosis,
@@ -466,6 +477,14 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 
 	if req.Service != nil {
 		updates["service"] = *req.Service
+	}
+	if req.ServiceID != nil {
+		selected, e := organization.ValidateService(s.repo.db, *req.ServiceID, "consultation")
+		if e != nil {
+			return nil, e
+		}
+		updates["service_id"] = *req.ServiceID
+		updates["service"] = selected.Name
 	}
 
 	if req.Diagnosis != nil {

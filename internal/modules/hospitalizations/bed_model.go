@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/core/entity"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 )
 
@@ -19,17 +20,19 @@ const (
 
 type Room struct {
 	entity.BaseEntity
-	Code              string `gorm:"size:50;not null;uniqueIndex" json:"code"`
-	Name              string `gorm:"size:150;not null" json:"name"`
-	Department        string `gorm:"size:150;not null;index" json:"department"`
-	Floor             string `gorm:"size:80" json:"floor"`
-	RoomType          string `gorm:"size:80;not null" json:"roomType"`
-	IsActive          bool   `gorm:"not null;default:true;index" json:"isActive"`
-	BedCount          int64  `gorm:"-" json:"bedCount"`
-	AvailableBedCount int64  `gorm:"-" json:"availableBedCount"`
-	OccupiedBedCount  int64  `gorm:"-" json:"occupiedBedCount"`
-	ReservedBedCount  int64  `gorm:"-" json:"reservedBedCount"`
-	OutOfServiceCount int64  `gorm:"-" json:"outOfServiceBedCount"`
+	Code                string                `gorm:"size:50;not null;uniqueIndex" json:"code"`
+	Name                string                `gorm:"size:150;not null" json:"name"`
+	Department          string                `gorm:"size:150;not null;index" json:"department"`
+	ServiceID           *uint                 `gorm:"index" json:"serviceId"`
+	OrganizationService *organization.Service `gorm:"foreignKey:ServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"organizationService,omitempty"`
+	Floor               string                `gorm:"size:80" json:"floor"`
+	RoomType            string                `gorm:"size:80;not null" json:"roomType"`
+	IsActive            bool                  `gorm:"not null;default:true;index" json:"isActive"`
+	BedCount            int64                 `gorm:"-" json:"bedCount"`
+	AvailableBedCount   int64                 `gorm:"-" json:"availableBedCount"`
+	OccupiedBedCount    int64                 `gorm:"-" json:"occupiedBedCount"`
+	ReservedBedCount    int64                 `gorm:"-" json:"reservedBedCount"`
+	OutOfServiceCount   int64                 `gorm:"-" json:"outOfServiceBedCount"`
 }
 
 func (Room) TableName() string { return "hospitalization_rooms" }

@@ -36,6 +36,15 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	p := pagination.FromContext(c)
 	f := ListFilter{Page: p.Page, Limit: p.Limit, Status: c.Query("status"), Priority: c.Query("priority"), Category: c.Query("category"), Search: c.Query("search")}
+	if raw := c.Query("serviceId"); raw != "" {
+		v, e := strconv.ParseUint(raw, 10, 64)
+		if e != nil || v == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "service invalide"})
+			return
+		}
+		id := uint(v)
+		f.ServiceID = &id
+	}
 	rawPatientID := c.Query("patientId")
 	if rawPatientID == "" && c.FullPath() == "/api/patients/:id/laboratory-orders" {
 		rawPatientID = c.Param("id")

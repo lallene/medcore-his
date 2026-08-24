@@ -3,27 +3,38 @@ package staff
 type Filter struct {
 	Search, Function, Specialty, Active string
 	Page, Limit                         int
+	ServiceID                           *uint
 }
 type UpsertRequest struct {
-	UserID             uint     `json:"userId"`
-	EmployeeCode       string   `json:"employeeCode"`
-	JobTitle           string   `json:"jobTitle"`
-	PrimaryDepartment  string   `json:"primaryDepartment"`
-	ProfessionalNumber string   `json:"professionalNumber"`
-	Active             *bool    `json:"active"`
-	Functions          []string `json:"functions"`
-	Specialties        []string `json:"specialties"`
-	Capabilities       []string `json:"capabilities"`
+	UserID              uint     `json:"userId"`
+	EmployeeCode        string   `json:"employeeCode"`
+	JobTitle            string   `json:"jobTitle"`
+	PrimaryDepartment   string   `json:"primaryDepartment"`
+	PrimaryServiceID    *uint    `json:"primaryServiceId"`
+	SecondaryServiceIDs []uint   `json:"secondaryServiceIds"`
+	ProfessionalNumber  string   `json:"professionalNumber"`
+	Active              *bool    `json:"active"`
+	Functions           []string `json:"functions"`
+	Specialties         []string `json:"specialties"`
+	Capabilities        []string `json:"capabilities"`
 }
 type View struct {
 	Profile
-	Name                 string   `json:"name"`
-	Email                string   `json:"email"`
-	LegacyRole           string   `json:"legacyRole"`
-	Functions            []string `json:"functions"`
-	Specialties          []string `json:"specialties"`
-	Capabilities         []string `json:"capabilities"`
-	EffectivePermissions []string `json:"effectivePermissions"`
+	Name                 string                  `json:"name"`
+	Email                string                  `json:"email"`
+	LegacyRole           string                  `json:"legacyRole"`
+	Functions            []string                `json:"functions"`
+	Specialties          []string                `json:"specialties"`
+	Capabilities         []string                `json:"capabilities"`
+	ServiceAssignments   []ServiceAssignmentView `json:"serviceAssignments"`
+	EffectivePermissions []string                `json:"effectivePermissions"`
+}
+type ServiceAssignmentView struct {
+	ServiceID uint   `json:"serviceId"`
+	IsPrimary bool   `json:"isPrimary"`
+	Active    bool   `json:"active"`
+	Code      string `json:"code"`
+	Name      string `json:"name"`
 }
 type Page struct {
 	Items       []View `json:"items"`

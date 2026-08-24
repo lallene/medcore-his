@@ -22,6 +22,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance_receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/laboratory"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
@@ -39,7 +40,10 @@ func main() {
 		&audit.AuditLog{},
 		&workflow.History{},
 		&auth.User{},
+		&organization.Department{},
+		&organization.Service{},
 		&staff.Profile{},
+		&organization.StaffServiceAssignment{},
 		&staff.Function{},
 		&staff.Specialty{},
 		&staff.Capability{},
@@ -127,6 +131,9 @@ func main() {
 	}
 	if err := pharmacy.BackfillVouchers(db); err != nil {
 		log.Fatal("Erreur matérialisation bons pharmacie:", err)
+	}
+	if err := organization.BackfillLegacy(db, 1); err != nil {
+		log.Fatal("Erreur migration organisation:", err)
 	}
 	for _, statement := range []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active = true",

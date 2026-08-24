@@ -1,6 +1,9 @@
 package laboratory
 
-import "time"
+import (
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"time"
+)
 
 const (
 	StatusOrdered         = "ORDERED"
@@ -14,31 +17,35 @@ const (
 )
 
 type Order struct {
-	ID              uint       `gorm:"primaryKey" json:"id"`
-	RequestNumber   string     `gorm:"size:40;uniqueIndex;not null" json:"requestNumber"`
-	ConsultationID  uint       `gorm:"not null;uniqueIndex:ux_laboratory_orders_prescription;index" json:"consultationId"`
-	MedicalExamID   uint       `gorm:"not null;uniqueIndex:ux_laboratory_orders_prescription;index" json:"medicalExamId"`
-	PatientID       uint       `gorm:"not null;index" json:"patientId"`
-	MedicalRecordID *uint      `gorm:"index" json:"medicalRecordId"`
-	Priority        string     `gorm:"size:20;not null;default:'ROUTINE';index" json:"priority"`
-	Status          string     `gorm:"size:30;not null;default:'ORDERED';index" json:"status"`
-	PrescribedBy    uint       `gorm:"index" json:"prescribedBy"`
-	CreatedBy       uint       `gorm:"not null;index" json:"createdBy"`
-	UpdatedBy       uint       `gorm:"not null;index" json:"updatedBy"`
-	CancelledReason string     `gorm:"type:text" json:"cancelledReason"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
-	ValidatedAt     *time.Time `json:"validatedAt"`
-	ValidatedBy     *uint      `json:"validatedBy"`
-	Sample          *Sample    `gorm:"foreignKey:OrderID" json:"sample,omitempty"`
-	Results         []Result   `gorm:"foreignKey:OrderID" json:"results"`
-	PatientName     string     `gorm:"-" json:"patientName"`
-	PatientCode     string     `gorm:"-" json:"patientCode"`
-	ExamName        string     `gorm:"-" json:"examName"`
-	ExamCode        string     `gorm:"-" json:"examCode"`
-	Category        string     `gorm:"-" json:"category"`
-	Service         string     `gorm:"-" json:"service"`
-	Prescriber      string     `gorm:"-" json:"prescriber"`
+	ID                  uint                  `gorm:"primaryKey" json:"id"`
+	RequestNumber       string                `gorm:"size:40;uniqueIndex;not null" json:"requestNumber"`
+	ConsultationID      uint                  `gorm:"not null;uniqueIndex:ux_laboratory_orders_prescription;index" json:"consultationId"`
+	MedicalExamID       uint                  `gorm:"not null;uniqueIndex:ux_laboratory_orders_prescription;index" json:"medicalExamId"`
+	PatientID           uint                  `gorm:"not null;index" json:"patientId"`
+	MedicalRecordID     *uint                 `gorm:"index" json:"medicalRecordId"`
+	Priority            string                `gorm:"size:20;not null;default:'ROUTINE';index" json:"priority"`
+	Status              string                `gorm:"size:30;not null;default:'ORDERED';index" json:"status"`
+	PrescribedBy        uint                  `gorm:"index" json:"prescribedBy"`
+	CreatedBy           uint                  `gorm:"not null;index" json:"createdBy"`
+	UpdatedBy           uint                  `gorm:"not null;index" json:"updatedBy"`
+	RequestingServiceID *uint                 `gorm:"index" json:"requestingServiceId"`
+	ExecutingServiceID  *uint                 `gorm:"index" json:"executingServiceId"`
+	RequestingService   *organization.Service `gorm:"foreignKey:RequestingServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"requestingService,omitempty"`
+	ExecutingService    *organization.Service `gorm:"foreignKey:ExecutingServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"executingService,omitempty"`
+	CancelledReason     string                `gorm:"type:text" json:"cancelledReason"`
+	CreatedAt           time.Time             `json:"createdAt"`
+	UpdatedAt           time.Time             `json:"updatedAt"`
+	ValidatedAt         *time.Time            `json:"validatedAt"`
+	ValidatedBy         *uint                 `json:"validatedBy"`
+	Sample              *Sample               `gorm:"foreignKey:OrderID" json:"sample,omitempty"`
+	Results             []Result              `gorm:"foreignKey:OrderID" json:"results"`
+	PatientName         string                `gorm:"-" json:"patientName"`
+	PatientCode         string                `gorm:"-" json:"patientCode"`
+	ExamName            string                `gorm:"-" json:"examName"`
+	ExamCode            string                `gorm:"-" json:"examCode"`
+	Category            string                `gorm:"-" json:"category"`
+	Service             string                `gorm:"-" json:"service"`
+	Prescriber          string                `gorm:"-" json:"prescriber"`
 }
 
 func (Order) TableName() string { return "laboratory_orders" }

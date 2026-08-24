@@ -133,6 +133,15 @@ func (h *Handler) ListConsultations(c *gin.Context) {
 		value := uint(patientID)
 		filter.PatientID = &value
 	}
+	if raw := c.Query("serviceId"); raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || value == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "service invalide"})
+			return
+		}
+		id := uint(value)
+		filter.ServiceID = &id
+	}
 	result, err := h.service.ListConsultations(filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

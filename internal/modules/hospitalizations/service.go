@@ -81,7 +81,7 @@ func (s *Service) Create(req CreateRequest, authorID uint) (*Hospitalization, bo
 		created = Hospitalization{PatientID: req.PatientID, MedicalRecordID: record.ID, SourceConsultationID: consultation.ID,
 			AdmissionNumber:     "HOSP-" + time.Now().Format("2006") + "-" + strings.ToUpper(uuid.NewString()[:8]),
 			HospitalizationType: consultation.HospitalizationType, AdmissionReason: consultation.HospitalizationReason,
-			AdmissionDiagnosis: strings.TrimSpace(req.AdmissionDiagnosis), Department: consultation.Service,
+			AdmissionDiagnosis: strings.TrimSpace(req.AdmissionDiagnosis), Department: consultation.Service, ServiceID: consultation.ServiceID,
 			Status: StatusPlanned, ExpectedDischargeAt: expected}
 		created.CreatedBy, created.UpdatedBy = &createdBy, &createdBy
 		if err := tx.Create(&created).Error; err != nil {

@@ -8,6 +8,7 @@ import (
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -31,10 +32,14 @@ func (s *Service) CreateRoom(req CreateRoomRequest, author uint) (*Room, error) 
 	if err != nil {
 		return nil, err
 	}
-	department, err := requireText(req.Department, "le service")
+	if req.ServiceID == nil {
+		return nil, coreerrors.BadRequest("le service est obligatoire")
+	}
+	service, err := organization.ValidateService(s.db, *req.ServiceID, "beds")
 	if err != nil {
 		return nil, err
 	}
+	department := service.Name
 	roomType, err := requireText(req.RoomType, "le type de chambre")
 	if err != nil {
 		return nil, err
@@ -43,7 +48,7 @@ func (s *Service) CreateRoom(req CreateRoomRequest, author uint) (*Room, error) 
 	if req.IsActive != nil {
 		active = *req.IsActive
 	}
-	room := Room{Code: code, Name: name, Department: department, Floor: normalize(req.Floor), RoomType: roomType, IsActive: active}
+	room := Room{Code: code, Name: name, Department: department, ServiceID: req.ServiceID, Floor: normalize(req.Floor), RoomType: roomType, IsActive: active}
 	room.CreatedBy, room.UpdatedBy = &author, &author
 	if err := s.db.Create(&room).Error; err != nil {
 		if isDuplicate(err) {
@@ -55,7 +60,7 @@ func (s *Service) CreateRoom(req CreateRoomRequest, author uint) (*Room, error) 
 }
 func (s *Service) ListRooms() ([]Room, error) {
 	var rooms []Room
-	if err := s.db.Order("department, code").Find(&rooms).Error; err != nil {
+	if err := s.db.Preload("OrganizationService").Order("department, code").Find(&rooms).Error; err != nil {
 		return nil, err
 	}
 	for i := range rooms {
@@ -84,7 +89,7 @@ func (s *Service) ListRooms() ([]Room, error) {
 }
 func (s *Service) FindRoom(id uint) (*Room, error) {
 	var room Room
-	err := s.db.First(&room, id).Error
+	err := s.db.Preload("OrganizationService").First(&room, id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, coreerrors.NotFound("ROOM")
 	}
@@ -125,6 +130,14 @@ func (s *Service) UpdateRoom(id uint, req UpdateRoomRequest, author uint) (*Room
 				return err
 			}
 			room.Department = value
+		}
+		if req.ServiceID != nil {
+			service, err := organization.ValidateService(tx, *req.ServiceID, "beds")
+			if err != nil {
+				return err
+			}
+			room.ServiceID = req.ServiceID
+			room.Department = service.Name
 		}
 		if req.Floor != nil {
 			room.Floor = normalize(*req.Floor)
@@ -203,6 +216,9 @@ func (s *Service) ListBeds(filter BedFilter) (*BedListResult, error) {
 	q := s.db.Model(&Bed{}).Joins("Room")
 	if filter.Department != "" {
 		q = q.Where("LOWER(\"Room\".department)=LOWER(?)", filter.Department)
+	}
+	if filter.ServiceID != nil {
+		q = q.Where("\"Room\".service_id = ?", *filter.ServiceID)
 	}
 	if filter.RoomID != nil {
 		q = q.Where("hospitalization_beds.room_id=?", *filter.RoomID)
@@ -431,6 +447,12 @@ func (s *Service) TransferBed(hid, bedID, author uint) (*BedAssignment, error) {
 		target.Status = BedOccupied
 		target.UpdatedBy = &author
 		if err := tx.Save(target).Error; err != nil {
+			return err
+		}
+		h.ServiceID = target.Room.ServiceID
+		h.Department = target.Room.Department
+		h.UpdatedBy = &author
+		if err := tx.Save(h).Error; err != nil {
 			return err
 		}
 		return createBedTimeline(tx, h, "bed_transferred", "Patient transféré", fmt.Sprintf("%s — %s vers %s — %s", old.Room.Name, old.Label, target.Room.Name, target.Label), author, now)

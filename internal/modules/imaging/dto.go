@@ -6,6 +6,7 @@ type ListFilter struct {
 	Page, Limit                                       int
 	Status, Priority, Modality, Service, Search, Date string
 	PatientID, ConsultationID                         *uint
+	ServiceID                                         *uint
 }
 
 type ListResult struct {

@@ -2,20 +2,23 @@ package staff
 
 import (
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"time"
 )
 
 type Profile struct {
-	ID                 uint      `gorm:"primaryKey" json:"id"`
-	UserID             uint      `gorm:"not null;uniqueIndex" json:"userId"`
-	EmployeeCode       string    `gorm:"size:40;not null;uniqueIndex" json:"employeeCode"`
-	JobTitle           string    `gorm:"size:120" json:"jobTitle"`
-	PrimaryDepartment  string    `gorm:"size:100" json:"primaryDepartment"`
-	ProfessionalNumber string    `gorm:"size:80" json:"professionalNumber"`
-	Active             bool      `gorm:"not null;default:true;index" json:"active"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
-	User               auth.User `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"-"`
+	ID                 uint                  `gorm:"primaryKey" json:"id"`
+	UserID             uint                  `gorm:"not null;uniqueIndex" json:"userId"`
+	EmployeeCode       string                `gorm:"size:40;not null;uniqueIndex" json:"employeeCode"`
+	JobTitle           string                `gorm:"size:120" json:"jobTitle"`
+	PrimaryDepartment  string                `gorm:"size:100" json:"primaryDepartment"`
+	PrimaryServiceID   *uint                 `gorm:"index" json:"primaryServiceId"`
+	PrimaryService     *organization.Service `gorm:"foreignKey:PrimaryServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"primaryService,omitempty"`
+	ProfessionalNumber string                `gorm:"size:80" json:"professionalNumber"`
+	Active             bool                  `gorm:"not null;default:true;index" json:"active"`
+	CreatedAt          time.Time             `json:"createdAt"`
+	UpdatedAt          time.Time             `json:"updatedAt"`
+	User               auth.User             `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"-"`
 }
 
 func (Profile) TableName() string { return "staff_profiles" }

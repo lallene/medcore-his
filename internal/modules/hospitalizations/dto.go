@@ -25,6 +25,7 @@ type ListFilter struct {
 	PatientID   *uint
 	Status      string
 	Department  string
+	ServiceID   *uint
 	From, To    *time.Time
 }
 

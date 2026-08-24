@@ -83,6 +83,15 @@ func (h *Handler) FindByConsultation(c *gin.Context) {
 func (h *Handler) List(c *gin.Context) {
 	p := pagination.FromContext(c)
 	filter := ListFilter{Page: p.Page, Limit: p.Limit, Status: strings.ToUpper(c.Query("status")), Department: c.Query("department")}
+	if raw := c.Query("serviceId"); raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || value == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "service invalide"})
+			return
+		}
+		id := uint(value)
+		filter.ServiceID = &id
+	}
 	if raw := c.Query("patientId"); raw != "" {
 		value, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil || value == 0 {

@@ -59,6 +59,9 @@ func (s *Service) view(profile Profile) (*View, error) {
 		return nil, e
 	}
 	v.EffectivePermissions = MergePermissions(v.LegacyRole, v.Functions, v.Specialties)
+	if e := s.db.Table("staff_service_assignments a").Select("a.service_id,a.is_primary,a.active,s.code,s.name").Joins("JOIN organization_services s ON s.id=a.service_id").Where("a.profile_id=? AND a.active", profile.ID).Order("a.is_primary DESC,s.name").Scan(&v.ServiceAssignments).Error; e != nil {
+		return nil, e
+	}
 	return v, nil
 }
 
@@ -92,6 +95,9 @@ func (s *Service) List(f Filter) (*Page, error) {
 	}
 	if f.Specialty != "" {
 		q = q.Where("EXISTS (SELECT 1 FROM staff_specialties ss WHERE ss.profile_id=staff_profiles.id AND ss.active AND ss.code=?)", f.Specialty)
+	}
+	if f.ServiceID != nil {
+		q = q.Where("EXISTS (SELECT 1 FROM staff_service_assignments sa WHERE sa.profile_id=staff_profiles.id AND sa.active AND sa.service_id=?)", *f.ServiceID)
 	}
 	var total int64
 	if e := q.Count(&total).Error; e != nil {
@@ -233,6 +239,24 @@ func (s *Service) Upsert(id uint, r UpsertRequest, actor uint) (*View, error) {
 		p.EmployeeCode = strings.ToUpper(strings.TrimSpace(r.EmployeeCode))
 		p.JobTitle = strings.TrimSpace(r.JobTitle)
 		p.PrimaryDepartment = strings.TrimSpace(r.PrimaryDepartment)
+		if r.PrimaryServiceID != nil {
+			var service struct {
+				ID     uint
+				Name   string
+				Active bool
+			}
+			if x := tx.Table("organization_services").Select("id,name,active").Where("id=?", *r.PrimaryServiceID).Scan(&service).Error; x != nil {
+				return x
+			}
+			if service.ID == 0 {
+				return coreerrors.NotFound("SERVICE")
+			}
+			if !service.Active {
+				return coreerrors.Conflict("Le service principal est inactif")
+			}
+			p.PrimaryServiceID = r.PrimaryServiceID
+			p.PrimaryDepartment = service.Name
+		}
 		p.ProfessionalNumber = strings.TrimSpace(r.ProfessionalNumber)
 		if r.Active != nil {
 			p.Active = *r.Active
@@ -263,6 +287,48 @@ func (s *Service) Upsert(id uint, r UpsertRequest, actor uint) (*View, error) {
 		}
 		if x := syncAssignments[Capability](tx, p.ID, actor, "CAPABILITY", capabilities); x != nil {
 			return x
+		}
+		if r.PrimaryServiceID != nil {
+			wanted := map[uint]bool{*r.PrimaryServiceID: true}
+			for _, sid := range r.SecondaryServiceIDs {
+				wanted[sid] = true
+			}
+			var existing []struct {
+				ID, ServiceID uint
+				Active        bool
+			}
+			if x := tx.Table("staff_service_assignments").Where("profile_id=?", p.ID).Scan(&existing).Error; x != nil {
+				return x
+			}
+			for sid := range wanted {
+				var svc struct {
+					ID     uint
+					Active bool
+				}
+				tx.Table("organization_services").Select("id,active").Where("id=?", sid).Scan(&svc)
+				if svc.ID == 0 || !svc.Active {
+					return coreerrors.Conflict("Service secondaire invalide ou inactif")
+				}
+				assignment := map[string]any{"profile_id": p.ID, "service_id": sid, "is_primary": sid == *r.PrimaryServiceID, "active": true, "created_by": actor, "created_at": time.Now(), "updated_at": time.Now()}
+				var count int64
+				tx.Table("staff_service_assignments").Where("profile_id=? AND service_id=?", p.ID, sid).Count(&count)
+				if count == 0 {
+					if x := tx.Table("staff_service_assignments").Create(assignment).Error; x != nil {
+						return x
+					}
+				} else {
+					if x := tx.Table("staff_service_assignments").Where("profile_id=? AND service_id=?", p.ID, sid).Updates(map[string]any{"is_primary": sid == *r.PrimaryServiceID, "active": true, "updated_at": time.Now()}).Error; x != nil {
+						return x
+					}
+				}
+			}
+			for _, a := range existing {
+				if a.Active && !wanted[a.ServiceID] {
+					if x := tx.Table("staff_service_assignments").Where("id=?", a.ID).Updates(map[string]any{"active": false, "is_primary": false, "updated_at": time.Now()}).Error; x != nil {
+						return x
+					}
+				}
+			}
 		}
 		profileID = p.ID
 		return nil

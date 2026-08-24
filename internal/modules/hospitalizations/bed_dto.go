@@ -3,7 +3,8 @@ package hospitalizations
 type CreateRoomRequest struct {
 	Code       string `json:"code" binding:"required"`
 	Name       string `json:"name" binding:"required"`
-	Department string `json:"department" binding:"required"`
+	Department string `json:"department"`
+	ServiceID  *uint  `json:"serviceId" binding:"required"`
 	Floor      string `json:"floor"`
 	RoomType   string `json:"roomType" binding:"required"`
 	IsActive   *bool  `json:"isActive"`
@@ -12,6 +13,7 @@ type UpdateRoomRequest struct {
 	Code       *string `json:"code"`
 	Name       *string `json:"name"`
 	Department *string `json:"department"`
+	ServiceID  *uint   `json:"serviceId"`
 	Floor      *string `json:"floor"`
 	RoomType   *string `json:"roomType"`
 	IsActive   *bool   `json:"isActive"`
@@ -42,6 +44,7 @@ type TransferBedRequest struct {
 type BedFilter struct {
 	Page, Limit        int
 	Department, Status string
+	ServiceID          *uint
 	RoomID             *uint
 	Active, Available  *bool
 }

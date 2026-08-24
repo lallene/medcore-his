@@ -1,6 +1,9 @@
 package cash
 
-import "time"
+import (
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"time"
+)
 
 const (
 	SessionOpen   = "OPEN"
@@ -8,15 +11,17 @@ const (
 )
 
 type Register struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Code      string    `gorm:"size:50;not null;uniqueIndex" json:"code"`
-	Name      string    `gorm:"size:150;not null" json:"name"`
-	Location  string    `gorm:"size:200" json:"location"`
-	Active    bool      `gorm:"not null;default:true;index" json:"active"`
-	CreatedBy uint      `gorm:"not null;index" json:"createdBy"`
-	UpdatedBy uint      `gorm:"not null;index" json:"updatedBy"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID        uint                  `gorm:"primaryKey" json:"id"`
+	Code      string                `gorm:"size:50;not null;uniqueIndex" json:"code"`
+	Name      string                `gorm:"size:150;not null" json:"name"`
+	Location  string                `gorm:"size:200" json:"location"`
+	ServiceID *uint                 `gorm:"index" json:"serviceId"`
+	Service   *organization.Service `gorm:"foreignKey:ServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"service,omitempty"`
+	Active    bool                  `gorm:"not null;default:true;index" json:"active"`
+	CreatedBy uint                  `gorm:"not null;index" json:"createdBy"`
+	UpdatedBy uint                  `gorm:"not null;index" json:"updatedBy"`
+	CreatedAt time.Time             `json:"createdAt"`
+	UpdatedAt time.Time             `json:"updatedAt"`
 }
 
 func (Register) TableName() string { return "cash_registers" }

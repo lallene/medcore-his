@@ -15,16 +15,25 @@ func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
 
 func (r *Repository) Materialize(authorID uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		var executingServiceID *uint
+		if tx.Migrator().HasTable("organization_services") {
+			var id uint
+			if tx.Table("organization_services").Select("id").Where("code=?", "LAB").Scan(&id).Error == nil && id > 0 {
+				executingServiceID = &id
+			}
+		}
 		type source struct {
 			ConsultationID, MedicalExamID, PatientID, PrescribedBy uint
 			Priority                                               string
 			CreatedAt                                              time.Time
 			MedicalRecordID                                        *uint
+			RequestingServiceID                                    *uint
 		}
 		var sources []source
 		if err := tx.Raw(`SELECT cer.consultation_id, cer.medical_exam_id, c.patient_id,
 			cer.prescribed_by, COALESCE(NULLIF(cer.priority,''),'ROUTINE') priority,
-			COALESCE(cer.created_at,c.created_at) created_at, mr.id medical_record_id
+			COALESCE(cer.created_at,c.created_at) created_at, mr.id medical_record_id,
+			c.service_id requesting_service_id
 			FROM consultation_exam_requests cer JOIN consultations c ON c.id=cer.consultation_id
 			JOIN medical_exams me ON me.id=cer.medical_exam_id
 			LEFT JOIN medical_records mr ON mr.patient_id=c.patient_id
@@ -37,7 +46,7 @@ func (r *Repository) Materialize(authorID uint) error {
 			if creator == 0 {
 				creator = authorID
 			}
-			o := Order{RequestNumber: fmt.Sprintf("PENDING-%d-%d", s.ConsultationID, s.MedicalExamID), ConsultationID: s.ConsultationID, MedicalExamID: s.MedicalExamID, PatientID: s.PatientID, MedicalRecordID: s.MedicalRecordID, Priority: s.Priority, Status: StatusOrdered, PrescribedBy: s.PrescribedBy, CreatedBy: creator, UpdatedBy: creator, CreatedAt: s.CreatedAt}
+			o := Order{RequestNumber: fmt.Sprintf("PENDING-%d-%d", s.ConsultationID, s.MedicalExamID), ConsultationID: s.ConsultationID, MedicalExamID: s.MedicalExamID, PatientID: s.PatientID, MedicalRecordID: s.MedicalRecordID, RequestingServiceID: s.RequestingServiceID, ExecutingServiceID: executingServiceID, Priority: s.Priority, Status: StatusOrdered, PrescribedBy: s.PrescribedBy, CreatedBy: creator, UpdatedBy: creator, CreatedAt: s.CreatedAt}
 			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "consultation_id"}, {Name: "medical_exam_id"}}, DoNothing: true}).Create(&o).Error; err != nil {
 				return err
 			}
@@ -68,6 +77,9 @@ func (r *Repository) List(f ListFilter) (*ListResult, error) {
 	}
 	if f.Category != "" {
 		q = q.Where("LOWER(me.category)=LOWER(?)", f.Category)
+	}
+	if f.ServiceID != nil {
+		q = q.Where("lo.requesting_service_id=?", *f.ServiceID)
 	}
 	if f.PatientID != nil {
 		q = q.Where("lo.patient_id=?", *f.PatientID)

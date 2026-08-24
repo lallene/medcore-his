@@ -97,6 +97,54 @@ func (s *Service) validateReference(tx *gorm.DB, patientID uint, typ string, id 
 	return typ, nil
 }
 
+func referenceService(tx *gorm.DB, typ string, id uint) (*uint, string, error) {
+	var row struct {
+		ID   *uint
+		Name string
+	}
+	var query string
+	if !tx.Migrator().HasTable("organization_services") {
+		switch typ {
+		case "CONSULTATION":
+			query = `SELECT NULL id, service name FROM consultations WHERE id=?`
+		case "LABORATORY":
+			query = `SELECT NULL id, c.service name FROM laboratory_orders o JOIN consultations c ON c.id=o.consultation_id WHERE o.id=?`
+		case "IMAGING":
+			query = `SELECT NULL id, c.service name FROM imaging_orders o JOIN consultations c ON c.id=o.consultation_id WHERE o.id=?`
+		case "HOSPITALIZATION":
+			query = `SELECT NULL id, department name FROM hospitalizations WHERE id=?`
+		case "MEDICATION":
+			query = `SELECT NULL id, c.service name FROM consultation_prescriptions p JOIN consultations c ON c.id=p.consultation_id WHERE p.id=?`
+		}
+		if query == "" {
+			return nil, "", nil
+		}
+		if err := tx.Raw(query, id).Scan(&row).Error; err != nil {
+			return nil, "", err
+		}
+		return nil, row.Name, nil
+	}
+	switch typ {
+	case "CONSULTATION":
+		query = `SELECT c.service_id id, COALESCE(os.name,c.service) name FROM consultations c LEFT JOIN organization_services os ON os.id=c.service_id WHERE c.id=?`
+	case "LABORATORY":
+		query = `SELECT o.requesting_service_id id, COALESCE(os.name,c.service) name FROM laboratory_orders o JOIN consultations c ON c.id=o.consultation_id LEFT JOIN organization_services os ON os.id=o.requesting_service_id WHERE o.id=?`
+	case "IMAGING":
+		query = `SELECT o.requesting_service_id id, COALESCE(os.name,c.service) name FROM imaging_orders o JOIN consultations c ON c.id=o.consultation_id LEFT JOIN organization_services os ON os.id=o.requesting_service_id WHERE o.id=?`
+	case "HOSPITALIZATION":
+		query = `SELECT h.service_id id, COALESCE(os.name,h.department) name FROM hospitalizations h LEFT JOIN organization_services os ON os.id=h.service_id WHERE h.id=?`
+	case "MEDICATION":
+		query = `SELECT c.service_id id, COALESCE(os.name,c.service) name FROM consultation_prescriptions p JOIN consultations c ON c.id=p.consultation_id LEFT JOIN organization_services os ON os.id=c.service_id WHERE p.id=?`
+	}
+	if query == "" {
+		return nil, "", nil
+	}
+	if err := tx.Raw(query, id).Scan(&row).Error; err != nil {
+		return nil, "", err
+	}
+	return row.ID, row.Name, nil
+}
+
 func (s *Service) loadCoverage(tx *gorm.DB, patientID, coverageID uint) (*coverage.PatientCoverage, error) {
 	var cov coverage.PatientCoverage
 	if err := tx.Preload("Company").Preload("Guarantor").First(&cov, coverageID).Error; err != nil {
@@ -130,6 +178,10 @@ func (s *Service) Create(req CreateRequest, userID uint) (*Response, error) {
 		if err != nil {
 			return err
 		}
+		serviceID, serviceName, err := referenceService(tx, typ, req.ReferenceID)
+		if err != nil {
+			return err
+		}
 		var record medical_records.MedicalRecord
 		if err := tx.Where("patient_id = ?", req.PatientID).First(&record).Error; err != nil {
 			return coreerrors.NotFound("MEDICAL_RECORD")
@@ -148,7 +200,7 @@ func (s *Service) Create(req CreateRequest, userID uint) (*Response, error) {
 			return coreerrors.Conflict("Cet acte est déjà couvert par une PEC existante")
 		}
 		now := time.Now()
-		item := InsuranceAuthorization{AuthorizationNumber: fmt.Sprintf("TMP-%d-%d", userID, now.UnixNano()), PatientID: req.PatientID, MedicalRecordID: record.ID, PatientCoverageID: cov.ID, InsuranceCompanyID: cov.CompanyID, GuarantorID: cov.GuarantorID, ReferenceType: typ, ReferenceID: req.ReferenceID, Service: strings.TrimSpace(req.Service), RequestedAmount: req.RequestedAmount, RequestedAt: now, RequestedBy: userID, Status: StatusDraft, Comment: strings.TrimSpace(req.Comment), CreatedBy: userID, UpdatedBy: userID}
+		item := InsuranceAuthorization{AuthorizationNumber: fmt.Sprintf("TMP-%d-%d", userID, now.UnixNano()), PatientID: req.PatientID, MedicalRecordID: record.ID, PatientCoverageID: cov.ID, InsuranceCompanyID: cov.CompanyID, GuarantorID: cov.GuarantorID, ReferenceType: typ, ReferenceID: req.ReferenceID, ServiceID: serviceID, Service: serviceName, RequestedAmount: req.RequestedAmount, RequestedAt: now, RequestedBy: userID, Status: StatusDraft, Comment: strings.TrimSpace(req.Comment), CreatedBy: userID, UpdatedBy: userID}
 		if err := tx.Create(&item).Error; err != nil {
 			return err
 		}

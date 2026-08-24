@@ -6,6 +6,7 @@ type ConsultationListFilter struct {
 	Page      int
 	Limit     int
 	PatientID *uint
+	ServiceID *uint
 	Status    string
 	Service   string
 	Search    string
@@ -19,6 +20,7 @@ type ConsultationListItem struct {
 	PatientName   string    `json:"patientName"`
 	DoctorName    string    `json:"doctorName"`
 	Service       string    `json:"service"`
+	ServiceID     *uint     `json:"serviceId"`
 	Status        string    `json:"status"`
 	Diagnosis     string    `json:"diagnosis"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -37,6 +39,7 @@ type CreateConsultationRequest struct {
 	PatientID  uint   `json:"patientId" binding:"required"`
 	DoctorName string `json:"doctorName" binding:"required"`
 	Service    string `json:"service"`
+	ServiceID  *uint  `json:"serviceId"`
 
 	ReasonIDs     []uint                `json:"reasonIds"`
 	Prescriptions []PrescriptionRequest `json:"prescriptions"`
@@ -98,6 +101,7 @@ type UpdateConsultationStatusRequest struct {
 type UpdateConsultationRequest struct {
 	DoctorName *string `json:"doctorName"`
 	Service    *string `json:"service"`
+	ServiceID  *uint   `json:"serviceId"`
 
 	ReasonIDs     *[]uint                `json:"reasonIds"`
 	ExamIDs       *[]uint                `json:"examIds"`

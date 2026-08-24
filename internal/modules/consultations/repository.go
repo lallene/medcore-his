@@ -50,6 +50,9 @@ func (r *Repository) List(filter ConsultationListFilter) (*ConsultationListResul
 	if filter.Service != "" {
 		query = query.Where("LOWER(c.service) = LOWER(?)", filter.Service)
 	}
+	if filter.ServiceID != nil {
+		query = query.Where("c.service_id = ?", *filter.ServiceID)
+	}
 	if search := filter.Search; search != "" {
 		like := "%" + search + "%"
 		query = query.Where(`
@@ -67,7 +70,7 @@ func (r *Repository) List(filter ConsultationListFilter) (*ConsultationListResul
 		c.id, c.patient_id, p.code_patient AS patient_code,
 		p.numero_dossier AS patient_record,
 		TRIM(CONCAT(p.nom, ' ', p.prenoms)) AS patient_name,
-		c.doctor_name, c.service, c.status, c.diagnosis, c.created_at, c.updated_at
+		c.doctor_name, c.service, c.service_id, c.status, c.diagnosis, c.created_at, c.updated_at
 	`).Order("c.created_at DESC").
 		Offset((filter.Page - 1) * filter.Limit).
 		Limit(filter.Limit).
@@ -84,6 +87,7 @@ func (r *Repository) FindByID(id uint) (*Consultation, error) {
 
 	err := r.db.
 		Preload("Patient").
+		Preload("OrganizationService").
 		Preload("Vitals").
 		Preload("Reasons").
 		Preload("Exams").

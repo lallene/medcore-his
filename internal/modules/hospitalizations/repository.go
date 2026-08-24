@@ -39,6 +39,9 @@ func (r *Repository) List(filter ListFilter) (*ListResult, error) {
 	if filter.Department != "" {
 		query = query.Where("LOWER(department) = LOWER(?)", filter.Department)
 	}
+	if filter.ServiceID != nil {
+		query = query.Where("service_id=?", *filter.ServiceID)
+	}
 	if filter.From != nil {
 		query = query.Where("created_at >= ?", *filter.From)
 	}

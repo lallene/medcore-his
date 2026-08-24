@@ -2,11 +2,13 @@ package staff
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/core/response"
-	"strconv"
 )
 
 type Handler struct{ service *Service }
@@ -39,7 +41,17 @@ func staffActor(c *gin.Context) (uint, bool) {
 func (h *Handler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	x, e := h.service.List(Filter{Search: c.Query("search"), Function: c.Query("function"), Specialty: c.Query("specialty"), Active: c.Query("active"), Page: page, Limit: limit})
+	f := Filter{Search: c.Query("search"), Function: c.Query("function"), Specialty: c.Query("specialty"), Active: c.Query("active"), Page: page, Limit: limit}
+	if raw := c.Query("serviceId"); raw != "" {
+		if value, err := strconv.ParseUint(raw, 10, 64); err == nil && value > 0 {
+			id := uint(value)
+			f.ServiceID = &id
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "service invalide"})
+			return
+		}
+	}
+	x, e := h.service.List(f)
 	if e != nil {
 		staffFail(c, e)
 		return

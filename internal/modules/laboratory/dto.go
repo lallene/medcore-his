@@ -4,6 +4,7 @@ type ListFilter struct {
 	Page, Limit                        int
 	Status, Priority, Category, Search string
 	PatientID, ConsultationID          *uint
+	ServiceID                          *uint
 }
 type ListResult struct {
 	Data       []ListItem `json:"data"`

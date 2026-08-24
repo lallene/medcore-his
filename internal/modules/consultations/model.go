@@ -3,6 +3,7 @@ package consultations
 import (
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 )
 
@@ -18,13 +19,15 @@ type Consultation struct {
 	PatientID uint             `gorm:"not null;index" json:"patientId"`
 	Patient   patients.Patient `gorm:"foreignKey:PatientID" json:"patient"`
 
-	DoctorName         string     `json:"doctorName"`
-	Service            string     `json:"service"`
-	Status             string     `gorm:"not null;default:draft;index" json:"status"`
-	StartedAt          *time.Time `json:"startedAt"`
-	CompletedAt        *time.Time `json:"completedAt"`
-	CancelledAt        *time.Time `json:"cancelledAt"`
-	CancellationReason string     `gorm:"type:text" json:"cancellationReason"`
+	DoctorName          string                `json:"doctorName"`
+	Service             string                `json:"service"`
+	ServiceID           *uint                 `gorm:"index" json:"serviceId"`
+	OrganizationService *organization.Service `gorm:"foreignKey:ServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"organizationService,omitempty"`
+	Status              string                `gorm:"not null;default:draft;index" json:"status"`
+	StartedAt           *time.Time            `json:"startedAt"`
+	CompletedAt         *time.Time            `json:"completedAt"`
+	CancelledAt         *time.Time            `json:"cancelledAt"`
+	CancellationReason  string                `gorm:"type:text" json:"cancellationReason"`
 
 	Diagnosis    string `gorm:"type:text" json:"diagnosis"`
 	Observations string `gorm:"type:text" json:"observations"`

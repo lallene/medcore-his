@@ -20,6 +20,7 @@ import (
 	insurance_receivables "github.com/lallene/medcore-his/backend/internal/modules/insurance_receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/laboratory"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
@@ -37,6 +38,9 @@ func seedFullDemo(db *gorm.DB) {
 	db.Table("users").Select("id").Where("email = ?", "admin@medcore.local").Scan(&adminID)
 	if adminID == 0 {
 		log.Fatal("administrateur DEMO introuvable")
+	}
+	if _, err := organization.SeedReference(db, adminID); err != nil {
+		log.Fatal(err)
 	}
 	seedDemoStaff(db, adminID)
 
@@ -155,6 +159,9 @@ func seedFullDemo(db *gorm.DB) {
 	seedDemoPharmacyWorkflow(db, adminID, consults["P-DEMO-007"])
 	seedDemoVoucherStates(db, adminID, consults)
 	seedDemoClinicalBilling(db, adminID)
+	if err := organization.BackfillLegacy(db, adminID); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func seedDemoClinicalBilling(db *gorm.DB, actor uint) {

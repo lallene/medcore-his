@@ -7,11 +7,12 @@ var StaffPhysicianPermissions = []string{
 	"consultations.read", "consultations.create", "consultations.update", "hospitalizations.read", "hospitalizations.create",
 	"rooms.read", "beds.read", "bed_assignments.read", "laboratory.read", "imaging.read", "pharmacy.stock.read",
 	"insurance.authorization.read", "insurance.authorization.create", "billing.read",
+	"organization.read",
 }
 
 var StaffFunctionPermissions = map[string][]string{
-	"DIRECTEUR_MEDICAL":       {"dashboard.read", "patients:read", "patients.360.read", "medical_records.read", "consultations.read", "hospitalizations.read", "rooms.read", "beds.read", "bed_assignments.read", "laboratory.read", "imaging.read", "pharmacy.stock.read", "insurance.authorization.read", "billing.read"},
-	"DIRECTEUR_ADMINISTRATIF": {"dashboard.read", "patients:read", "billing.read", "billing.tariff.read", "cash.register.read", "cash.session.read", "cash.payment.read", "cash.receipt.read", "receivables.read", "insurance_receivables.read", "insurance_settlements.read", "insurance_settlements.create", "insurance_settlements.allocate", "insurance_batches.read", "insurance_batches.create", "insurance_batches.submit", "staff.read", "staff.manage", "staff.audit.read"},
+	"DIRECTEUR_MEDICAL":       {"dashboard.read", "patients:read", "patients.360.read", "medical_records.read", "consultations.read", "hospitalizations.read", "rooms.read", "beds.read", "bed_assignments.read", "laboratory.read", "imaging.read", "pharmacy.stock.read", "insurance.authorization.read", "billing.read", "organization.read"},
+	"DIRECTEUR_ADMINISTRATIF": {"dashboard.read", "patients:read", "billing.read", "billing.tariff.read", "cash.register.read", "cash.session.read", "cash.payment.read", "cash.receipt.read", "receivables.read", "insurance_receivables.read", "insurance_settlements.read", "insurance_settlements.create", "insurance_settlements.allocate", "insurance_batches.read", "insurance_batches.create", "insurance_batches.submit", "staff.read", "staff.manage", "staff.audit.read", "organization.read", "organization.manage"},
 	"SAGE_FEMME":              {"patients:read", "patients.360.read", "medical_records.read", "vital_signs.create", "consultations.read", "hospitalizations.read", "beds.read", "bed_assignments.read"},
 	"INFIRMIER":               {"patients:read", "patients.360.read", "medical_records.read", "vital_signs.create", "consultations.read", "hospitalizations.read", "hospitalizations.update", "beds.read", "bed_assignments.read", "pharmacy.dispensation.read"},
 	"AIDE_SOIGNANT":           {"patients:read", "patients.360.read", "medical_records.read", "hospitalizations.read", "beds.read", "bed_assignments.read"},
@@ -27,6 +28,7 @@ func EffectiveStaffPermissions(role string, functions, specialties []string) []s
 		return []string{"*"}
 	}
 	set := map[string]bool{}
+	set["organization.read"] = true
 	if role == "accueil" {
 		for _, p := range []string{"patients:read", "patients:create", "patients:update", "hospitalizations.read", "rooms.read", "beds.read", "bed_assignments.read"} {
 			set[p] = true

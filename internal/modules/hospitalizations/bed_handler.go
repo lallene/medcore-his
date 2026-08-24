@@ -75,6 +75,12 @@ func (h *BedHandler) UpdateRoom(c *gin.Context) {
 func (h *BedHandler) ListBeds(c *gin.Context) {
 	p := pagination.FromContext(c)
 	f := BedFilter{Page: p.Page, Limit: p.Limit, Department: c.Query("department"), Status: strings.ToUpper(c.Query("status"))}
+	if value := c.Query("serviceId"); value != "" {
+		if id, err := strconv.ParseUint(value, 10, 64); err == nil {
+			v := uint(id)
+			f.ServiceID = &v
+		}
+	}
 	if !optionalUint(c, "roomId", &f.RoomID) || !optionalBool(c, "active", &f.Active) || !optionalBool(c, "available", &f.Available) {
 		return
 	}
