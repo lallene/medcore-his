@@ -23,7 +23,9 @@ var officialServices = []serviceSeed{
 	{"MED", "NEURO", "Neurologie", TypeClinical, true, true, true, false},
 	{"MED", "RHUM", "Rhumatologie", TypeClinical, true, true, false, false},
 	{"MED", "SOINS", "Soins", TypeClinical, true, false, true, true},
+	{"MED", "REA", "Réanimation", TypeClinical, true, false, true, true},
 	{"SURG", "CHIR", "Chirurgie", TypeSurgical, true, true, true, true},
+	{"FME", "PED", "Pédiatrie", TypeClinical, true, true, true, true},
 	{"FME", "GYNE", "Gynécologie", TypeMaternity, true, true, true, false},
 	{"FME", "MAT", "Maternité", TypeMaternity, true, true, true, true},
 	{"TECH", "LAB", "Laboratoire", TypeDiagnostic, true, false, false, false},
@@ -36,10 +38,10 @@ var officialServices = []serviceSeed{
 }
 
 var LegacyServiceMapping = map[string]string{
-	"Urgences": "URG", "Urgences LOT7": "URG",
+	"Urgences": "URG", "Urgences LOT7": "URG", "Réanimation": "REA",
 	"Médecine": "GEN", "Médecine générale": "GEN", "Médecine LOT7": "GEN", "Consultation externe": "GEN",
 	"Cardiologie": "CARD", "ORL": "ORL", "Diabétologie": "DIAB", "Neurologie": "NEURO", "Rhumatologie": "RHUM", "Soins": "SOINS",
-	"Chirurgie": "CHIR", "Gynécologie": "GYNE", "Maternité": "MAT", "Laboratoire": "LAB", "Radiologie": "RAD", "Imagerie": "RAD", "Pharmacie": "PHARM",
+	"Chirurgie": "CHIR", "Chirurgie générale": "CHIR", "Pédiatrie": "PED", "Gynécologie": "GYNE", "Maternité": "MAT", "Laboratoire": "LAB", "Radiologie": "RAD", "Imagerie": "RAD", "Pharmacie": "PHARM",
 	"Administration": "ADMIN", "Facturation": "FACT", "Caisse": "CASH", "Comptabilité": "COMPTA", "Recouvrement": "COMPTA", "Accueil": "ADMIN",
 }
 

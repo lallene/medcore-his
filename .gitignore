@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+
+*.log
+tmp/
+dist/
+build/
+coverage/
+.DS_Store

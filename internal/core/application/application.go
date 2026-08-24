@@ -39,6 +39,10 @@ func New() *Application {
 
 	r := gin.New()
 
+	if err := r.SetTrustedProxies(nil); err != nil {
+		panic(err)
+	}
+
 	r.Use(gin.Recovery())
 	r.Use(middleware.CORS(cfg.CORSOrigin))
 	r.Use(middleware.RequestLogger())

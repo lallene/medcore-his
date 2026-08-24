@@ -49,7 +49,7 @@ func TestPostgresOrganizationConstraintsAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(units) != 18 {
+	if len(units) != 20 {
 		t.Fatalf("services=%d", len(units))
 	}
 	duplicate := Service{DepartmentID: units["URG"].DepartmentID, Code: "URG", Name: "duplicate", ServiceType: TypeOther, Active: true, CreatedBy: 1, UpdatedBy: 1}
