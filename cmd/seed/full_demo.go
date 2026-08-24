@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
@@ -22,6 +23,8 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
+	"github.com/lallene/medcore-his/backend/internal/modules/staff"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -35,6 +38,7 @@ func seedFullDemo(db *gorm.DB) {
 	if adminID == 0 {
 		log.Fatal("administrateur DEMO introuvable")
 	}
+	seedDemoStaff(db, adminID)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	patientsByCode := map[string]*patients.Patient{}
@@ -145,6 +149,57 @@ func seedFullDemo(db *gorm.DB) {
 	seedDemoBillingAndCash(db, adminID, consults)
 	seedPharmacyCatalog(db)
 	seedDemoPharmacyWorkflow(db, adminID, consults["P-DEMO-007"])
+}
+
+func seedDemoStaff(db *gorm.DB, actor uint) {
+	type spec struct {
+		code, name, email, title, department string
+		functions, specialties, capabilities []string
+	}
+	items := []spec{
+		{"DEMO-URGENTISTE", "Dr Urgentiste DEMO", "demo.urgentiste@medcore.local", "Urgentiste", "Urgences", nil, []string{"URGENCES"}, nil},
+		{"DEMO-GENERALISTE", "Dr Généraliste DEMO", "demo.generaliste@medcore.local", "Médecin généraliste", "Médecine générale", nil, []string{"MEDECINE_GENERALE"}, nil},
+		{"DEMO-GYNECOLOGUE", "Dr Gynécologue DEMO", "demo.gynecologue@medcore.local", "Gynécologue", "Gynécologie", nil, []string{"GYNECOLOGIE"}, nil},
+		{"DEMO-CARDIOLOGUE", "Dr Cardiologue DEMO", "demo.cardiologue@medcore.local", "Cardiologue", "Cardiologie", nil, []string{"CARDIOLOGIE"}, nil},
+		{"DEMO-ORL", "Dr ORL DEMO", "demo.orl@medcore.local", "ORL", "ORL", nil, []string{"ORL"}, nil},
+		{"DEMO-DIABETOLOGUE", "Dr Diabétologue DEMO", "demo.diabetologue@medcore.local", "Diabétologue", "Diabétologie", nil, []string{"DIABETOLOGIE"}, nil},
+		{"DEMO-NEUROLOGUE", "Dr Neurologue DEMO", "demo.neurologue@medcore.local", "Neurologue", "Neurologie", nil, []string{"NEUROLOGIE"}, nil},
+		{"DEMO-RHUMATOLOGUE", "Dr Rhumatologue DEMO", "demo.rhumatologue@medcore.local", "Rhumatologue", "Rhumatologie", nil, []string{"RHUMATOLOGIE"}, nil},
+		{"DEMO-CHIRURGIEN", "Dr Chirurgien DEMO", "demo.chirurgien@medcore.local", "Chirurgien", "Chirurgie", nil, []string{"CHIRURGIE"}, nil},
+		{"DEMO-SAGEFEMME", "Sage-femme DEMO", "demo.sagefemme@medcore.local", "Sage-femme", "Maternité", []string{"SAGE_FEMME"}, nil, nil},
+		{"DEMO-INFIRMIER", "Infirmier DEMO", "demo.infirmier@medcore.local", "Infirmier", "Soins", []string{"INFIRMIER"}, nil, nil},
+		{"DEMO-AIDESOIGNANT", "Aide-soignant DEMO", "demo.aidesoignant@medcore.local", "Aide-soignant", "Soins", []string{"AIDE_SOIGNANT"}, nil, nil},
+		{"DEMO-COMPTABLE", "Comptable DEMO", "demo.comptable@medcore.local", "Comptable", "Comptabilité", []string{"COMPTABLE"}, nil, nil},
+		{"DEMO-DIRECTEUR-ADMIN", "Directeur administratif DEMO", "demo.directeur.admin@medcore.local", "Directeur administratif", "Administration", []string{"DIRECTEUR_ADMINISTRATIF"}, nil, nil},
+		{"DEMO-DIRECTEUR-MEDICAL", "Dr Directeur médical DEMO", "demo.directeur.medical@medcore.local", "Directeur médical", "ORL", []string{"DIRECTEUR_MEDICAL"}, []string{"ORL", "MEDECINE_GENERALE"}, nil},
+		{"DEMO-CAISSIERE", "Caissière DEMO", "demo.caissiere@medcore.local", "Caissière", "Caisse", []string{"CAISSIER"}, nil, nil},
+		{"DEMO-BIOLOGISTE", "Biologiste DEMO", "demo.biologiste@medcore.local", "Biologiste", "Laboratoire", []string{"BIOLOGISTE"}, nil, nil},
+		{"DEMO-FACTURATION", "Agent facturation DEMO", "demo.facturation@medcore.local", "Facturation", "Facturation", []string{"FACTURATION"}, nil, nil},
+		{"DEMO-RADIOLOGIE", "Radiologue DEMO", "demo.radiologie@medcore.local", "Radiologie", "Radiologie", []string{"RADIOLOGIE"}, nil, []string{"XRAY", "ULTRASOUND", "CT"}},
+		{"DEMO-MULTIROLE", "Facturation Caisse DEMO", "demo.multirole@medcore.local", "Facturation et caisse", "Facturation", []string{"FACTURATION", "CAISSIER"}, nil, nil},
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	if err != nil {
+		log.Fatal(err)
+	}
+	service := staff.NewService(db)
+	active := true
+	for _, item := range items {
+		u := auth.User{Name: item.name, Email: item.email, PasswordHash: string(hash), Role: "staff", IsActive: true}
+		if err = db.Where("email=?", item.email).FirstOrCreate(&u).Error; err != nil {
+			log.Fatal(err)
+		}
+		if err = db.Model(&u).Updates(map[string]any{"name": item.name, "role": "staff", "is_active": true}).Error; err != nil {
+			log.Fatal(err)
+		}
+		var profile staff.Profile
+		db.Where("user_id=?", u.ID).First(&profile)
+		_, err = service.Upsert(profile.ID, staff.UpsertRequest{UserID: u.ID, EmployeeCode: item.code, JobTitle: item.title, PrimaryDepartment: item.department, Active: &active, Functions: item.functions, Specialties: item.specialties, Capabilities: item.capabilities}, actor)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	log.Printf("Staff DEMO: %d profils idempotents", len(items))
 }
 
 func addDemoCoverage(db *gorm.DB, patientID, companyID uint, member string, rate float64, principal bool, validTo time.Time) {

@@ -16,6 +16,6 @@ func (Module) Register(app *application.Application) {
 		panic(e)
 	}
 	g := app.API()
-	g.Use(auth.Middleware(app.Config.JWTSecret))
+	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 	RegisterRoutes(g, NewHandler(NewService(app.DB)))
 }

@@ -19,7 +19,7 @@ func (Module) Register(app *application.Application) {
 	handler := application.Make[*Handler](app)
 
 	protected := app.API()
-	protected.Use(auth.Middleware(app.Config.JWTSecret))
+	protected.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 
 	RegisterRoutesWithHandler(protected, handler)
 

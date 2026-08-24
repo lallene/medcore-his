@@ -25,6 +25,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
+	"github.com/lallene/medcore-his/backend/internal/modules/staff"
 )
 
 func main() {
@@ -38,6 +39,11 @@ func main() {
 		&audit.AuditLog{},
 		&workflow.History{},
 		&auth.User{},
+		&staff.Profile{},
+		&staff.Function{},
+		&staff.Specialty{},
+		&staff.Capability{},
+		&staff.AuditEvent{},
 		&billing.Tariff{},
 		&billing.Invoice{},
 		&billing.InvoiceLine{},

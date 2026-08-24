@@ -9,36 +9,36 @@ import (
 func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 	consultations := router.Group("/consultations")
 	{
-		consultations.GET("/reasons", handler.GetReasons)
+		consultations.GET("/reasons", rbac.Permission("consultations.read"), handler.GetReasons)
 		consultations.POST("/reasons", rbac.Permission("consultations.references.manage"), handler.CreateReason)
 		consultations.PUT("/reasons/:id", rbac.Permission("consultations.references.manage"), handler.UpdateReason)
 		consultations.DELETE("/reasons/:id", rbac.Permission("consultations.references.manage"), handler.DeleteReason)
 
-		consultations.GET("/exams", handler.GetExams)
+		consultations.GET("/exams", rbac.Permission("consultations.read"), handler.GetExams)
 		consultations.POST("/exams", rbac.Permission("consultations.references.manage"), handler.CreateExam)
 		consultations.PUT("/exams/:id", rbac.Permission("consultations.references.manage"), handler.UpdateExam)
 		consultations.DELETE("/exams/:id", rbac.Permission("consultations.references.manage"), handler.DeleteExam)
 
-		consultations.POST("", handler.CreateConsultation)
-		consultations.GET("", handler.ListConsultations)
-		consultations.GET("/:id", handler.GetConsultation)
-		consultations.PUT("/:id", handler.UpdateConsultation)
-		consultations.PATCH("/:id/status", handler.UpdateStatus)
+		consultations.POST("", rbac.Permission("consultations.create"), handler.CreateConsultation)
+		consultations.GET("", rbac.Permission("consultations.read"), handler.ListConsultations)
+		consultations.GET("/:id", rbac.Permission("consultations.read"), handler.GetConsultation)
+		consultations.PUT("/:id", rbac.Permission("consultations.update"), handler.UpdateConsultation)
+		consultations.PATCH("/:id/status", rbac.Permission("consultations.update"), handler.UpdateStatus)
 
-		consultations.GET("/:id/sick-leave/pdf", handler.GenerateSickLeavePDF)
-		consultations.GET("/:id/exam-request/pdf", handler.GenerateExamRequestPDF)
-		consultations.GET("/:id/prescription/pdf", handler.GeneratePrescriptionPDF)
-		consultations.GET("/:id/report/pdf", handler.GenerateConsultationReportPDF)
-		consultations.GET("/:id/hospitalization/pdf", handler.GenerateHospitalizationPDF)
-		consultations.GET("/physical-exam-areas", handler.GetPhysicalExamAreas)
+		consultations.GET("/:id/sick-leave/pdf", rbac.Permission("consultations.read"), handler.GenerateSickLeavePDF)
+		consultations.GET("/:id/exam-request/pdf", rbac.Permission("consultations.read"), handler.GenerateExamRequestPDF)
+		consultations.GET("/:id/prescription/pdf", rbac.Permission("consultations.read"), handler.GeneratePrescriptionPDF)
+		consultations.GET("/:id/report/pdf", rbac.Permission("consultations.read"), handler.GenerateConsultationReportPDF)
+		consultations.GET("/:id/hospitalization/pdf", rbac.Permission("consultations.read"), handler.GenerateHospitalizationPDF)
+		consultations.GET("/physical-exam-areas", rbac.Permission("consultations.read"), handler.GetPhysicalExamAreas)
 
-		router.GET("/consultations/:id/soap", handler.GetSOAP)
-		router.PUT("/consultations/:id/soap", handler.UpsertSOAP)
+		router.GET("/consultations/:id/soap", rbac.Permission("consultations.read"), handler.GetSOAP)
+		router.PUT("/consultations/:id/soap", rbac.Permission("consultations.update"), handler.UpsertSOAP)
 
-		consultations.GET("/:id/specialty", handler.GetSpecialtyData)
-		consultations.PUT("/:id/specialty", handler.UpsertSpecialtyData)
+		consultations.GET("/:id/specialty", rbac.Permission("consultations.read"), handler.GetSpecialtyData)
+		consultations.PUT("/:id/specialty", rbac.Permission("consultations.update"), handler.UpsertSpecialtyData)
 	}
 
-	router.GET("/patients/:id/consultations", handler.GetPatientConsultations)
-	router.GET("/patients/:id/360", handler.GetPatient360)
+	router.GET("/patients/:id/consultations", rbac.Permission("consultations.read"), handler.GetPatientConsultations)
+	router.GET("/patients/:id/360", rbac.Permission("patients.360.read"), handler.GetPatient360)
 }

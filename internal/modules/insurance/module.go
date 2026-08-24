@@ -28,7 +28,7 @@ func (Module) Register(app *application.Application) {
 	Provider{}.Register(app)
 
 	protected := app.API()
-	protected.Use(auth.Middleware(app.Config.JWTSecret))
+	protected.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 
 	companyHandler := application.Make[*company.Handler](app)
 

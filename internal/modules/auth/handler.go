@@ -3,6 +3,7 @@ package auth
 import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lallene/medcore-his/backend/internal/core/openapi"
+	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
@@ -55,9 +56,14 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	permissions := permissionsForRole(user.Role)
+	functions, specialties, capabilities, err := staffIdentity(h.db, user.ID)
+	if err != nil {
+		response.Error(c, coreerrors.Internal("Erreur chargement profil personnel"))
+		return
+	}
+	permissions := rbac.EffectiveStaffPermissions(user.Role, functions, specialties)
 
-	token, err := GenerateToken(h.jwtSecret, user, permissions)
+	token, err := GenerateToken(h.jwtSecret, user, permissions, functions, specialties, capabilities)
 
 	if err != nil {
 		response.Error(c, coreerrors.Internal("Erreur génération token"))
@@ -67,30 +73,38 @@ func (h *Handler) Login(c *gin.Context) {
 	response.Success(c, "Connexion réussie", LoginResponse{
 		Token: token,
 		User: UserResponse{
-			ID:    user.ID,
-			Name:  user.Name,
-			Email: user.Email,
-			Role:  user.Role,
+			ID:           user.ID,
+			Name:         user.Name,
+			Email:        user.Email,
+			Role:         user.Role,
+			Functions:    functions,
+			Specialties:  specialties,
+			Capabilities: capabilities,
 		},
 	})
 }
 
-func permissionsForRole(role string) []string {
-	if role == "admin" {
-		return []string{"*"}
+func staffIdentity(db *gorm.DB, userID uint) ([]string, []string, []string, error) {
+	var profileID uint
+	if err := db.Table("staff_profiles").Select("id").Where("user_id=? AND active", userID).Scan(&profileID).Error; err != nil || profileID == 0 {
+		return []string{}, []string{}, []string{}, err
 	}
-
-	if role == "accueil" {
-		return []string{
-			"patients:read",
-			"patients:create",
-			"patients:update",
-			"hospitalizations.read",
-			"rooms.read",
-			"beds.read",
-			"bed_assignments.read",
-		}
+	load := func(table string) ([]string, error) {
+		var values []string
+		err := db.Table(table).Where("profile_id=? AND active", profileID).Order("code").Pluck("code", &values).Error
+		return values, err
 	}
-
-	return []string{}
+	functions, err := load("staff_functions")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	specialties, err := load("staff_specialties")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	capabilities, err := load("staff_capabilities")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return functions, specialties, capabilities, nil
 }

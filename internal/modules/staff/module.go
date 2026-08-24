@@ -1,4 +1,4 @@
-package receivables
+package staff
 
 import (
 	"github.com/lallene/medcore-his/backend/internal/core/application"
@@ -9,8 +9,8 @@ import (
 type Module struct{}
 
 func (Module) Register(app *application.Application) {
-	logger.Info("Chargement module", "module", "receivables")
-	app.MustMigrate(&Metadata{}, &FollowUp{})
+	logger.Info("Chargement module", "module", "staff")
+	app.MustMigrate(&Profile{}, &Function{}, &Specialty{}, &Capability{}, &AuditEvent{})
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 	RegisterRoutes(g, NewHandler(NewService(app.DB)))

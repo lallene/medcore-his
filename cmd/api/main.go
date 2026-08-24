@@ -18,6 +18,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
+	"github.com/lallene/medcore-his/backend/internal/modules/staff"
 )
 
 // @title						MedCore HIS API
@@ -39,6 +40,7 @@ func main() {
 	app := application.New()
 
 	app.RegisterModule(auth.Module{})
+	app.RegisterModule(staff.Module{})
 	app.RegisterModule(billing.Module{})
 	app.RegisterModule(receivables.Module{})
 	app.RegisterModule(insurance_receivables.Module{})

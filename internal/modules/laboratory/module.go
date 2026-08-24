@@ -13,6 +13,6 @@ func (Module) Register(app *application.Application) {
 	app.MustMigrate(&Order{}, &Sample{}, &Result{})
 	h := NewHandler(NewService(NewRepository(app.DB)))
 	p := app.API()
-	p.Use(auth.Middleware(app.Config.JWTSecret))
+	p.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 	RegisterRoutes(p, h)
 }

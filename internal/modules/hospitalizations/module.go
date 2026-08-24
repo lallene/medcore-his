@@ -21,6 +21,6 @@ func (Module) Register(app *application.Application) {
 	service := NewService(app.DB, repo)
 	handler := NewHandler(service)
 	protected := app.API()
-	protected.Use(auth.Middleware(app.Config.JWTSecret))
+	protected.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 	RegisterRoutes(protected, handler, NewBedHandler(service))
 }
