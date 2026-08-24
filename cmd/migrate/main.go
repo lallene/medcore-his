@@ -23,6 +23,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
+	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 )
 
 func main() {
@@ -41,6 +42,8 @@ func main() {
 		&billing.InvoiceLine{},
 		&billing.AuthorizationAllocation{},
 		&billing.Payment{},
+		&receivables.Metadata{},
+		&receivables.FollowUp{},
 		&cash.Register{},
 		&cash.Session{},
 		&cash.Receipt{},

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
+	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 	"gorm.io/gorm"
 )
 
@@ -305,6 +307,7 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 			}
 		}
 	}
+	seedDemoReceivables(db, user, billingService, cashService, open.ID)
 	var closed cash.Session
 	if db.Where("cash_register_id=? AND status=? AND opening_note=?", register.ID, cash.SessionClosed, "Session DEMO historique").First(&closed).Error != nil {
 		past := time.Now().AddDate(0, 0, -1)
@@ -312,6 +315,159 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 		closed = cash.Session{CashRegisterID: register.ID, OpenedBy: user, OpenedAt: past, OpeningFloat: 100000, OpeningNote: "Session DEMO historique", Status: cash.SessionClosed, ClosedBy: &user, ClosedAt: &past, ExpectedCashAmount: &expected, CountedCashAmount: &counted, CashDifference: &diff, ClosingNote: "Écart DEMO de recette"}
 		if e := db.Create(&closed).Error; e != nil {
 			log.Fatal(e)
+		}
+	}
+}
+
+func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service, cashService *cash.Service, sessionID uint) {
+	active := true
+	today := time.Now().Format("2006-01-02")
+	ensureTariff := func(code string, amount int64) billing.Tariff {
+		var tariff billing.Tariff
+		if err := db.Where("code=?", code).First(&tariff).Error; err == nil {
+			return tariff
+		}
+		created, err := billingService.CreateTariff(billing.TariffRequest{ActType: "CONSULTATION", Code: code, Label: "Tarif créance DEMO " + code, UnitPrice: amount, EffectiveFrom: today, IsActive: &active}, user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return *created
+	}
+	ensureInvoice := func(patientCode, marker string, tariff billing.Tariff, approvedRate *float64) billing.Invoice {
+		var patient patients.Patient
+		if err := db.Where("code_patient=?", patientCode).First(&patient).Error; err != nil {
+			log.Fatal(err)
+		}
+		var consultation consultations.Consultation
+		if err := db.Where("patient_id=? AND diagnosis=?", patient.ID, marker).First(&consultation).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			consultation = consultations.Consultation{PatientID: patient.ID, DoctorName: "Dr DEMO", Service: "Recouvrement", Status: consultations.ConsultationStatusCompleted, Diagnosis: marker, Observations: "Fixture LOT 13B", CreatedAt: time.Now()}
+			if err = db.Create(&consultation).Error; err != nil {
+				log.Fatal(err)
+			}
+		} else if err != nil {
+			log.Fatal(err)
+		}
+		if approvedRate != nil {
+			var coverageID uint
+			if err := db.Table("patient_coverages").Select("id").Where("patient_id=? AND is_active AND (valid_from IS NULL OR valid_from<=CURRENT_DATE) AND (valid_to IS NULL OR valid_to>=CURRENT_DATE)", patient.ID).Order("is_principal DESC,id").Scan(&coverageID).Error; err != nil || coverageID == 0 {
+				log.Fatalf("couverture active introuvable pour %s: %v", patientCode, err)
+			}
+			var authorizationID uint
+			db.Table("insurance_authorizations").Select("id").Where("patient_id=? AND patient_coverage_id=? AND reference_type='CONSULTATION' AND reference_id=? AND status<>'CANCELLED'", patient.ID, coverageID, consultation.ID).Scan(&authorizationID)
+			if authorizationID == 0 {
+				authorizationService := authorization.NewService(db)
+				requested := float64(tariff.UnitPrice)
+				created, err := authorizationService.Create(authorization.CreateRequest{PatientID: patient.ID, PatientCoverageID: coverageID, ReferenceType: "CONSULTATION", ReferenceID: consultation.ID, Service: consultation.Service, RequestedAmount: &requested, Comment: "PEC DEMO LOT 13B"}, user)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if _, err = authorizationService.Submit(created.ID, authorization.SubmitRequest{ExternalReference: "DEMO-PEC-LOT13B"}, user); err != nil {
+					log.Fatal(err)
+				}
+				if _, err = authorizationService.MarkPending(created.ID, user); err != nil {
+					log.Fatal(err)
+				}
+				if _, err = authorizationService.Decide(created.ID, authorization.DecisionRequest{Status: authorization.StatusApproved, ExternalReference: "DEMO-PEC-LOT13B", ExternalDecisionDate: time.Now().Format("2006-01-02"), ApprovedRate: approvedRate}, user); err != nil {
+					log.Fatal(err)
+				}
+			}
+		}
+		var line billing.InvoiceLine
+		if err := db.Where("billable_key=?", fmt.Sprintf("CONSULTATION:%d", consultation.ID)).First(&line).Error; err == nil {
+			var invoice billing.Invoice
+			if err = db.First(&invoice, line.InvoiceID).Error; err != nil {
+				log.Fatal(err)
+			}
+			return invoice
+		}
+		invoice, err := billingService.CreateInvoice(billing.CreateInvoiceRequest{PatientID: patient.ID, Lines: []billing.InvoiceLineRequest{{ActType: "CONSULTATION", ReferenceID: consultation.ID, TariffID: tariff.ID}}}, user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if invoice.CoveragePending {
+			log.Fatalf("fixture %s restée en attente de couverture", marker)
+		}
+		invoice, err = billingService.Issue(invoice.ID, user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return *invoice
+	}
+	payOnce := func(invoice billing.Invoice, amount int64, key string) {
+		var count int64
+		db.Model(&billing.Payment{}).Where("idempotency_key=?", key).Count(&count)
+		if count > 0 {
+			return
+		}
+		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: invoice.ID, Amount: amount, PaymentMethod: "CASH", IdempotencyKey: key}, user); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	twenty := ensureTariff("DEMO-REC-20K", 20000)
+	fifty := ensureTariff("DEMO-REC-50K", 50000)
+	// A/F: non assuré, 20 000, sans paiement, échéance future.
+	invoiceA := ensureInvoice("P-DEMO-001", "DEMO-RECEIVABLE-A-UNPAID", twenty, nil)
+	// B/E: non assuré, 20 000, payé 5 000, échéance dépassée.
+	invoiceB := ensureInvoice("P-DEMO-001", "DEMO-RECEIVABLE-B-PARTIAL", twenty, nil)
+	payOnce(invoiceB, 5000, "DEMO-RECEIVABLE-B-PAY-5K")
+	// C/I: assuré à 70 %, 50 000 / assurance 35 000 / patient 15 000 / payé 10 000.
+	rate70 := 70.0
+	invoiceC := ensureInvoice("P-DEMO-006", "DEMO-RECEIVABLE-C-INSURED", fifty, &rate70)
+	if invoiceC.InsuranceAmount != 35000 || invoiceC.PatientAmount != 15000 {
+		log.Fatalf("fixture assurée LOT 13B incohérente: assurance=%d patient=%d", invoiceC.InsuranceAmount, invoiceC.PatientAmount)
+	}
+	payOnce(invoiceC, 10000, "DEMO-RECEIVABLE-C-PAY-10K")
+	// D: facture entièrement payée, conservée dans Billing mais absente des créances actives.
+	invoiceD := ensureInvoice("P-DEMO-001", "DEMO-RECEIVABLE-D-PAID", twenty, nil)
+	payOnce(invoiceD, 20000, "DEMO-RECEIVABLE-D-PAY-20K")
+
+	var uninsured, insured billing.Invoice
+	db.Joins("JOIN patients p ON p.id=billing_invoices.patient_id").Where("p.code_patient=?", "P-DEMO-001").First(&uninsured)
+	db.Joins("JOIN patients p ON p.id=billing_invoices.patient_id").Where("p.code_patient=?", "P-DEMO-006").First(&insured)
+	if uninsured.ID > 0 && uninsured.Status == billing.InvoiceDraft {
+		updated, err := billingService.Issue(uninsured.ID, user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		uninsured = *updated
+	}
+	if insured.ID > 0 && insured.Status == billing.InvoiceIssued && insured.BalanceAmount > 1 {
+		amount := insured.BalanceAmount / 2
+		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: insured.ID, Amount: amount, PaymentMethod: "CASH", IdempotencyKey: "DEMO-RECEIVABLE-INSURED-PARTIAL"}, user); err != nil {
+			log.Fatal(err)
+		}
+	}
+	future, past := time.Now().AddDate(0, 0, 30), time.Now().AddDate(0, 0, -15)
+	for _, item := range []struct {
+		invoice billing.Invoice
+		due     time.Time
+	}{{invoiceA, future}, {invoiceB, past}, {invoiceC, past}} {
+		metadata := receivables.Metadata{InvoiceID: item.invoice.ID, PatientID: item.invoice.PatientID, DueDate: &item.due, UpdatedBy: user}
+		if err := db.Where("invoice_id=?", item.invoice.ID).FirstOrCreate(&metadata).Error; err != nil {
+			log.Fatal(err)
+		}
+	}
+	promised := int64(5000)
+	promise := receivables.FollowUp{InvoiceID: invoiceC.ID, PatientID: invoiceC.PatientID, ActionType: "PAYMENT_PROMISE", Note: "Engagement de paiement DEMO LOT 13B", PromisedPaymentDate: &future, PromisedAmount: &promised, CreatedBy: user, CreatedAt: time.Now()}
+	if err := db.Where("invoice_id=? AND action_type=? AND note=?", invoiceC.ID, promise.ActionType, promise.Note).FirstOrCreate(&promise).Error; err != nil {
+		log.Fatal(err)
+	}
+	if uninsured.ID > 0 {
+		m := receivables.Metadata{InvoiceID: uninsured.ID, PatientID: uninsured.PatientID, DueDate: &future, UpdatedBy: user}
+		if err := db.Where("invoice_id=?", uninsured.ID).FirstOrCreate(&m).Error; err != nil {
+			log.Fatal(err)
+		}
+	}
+	if insured.ID > 0 {
+		m := receivables.Metadata{InvoiceID: insured.ID, PatientID: insured.PatientID, DueDate: &past, UpdatedBy: user}
+		if err := db.Where("invoice_id=?", insured.ID).FirstOrCreate(&m).Error; err != nil {
+			log.Fatal(err)
+		}
+		promised := insured.BalanceAmount
+		follow := receivables.FollowUp{InvoiceID: insured.ID, PatientID: insured.PatientID, ActionType: "PAYMENT_PROMISE", Note: "Engagement de paiement DEMO", PromisedPaymentDate: &future, PromisedAmount: &promised, CreatedBy: user, CreatedAt: time.Now()}
+		if err := db.Where("invoice_id=? AND action_type=? AND note=?", insured.ID, follow.ActionType, follow.Note).FirstOrCreate(&follow).Error; err != nil {
+			log.Fatal(err)
 		}
 	}
 }
