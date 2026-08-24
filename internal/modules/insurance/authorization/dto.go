@@ -1,13 +1,14 @@
 package authorization
 
 type CreateRequest struct {
-	PatientID         uint     `json:"patientId" binding:"required"`
-	PatientCoverageID uint     `json:"patientCoverageId" binding:"required"`
-	ReferenceType     string   `json:"referenceType" binding:"required"`
-	ReferenceID       uint     `json:"referenceId" binding:"required"`
-	Service           string   `json:"service"`
-	RequestedAmount   *float64 `json:"requestedAmount"`
-	Comment           string   `json:"comment"`
+	PatientID         uint         `json:"patientId" binding:"required"`
+	PatientCoverageID uint         `json:"patientCoverageId" binding:"required"`
+	ReferenceType     string       `json:"referenceType" binding:"required"`
+	ReferenceID       uint         `json:"referenceId" binding:"required"`
+	Service           string       `json:"service"`
+	RequestedAmount   *float64     `json:"requestedAmount"`
+	Comment           string       `json:"comment"`
+	CoveredActs       []ActRequest `json:"coveredActs"`
 }
 
 type UpdateRequest struct {

@@ -156,6 +156,40 @@ func (s *Service) Create(req CreateRequest, userID uint) (*Response, error) {
 		if err := tx.Model(&item).Update("authorization_number", item.AuthorizationNumber).Error; err != nil {
 			return err
 		}
+		seen := map[string]bool{fmt.Sprintf("%s:%d", typ, req.ReferenceID): true}
+		for _, requestedAct := range req.CoveredActs {
+			coveredType, err := s.validateReference(tx, req.PatientID, requestedAct.ReferenceType, requestedAct.ReferenceID)
+			if err != nil {
+				return err
+			}
+			key := fmt.Sprintf("%s:%d", coveredType, requestedAct.ReferenceID)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			coveredLock := fnv.New64a()
+			_, _ = fmt.Fprintf(coveredLock, "%d:%d:%s:%d", req.PatientID, cov.ID, coveredType, requestedAct.ReferenceID)
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(coveredLock.Sum64())).Error; err != nil {
+				return err
+			}
+			var existing int64
+			if err := tx.Model(&InsuranceAuthorization{}).Where("patient_id=? AND patient_coverage_id=? AND reference_type=? AND reference_id=? AND status <> ?", req.PatientID, cov.ID, coveredType, requestedAct.ReferenceID, StatusCancelled).Count(&existing).Error; err != nil {
+				return err
+			}
+			if existing > 0 {
+				return coreerrors.Conflict("Un acte sélectionné possède déjà sa propre PEC")
+			}
+			if err := tx.Model(&InsuranceAuthorizationAct{}).Where("patient_id=? AND patient_coverage_id=? AND reference_type=? AND reference_id=? AND is_active", req.PatientID, cov.ID, coveredType, requestedAct.ReferenceID).Count(&existing).Error; err != nil {
+				return err
+			}
+			if existing > 0 {
+				return coreerrors.Conflict("Un acte sélectionné est déjà couvert par une PEC existante")
+			}
+			link := InsuranceAuthorizationAct{InsuranceAuthorizationID: item.ID, PatientID: item.PatientID, PatientCoverageID: cov.ID, ReferenceType: coveredType, ReferenceID: requestedAct.ReferenceID, RelationType: RelationCovered, IsActive: true, CreatedBy: userID}
+			if err := tx.Create(&link).Error; err != nil {
+				return coreerrors.Conflict("Un acte sélectionné est déjà couvert par une PEC existante")
+			}
+		}
 		createdID = item.ID
 		return s.timeline(tx, &item, "insurance_authorization_created", "Demande de PEC créée", userID)
 	})

@@ -31,6 +31,16 @@ func main() {
 	logger.Init(cfg.AppEnv)
 
 	db := database.Connect(cfg.DatabaseURL)
+	if len(os.Args) > 1 && os.Args[1] == "--demo-pharmacy" {
+		seedFullDemoPharmacy(db)
+		log.Println("Workflow Pharmacy DEMO exécuté avec succès")
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "--demo-full" {
+		seedFullDemo(db)
+		log.Println("Seed DEMO complet exécuté avec succès")
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--pharmacy-only" {
 		seedPharmacyCatalog(db)
 		log.Println("Seed DEMO pharmacie exécuté avec succès")

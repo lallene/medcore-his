@@ -230,6 +230,40 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 	}
 }
 
+func TestCreateAuthorizationWithCoveredActsIsAtomic(t *testing.T) {
+	db := authorizationDB(t)
+	for _, table := range []string{"pharmacy_dispensations", "pharmacy_vouchers", "pharmacy_stocks", "pharmacy_batches", "stock_movements"} {
+		if err := db.Exec("CREATE TABLE " + table + " (id bigserial primary key)").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := seedAuthorization(t, db)
+	exam := authorizationMedicalExam{Name: "Scanner multi-actes", Category: "Imagerie"}
+	db.Create(&exam)
+	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID}
+	db.Create(&imaging)
+	amount := 42000.0
+	created, err := NewService(db).Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: f.act.ID, RequestedAmount: &amount, CoveredActs: []ActRequest{{ReferenceType: "IMAGING", ReferenceID: imaging.ID}}}, 88)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.CoveredActs) != 1 || created.CoveredActs[0].ReferenceID != imaging.ID || created.CoveredActs[0].CreatedBy != 88 {
+		t.Fatalf("covered acts=%#v", created.CoveredActs)
+	}
+	foreign := authorizationImagingOrder{PatientID: f.other.ID, MedicalExamID: exam.ID}
+	db.Create(&foreign)
+	otherAct := authorizationConsultation{PatientID: f.patient.ID, Service: "ORL"}
+	db.Create(&otherAct)
+	if _, err = NewService(db).Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: otherAct.ID, CoveredActs: []ActRequest{{ReferenceType: "IMAGING", ReferenceID: foreign.ID}}}, 88); err == nil {
+		t.Fatal("foreign covered act accepted")
+	}
+	var leaked int64
+	db.Model(&InsuranceAuthorization{}).Where("reference_type='CONSULTATION' AND reference_id=?", otherAct.ID).Count(&leaked)
+	if leaked != 0 {
+		t.Fatalf("transaction was not rolled back: %d", leaked)
+	}
+}
+
 func TestAuthorizationUsesClinicalExamLabels(t *testing.T) {
 	db := authorizationDB(t)
 	f := seedAuthorization(t, db)
