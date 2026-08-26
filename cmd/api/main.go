@@ -21,6 +21,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/qa"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
+	"github.com/lallene/medcore-his/backend/internal/modules/ticketing"
 )
 
 // @title						MedCore HIS API
@@ -58,6 +59,7 @@ func main() {
 	app.RegisterModule(laboratory.Module{})
 	app.RegisterModule(imaging.Module{})
 	app.RegisterModule(qa.Module{})
+	app.RegisterModule(ticketing.Module{})
 	if err := organization.BackfillLegacy(app.DB, 1); err != nil {
 		panic(err)
 	}

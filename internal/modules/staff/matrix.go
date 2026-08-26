@@ -7,6 +7,7 @@ var FunctionLabels = map[string]string{
 	"SAGE_FEMME": "Sage-femme", "INFIRMIER": "Infirmier", "AIDE_SOIGNANT": "Aide-soignant",
 	"COMPTABLE": "Comptable", "CAISSIER": "Caissier / Caissière", "BIOLOGISTE": "Biologiste",
 	"FACTURATION": "Facturation", "RADIOLOGIE": "Radiologie",
+	"SUPPORT_AGENT": "Agent support", "SUPPORT_MANAGER": "Responsable support",
 }
 
 var SpecialtyLabels = map[string]string{

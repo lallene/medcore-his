@@ -28,6 +28,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/qa"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
+	"github.com/lallene/medcore-his/backend/internal/modules/ticketing"
 )
 
 func main() {
@@ -128,6 +129,14 @@ func main() {
 		&qa.Campaign{},
 		&qa.TestResult{},
 		&qa.Artifact{},
+		&ticketing.Category{},
+		&ticketing.SLA{},
+		&ticketing.Ticket{},
+		&ticketing.Comment{},
+		&ticketing.Attachment{},
+		&ticketing.Assignment{},
+		&ticketing.History{},
+		&ticketing.Notification{},
 	)
 
 	if err != nil {

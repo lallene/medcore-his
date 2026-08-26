@@ -25,6 +25,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
+	"github.com/lallene/medcore-his/backend/internal/modules/ticketing"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -159,8 +160,87 @@ func seedFullDemo(db *gorm.DB) {
 	seedDemoPharmacyWorkflow(db, adminID, consults["P-DEMO-007"])
 	seedDemoVoucherStates(db, adminID, consults)
 	seedDemoClinicalBilling(db, adminID)
+	seedDemoTicketing(db, adminID)
 	if err := organization.BackfillLegacy(db, adminID); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func seedDemoTicketing(db *gorm.DB, actor uint) {
+	if err := ticketing.NewService(db).SeedDefaults(actor); err != nil {
+		log.Fatal(err)
+	}
+	serviceID := func(code string) *uint {
+		var id uint
+		if err := db.Table("organization_services").Select("id").Where("code=?", code).Scan(&id).Error; err != nil || id == 0 {
+			log.Fatalf("service DEMO %s introuvable pour ticketing", code)
+		}
+		return &id
+	}
+	userID := func(email string) uint {
+		var id uint
+		db.Table("users").Select("id").Where("email=?", email).Scan(&id)
+		if id == 0 {
+			log.Fatalf("utilisateur DEMO %s introuvable pour ticketing", email)
+		}
+		return id
+	}
+	urg := serviceID("URG")
+	lab := serviceID("LAB")
+	cashier := userID("demo.caissiere@medcore.local")
+	generaliste := userID("demo.generaliste@medcore.local")
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, spec := range []struct {
+		reference, typ, title, status, priority string
+		serviceID                               *uint
+		requester                               uint
+		breached                                bool
+		reopened                                bool
+	}{
+		{"INC-DEMO-NEW", "APPLICATION", "Écran Consultation bloqué", "NEW", "P2", urg, cashier, false, false},
+		{"INC-DEMO-P1", "NETWORK", "Réseau indisponible aux urgences", "IN_PROGRESS", "P1", urg, cashier, false, false},
+		{"INC-DEMO-ASSIGNED", "HARDWARE", "Imprimante de caisse", "ASSIGNED", "P3", lab, generaliste, false, false},
+		{"INC-DEMO-WAITING", "APPLICATION", "Précision demandée sur un rapport", "WAITING_USER", "P3", lab, generaliste, false, false},
+		{"INC-DEMO-RESOLVED", "APPLICATION", "Affichage Patient 360", "RESOLVED", "P4", urg, cashier, false, true},
+		{"INC-DEMO-BREACHED", "APPLICATION", "SLA réponse dépassé DEMO", "IN_PROGRESS", "P1", urg, cashier, true, false},
+		{"REQ-DEMO-ACCESS", "ACCESS_REQUEST", "Accès au module laboratoire", "TRIAGED", "P3", lab, generaliste, false, false},
+	} {
+		t := ticketing.Ticket{
+			Reference: spec.reference, Type: spec.typ, CategoryCode: spec.typ, Title: spec.title,
+			Description: "Ticket déterministe du dataset DEMO MedCore.", Status: spec.status, Priority: spec.priority,
+			Impact: "SERVICE", Urgency: "MEDIUM", RequesterUserID: spec.requester, ServiceID: spec.serviceID,
+			ApplicationModule: "DEMO", PageURL: "/dashboard",
+			ResponseDueAt: now.Add(4 * time.Hour), ResolutionDueAt: now.Add(24 * time.Hour), CreatedAt: now, UpdatedAt: now,
+		}
+		if spec.breached {
+			t.ResponseDueAt = now.Add(-2 * time.Hour)
+			t.ResolutionDueAt = now.Add(-time.Hour)
+		}
+		if spec.status == "RESOLVED" || spec.reopened {
+			resolved := now.Add(-time.Hour)
+			t.ResolvedAt = &resolved
+			t.ResolutionSummary = "Résolution DEMO validée"
+			t.ResolutionCode = "FIXED"
+		}
+		if err := db.Where("reference=?", spec.reference).Attrs(t).FirstOrCreate(&t).Error; err != nil {
+			log.Fatal(err)
+		}
+		if err := db.Model(&t).Updates(map[string]any{
+			"service_id": spec.serviceID, "requester_user_id": spec.requester, "status": spec.status, "priority": spec.priority,
+			"response_due_at": t.ResponseDueAt, "resolution_due_at": t.ResolutionDueAt,
+		}).Error; err != nil {
+			log.Fatal(err)
+		}
+		h := ticketing.History{TicketID: t.ID, ActorUserID: actor, EventType: "CREATED", NewValue: t.Reference, CreatedAt: t.CreatedAt}
+		if err := db.Where("ticket_id=? AND event_type='CREATED'", t.ID).FirstOrCreate(&h).Error; err != nil {
+			log.Fatal(err)
+		}
+		if spec.reopened {
+			reopen := ticketing.History{TicketID: t.ID, ActorUserID: actor, EventType: "REOPENED", Field: "status", OldValue: "RESOLVED", NewValue: "REOPENED", CreatedAt: now}
+			if err := db.Where("ticket_id=? AND event_type='REOPENED'", t.ID).FirstOrCreate(&reopen).Error; err != nil {
+				log.Fatal(err)
+			}
+		}
 	}
 }
 
@@ -217,28 +297,32 @@ func seedDemoStaff(db *gorm.DB, actor uint) {
 	type spec struct {
 		code, name, email, title, department string
 		functions, specialties, capabilities []string
+		serviceCode                          string
 	}
 	items := []spec{
-		{"DEMO-URGENTISTE", "Dr Urgentiste DEMO", "demo.urgentiste@medcore.local", "Urgentiste", "Urgences", nil, []string{"URGENCES"}, nil},
-		{"DEMO-GENERALISTE", "Dr Généraliste DEMO", "demo.generaliste@medcore.local", "Médecin généraliste", "Médecine générale", nil, []string{"MEDECINE_GENERALE"}, nil},
-		{"DEMO-GYNECOLOGUE", "Dr Gynécologue DEMO", "demo.gynecologue@medcore.local", "Gynécologue", "Gynécologie", nil, []string{"GYNECOLOGIE"}, nil},
-		{"DEMO-CARDIOLOGUE", "Dr Cardiologue DEMO", "demo.cardiologue@medcore.local", "Cardiologue", "Cardiologie", nil, []string{"CARDIOLOGIE"}, nil},
-		{"DEMO-ORL", "Dr ORL DEMO", "demo.orl@medcore.local", "ORL", "ORL", nil, []string{"ORL"}, nil},
-		{"DEMO-DIABETOLOGUE", "Dr Diabétologue DEMO", "demo.diabetologue@medcore.local", "Diabétologue", "Diabétologie", nil, []string{"DIABETOLOGIE"}, nil},
-		{"DEMO-NEUROLOGUE", "Dr Neurologue DEMO", "demo.neurologue@medcore.local", "Neurologue", "Neurologie", nil, []string{"NEUROLOGIE"}, nil},
-		{"DEMO-RHUMATOLOGUE", "Dr Rhumatologue DEMO", "demo.rhumatologue@medcore.local", "Rhumatologue", "Rhumatologie", nil, []string{"RHUMATOLOGIE"}, nil},
-		{"DEMO-CHIRURGIEN", "Dr Chirurgien DEMO", "demo.chirurgien@medcore.local", "Chirurgien", "Chirurgie", nil, []string{"CHIRURGIE"}, nil},
-		{"DEMO-SAGEFEMME", "Sage-femme DEMO", "demo.sagefemme@medcore.local", "Sage-femme", "Maternité", []string{"SAGE_FEMME"}, nil, nil},
-		{"DEMO-INFIRMIER", "Infirmier DEMO", "demo.infirmier@medcore.local", "Infirmier", "Soins", []string{"INFIRMIER"}, nil, nil},
-		{"DEMO-AIDESOIGNANT", "Aide-soignant DEMO", "demo.aidesoignant@medcore.local", "Aide-soignant", "Soins", []string{"AIDE_SOIGNANT"}, nil, nil},
-		{"DEMO-COMPTABLE", "Comptable DEMO", "demo.comptable@medcore.local", "Comptable", "Comptabilité", []string{"COMPTABLE"}, nil, nil},
-		{"DEMO-DIRECTEUR-ADMIN", "Directeur administratif DEMO", "demo.directeur.admin@medcore.local", "Directeur administratif", "Administration", []string{"DIRECTEUR_ADMINISTRATIF"}, nil, nil},
-		{"DEMO-DIRECTEUR-MEDICAL", "Dr Directeur médical DEMO", "demo.directeur.medical@medcore.local", "Directeur médical", "ORL", []string{"DIRECTEUR_MEDICAL"}, []string{"ORL", "MEDECINE_GENERALE"}, nil},
-		{"DEMO-CAISSIERE", "Caissière DEMO", "demo.caissiere@medcore.local", "Caissière", "Caisse", []string{"CAISSIER"}, nil, nil},
-		{"DEMO-BIOLOGISTE", "Biologiste DEMO", "demo.biologiste@medcore.local", "Biologiste", "Laboratoire", []string{"BIOLOGISTE"}, nil, nil},
-		{"DEMO-FACTURATION", "Agent facturation DEMO", "demo.facturation@medcore.local", "Facturation", "Facturation", []string{"FACTURATION"}, nil, nil},
-		{"DEMO-RADIOLOGIE", "Radiologue DEMO", "demo.radiologie@medcore.local", "Radiologie", "Radiologie", []string{"RADIOLOGIE"}, nil, []string{"XRAY", "ULTRASOUND", "CT"}},
-		{"DEMO-MULTIROLE", "Facturation Caisse DEMO", "demo.multirole@medcore.local", "Facturation et caisse", "Facturation", []string{"FACTURATION", "CAISSIER"}, nil, nil},
+		{"DEMO-URGENTISTE", "Dr Urgentiste DEMO", "demo.urgentiste@medcore.local", "Urgentiste", "Urgences", nil, []string{"URGENCES"}, nil, ""},
+		{"DEMO-GENERALISTE", "Dr Généraliste DEMO", "demo.generaliste@medcore.local", "Médecin généraliste", "Médecine générale", nil, []string{"MEDECINE_GENERALE"}, nil, ""},
+		{"DEMO-GYNECOLOGUE", "Dr Gynécologue DEMO", "demo.gynecologue@medcore.local", "Gynécologue", "Gynécologie", nil, []string{"GYNECOLOGIE"}, nil, ""},
+		{"DEMO-CARDIOLOGUE", "Dr Cardiologue DEMO", "demo.cardiologue@medcore.local", "Cardiologue", "Cardiologie", nil, []string{"CARDIOLOGIE"}, nil, ""},
+		{"DEMO-ORL", "Dr ORL DEMO", "demo.orl@medcore.local", "ORL", "ORL", nil, []string{"ORL"}, nil, ""},
+		{"DEMO-DIABETOLOGUE", "Dr Diabétologue DEMO", "demo.diabetologue@medcore.local", "Diabétologue", "Diabétologie", nil, []string{"DIABETOLOGIE"}, nil, ""},
+		{"DEMO-NEUROLOGUE", "Dr Neurologue DEMO", "demo.neurologue@medcore.local", "Neurologue", "Neurologie", nil, []string{"NEUROLOGIE"}, nil, ""},
+		{"DEMO-RHUMATOLOGUE", "Dr Rhumatologue DEMO", "demo.rhumatologue@medcore.local", "Rhumatologue", "Rhumatologie", nil, []string{"RHUMATOLOGIE"}, nil, ""},
+		{"DEMO-CHIRURGIEN", "Dr Chirurgien DEMO", "demo.chirurgien@medcore.local", "Chirurgien", "Chirurgie", nil, []string{"CHIRURGIE"}, nil, ""},
+		{"DEMO-SAGEFEMME", "Sage-femme DEMO", "demo.sagefemme@medcore.local", "Sage-femme", "Maternité", []string{"SAGE_FEMME"}, nil, nil, ""},
+		{"DEMO-INFIRMIER", "Infirmier DEMO", "demo.infirmier@medcore.local", "Infirmier", "Soins", []string{"INFIRMIER"}, nil, nil, ""},
+		{"DEMO-AIDESOIGNANT", "Aide-soignant DEMO", "demo.aidesoignant@medcore.local", "Aide-soignant", "Soins", []string{"AIDE_SOIGNANT"}, nil, nil, ""},
+		{"DEMO-COMPTABLE", "Comptable DEMO", "demo.comptable@medcore.local", "Comptable", "Comptabilité", []string{"COMPTABLE"}, nil, nil, ""},
+		{"DEMO-DIRECTEUR-ADMIN", "Directeur administratif DEMO", "demo.directeur.admin@medcore.local", "Directeur administratif", "Administration", []string{"DIRECTEUR_ADMINISTRATIF"}, nil, nil, ""},
+		{"DEMO-DIRECTEUR-MEDICAL", "Dr Directeur médical DEMO", "demo.directeur.medical@medcore.local", "Directeur médical", "ORL", []string{"DIRECTEUR_MEDICAL"}, []string{"ORL", "MEDECINE_GENERALE"}, nil, ""},
+		{"DEMO-CAISSIERE", "Caissière DEMO", "demo.caissiere@medcore.local", "Caissière", "Caisse", []string{"CAISSIER"}, nil, nil, ""},
+		{"DEMO-BIOLOGISTE", "Biologiste DEMO", "demo.biologiste@medcore.local", "Biologiste", "Laboratoire", []string{"BIOLOGISTE"}, nil, nil, ""},
+		{"DEMO-FACTURATION", "Agent facturation DEMO", "demo.facturation@medcore.local", "Facturation", "Facturation", []string{"FACTURATION"}, nil, nil, ""},
+		{"DEMO-RADIOLOGIE", "Radiologue DEMO", "demo.radiologie@medcore.local", "Radiologie", "Radiologie", []string{"RADIOLOGIE"}, nil, []string{"XRAY", "ULTRASOUND", "CT"}, ""},
+		{"DEMO-MULTIROLE", "Facturation Caisse DEMO", "demo.multirole@medcore.local", "Facturation et caisse", "Facturation", []string{"FACTURATION", "CAISSIER"}, nil, nil, ""},
+		{"DEMO-SUPPORT-AGENT", "Agent support DEMO", "demo.support.agent@medcore.local", "Agent support", "Urgences", []string{"SUPPORT_AGENT"}, nil, nil, "URG"},
+		{"DEMO-SUPPORT-MANAGER", "Responsable support DEMO", "demo.support.manager@medcore.local", "Responsable support", "Administration", []string{"SUPPORT_MANAGER"}, nil, nil, "ADMIN"},
+		{"DEMO-SUPPORT-NOSERVICE", "Support sans service DEMO", "demo.support.noservice@medcore.local", "Support sans service", "", []string{"SUPPORT_AGENT"}, nil, nil, ""},
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 	if err != nil {
@@ -256,7 +340,15 @@ func seedDemoStaff(db *gorm.DB, actor uint) {
 		}
 		var profile staff.Profile
 		db.Where("user_id=?", u.ID).First(&profile)
-		_, err = service.Upsert(profile.ID, staff.UpsertRequest{UserID: u.ID, EmployeeCode: item.code, JobTitle: item.title, PrimaryDepartment: item.department, Active: &active, Functions: item.functions, Specialties: item.specialties, Capabilities: item.capabilities}, actor)
+		req := staff.UpsertRequest{UserID: u.ID, EmployeeCode: item.code, JobTitle: item.title, PrimaryDepartment: item.department, Active: &active, Functions: item.functions, Specialties: item.specialties, Capabilities: item.capabilities}
+		if item.serviceCode != "" {
+			var sid uint
+			if err = db.Table("organization_services").Select("id").Where("code=?", item.serviceCode).Scan(&sid).Error; err != nil || sid == 0 {
+				log.Fatalf("service %s introuvable pour %s", item.serviceCode, item.email)
+			}
+			req.PrimaryServiceID = &sid
+		}
+		_, err = service.Upsert(profile.ID, req, actor)
 		if err != nil {
 			log.Fatal(err)
 		}
