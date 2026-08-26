@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -10,6 +11,11 @@ import (
 )
 
 func Permission(permission string) gin.HandlerFunc {
+	return AnyPermission(permission)
+}
+
+// AnyPermission autorise la requête dès qu'une des permissions listées (ou *) est présente.
+func AnyPermission(required ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawPermissions, exists := c.Get(ContextPermissions)
 
@@ -34,12 +40,19 @@ func Permission(permission string) gin.HandlerFunc {
 		}
 
 		for _, item := range permissions {
-			if item == permission || item == "*" {
+			if item == "*" {
 				c.Next()
 				return
 			}
+			for _, permission := range required {
+				if item == permission {
+					c.Next()
+					return
+				}
+			}
 		}
 
+		wanted := strings.Join(required, ",")
 		response.Error(
 			c,
 			coreerrors.New(
@@ -47,7 +60,7 @@ func Permission(permission string) gin.HandlerFunc {
 				"PERMISSION_DENIED",
 				"Permission refusée",
 				map[string]string{
-					"required": permission,
+					"required": wanted,
 				},
 			),
 		)
