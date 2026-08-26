@@ -23,6 +23,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/laboratory"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/qa"
@@ -137,6 +138,9 @@ func main() {
 		&ticketing.Assignment{},
 		&ticketing.History{},
 		&ticketing.Notification{},
+		&patient_queue.Appointment{},
+		&patient_queue.Ticket{},
+		&patient_queue.History{},
 	)
 
 	if err != nil {

@@ -21,6 +21,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/laboratory"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
@@ -161,6 +162,7 @@ func seedFullDemo(db *gorm.DB) {
 	seedDemoVoucherStates(db, adminID, consults)
 	seedDemoClinicalBilling(db, adminID)
 	seedDemoTicketing(db, adminID)
+	seedDemoPatientQueue(db, adminID, patientsByCode)
 	if err := organization.BackfillLegacy(db, adminID); err != nil {
 		log.Fatal(err)
 	}
@@ -244,6 +246,96 @@ func seedDemoTicketing(db *gorm.DB, actor uint) {
 	}
 }
 
+func seedDemoPatientQueue(db *gorm.DB, actor uint, patientsByCode map[string]*patients.Patient) {
+	serviceID := func(code string) uint {
+		var id uint
+		if err := db.Table("organization_services").Select("id").Where("code=?", code).Scan(&id).Error; err != nil || id == 0 {
+			log.Fatalf("service DEMO %s introuvable pour patient_queue", code)
+		}
+		return id
+	}
+	userID := func(email string) uint {
+		var id uint
+		db.Table("users").Select("id").Where("email=?", email).Scan(&id)
+		if id == 0 {
+			log.Fatalf("utilisateur DEMO %s introuvable pour patient_queue", email)
+		}
+		return id
+	}
+	urg := serviceID("URG")
+	doc := userID("demo.generaliste@medcore.local")
+	nurse := userID("demo.infirmier@medcore.local")
+	accueil := userID("demo.accueil@medcore.local")
+	now := time.Now().UTC().Truncate(time.Minute)
+
+	mkAppt := func(ref string, patientCode string, scheduled time.Time, status string) patient_queue.Appointment {
+		p := patientsByCode[patientCode]
+		a := patient_queue.Appointment{
+			PatientID: p.ID, ServiceID: urg, ExpectedDoctorID: &doc, ScheduledAt: scheduled,
+			Reason: "RDV DEMO " + ref, Status: status, CreatedBy: actor, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := db.Where("reason=?", a.Reason).Attrs(a).FirstOrCreate(&a).Error; err != nil {
+			log.Fatal(err)
+		}
+		_ = db.Model(&a).Updates(map[string]any{"status": status, "scheduled_at": scheduled, "service_id": urg, "expected_doctor_id": doc}).Error
+		return a
+	}
+
+	// On-time appointment (scheduled, not yet checked in)
+	mkAppt("ONTIME", "P-DEMO-001", now.Add(10*time.Minute), patient_queue.ApptScheduled)
+	// Late appointment still scheduled
+	mkAppt("LATE", "P-DEMO-002", now.Add(-40*time.Minute), patient_queue.ApptScheduled)
+
+	upsertTicket := func(ref, patientCode, source, stage, status, priority string, apptID *uint, triageBy, doctorBy *uint) {
+		p := patientsByCode[patientCode]
+		arrived := now.Add(-45 * time.Minute)
+		checked := now.Add(-40 * time.Minute)
+		t := patient_queue.Ticket{
+			Reference: ref, PatientID: p.ID, AppointmentID: apptID, Source: source, ServiceID: urg,
+			ExpectedDoctorID: &doc, ArrivedAt: arrived, CheckedInAt: checked, Stage: stage, Status: status,
+			Priority: priority, FinanceStatus: patient_queue.FinanceClear, IdentityConfirmed: true,
+			Version: 1, CreatedBy: accueil, CreatedAt: checked, UpdatedAt: now,
+		}
+		if triageBy != nil {
+			at := now.Add(-25 * time.Minute)
+			t.TriageTakenBy = triageBy
+			t.TriageTakenAt = &at
+			if stage == patient_queue.StageWaitingDoctor || stage == patient_queue.StageDoctorInProgress || stage == patient_queue.StageCompleted {
+				done := now.Add(-20 * time.Minute)
+				t.TriageCompletedBy = triageBy
+				t.TriageCompletedAt = &done
+			}
+		}
+		if doctorBy != nil {
+			at := now.Add(-10 * time.Minute)
+			t.DoctorTakenBy = doctorBy
+			t.DoctorTakenAt = &at
+		}
+		if err := db.Where("reference=?", ref).Attrs(t).FirstOrCreate(&t).Error; err != nil {
+			log.Fatal(err)
+		}
+		_ = db.Model(&t).Updates(map[string]any{
+			"stage": stage, "status": status, "priority": priority, "service_id": urg,
+			"patient_id": p.ID, "source": source, "appointment_id": apptID,
+		}).Error
+		h := patient_queue.History{TicketID: t.ID, ActorUserID: actor, FromStage: patient_queue.StageReception, ToStage: stage, EventType: "SEED", CreatedAt: now}
+		_ = db.Where("ticket_id=? AND event_type='SEED'", t.ID).FirstOrCreate(&h).Error
+		if apptID != nil {
+			_ = db.Model(&patient_queue.Appointment{}).Where("id=?", *apptID).Updates(map[string]any{
+				"status": patient_queue.ApptCheckedIn, "queue_ticket_id": t.ID, "checked_in_at": checked,
+			}).Error
+		}
+	}
+
+	walkAppt := mkAppt("CHECKED", "P-DEMO-003", now.Add(-30*time.Minute), patient_queue.ApptCheckedIn)
+	upsertTicket("Q-DEMO-WAITING-TRIAGE", "P-DEMO-003", patient_queue.SourceAppointment, patient_queue.StageWaitingTriage, patient_queue.StatusActive, patient_queue.PriorityNormal, &walkAppt.ID, nil, nil)
+	upsertTicket("Q-DEMO-TRIAGE", "P-DEMO-004", patient_queue.SourceWalkIn, patient_queue.StageTriageInProgress, patient_queue.StatusActive, patient_queue.PriorityHigh, nil, &nurse, nil)
+	upsertTicket("Q-DEMO-WAITING-DOC", "P-DEMO-005", patient_queue.SourceWalkIn, patient_queue.StageWaitingDoctor, patient_queue.StatusActive, patient_queue.PriorityUrgent, nil, &nurse, nil)
+	upsertTicket("Q-DEMO-DOCTOR", "P-DEMO-006", patient_queue.SourceWalkIn, patient_queue.StageDoctorInProgress, patient_queue.StatusActive, patient_queue.PriorityNormal, nil, &nurse, &doc)
+	upsertTicket("Q-DEMO-DONE", "P-DEMO-010", patient_queue.SourceAppointment, patient_queue.StageCompleted, patient_queue.StatusCompleted, patient_queue.PriorityLow, nil, &nurse, &doc)
+	log.Printf("Patient queue DEMO: scénarios déterministes créés")
+}
+
 func seedDemoClinicalBilling(db *gorm.DB, actor uint) {
 	service := billing.NewService(db)
 	type billable struct {
@@ -301,7 +393,7 @@ func seedDemoStaff(db *gorm.DB, actor uint) {
 	}
 	items := []spec{
 		{"DEMO-URGENTISTE", "Dr Urgentiste DEMO", "demo.urgentiste@medcore.local", "Urgentiste", "Urgences", nil, []string{"URGENCES"}, nil, ""},
-		{"DEMO-GENERALISTE", "Dr Généraliste DEMO", "demo.generaliste@medcore.local", "Médecin généraliste", "Médecine générale", nil, []string{"MEDECINE_GENERALE"}, nil, ""},
+		{"DEMO-GENERALISTE", "Dr Généraliste DEMO", "demo.generaliste@medcore.local", "Médecin généraliste", "Médecine générale", nil, []string{"MEDECINE_GENERALE"}, nil, "URG"},
 		{"DEMO-GYNECOLOGUE", "Dr Gynécologue DEMO", "demo.gynecologue@medcore.local", "Gynécologue", "Gynécologie", nil, []string{"GYNECOLOGIE"}, nil, ""},
 		{"DEMO-CARDIOLOGUE", "Dr Cardiologue DEMO", "demo.cardiologue@medcore.local", "Cardiologue", "Cardiologie", nil, []string{"CARDIOLOGIE"}, nil, ""},
 		{"DEMO-ORL", "Dr ORL DEMO", "demo.orl@medcore.local", "ORL", "ORL", nil, []string{"ORL"}, nil, ""},
@@ -310,8 +402,9 @@ func seedDemoStaff(db *gorm.DB, actor uint) {
 		{"DEMO-RHUMATOLOGUE", "Dr Rhumatologue DEMO", "demo.rhumatologue@medcore.local", "Rhumatologue", "Rhumatologie", nil, []string{"RHUMATOLOGIE"}, nil, ""},
 		{"DEMO-CHIRURGIEN", "Dr Chirurgien DEMO", "demo.chirurgien@medcore.local", "Chirurgien", "Chirurgie", nil, []string{"CHIRURGIE"}, nil, ""},
 		{"DEMO-SAGEFEMME", "Sage-femme DEMO", "demo.sagefemme@medcore.local", "Sage-femme", "Maternité", []string{"SAGE_FEMME"}, nil, nil, ""},
-		{"DEMO-INFIRMIER", "Infirmier DEMO", "demo.infirmier@medcore.local", "Infirmier", "Soins", []string{"INFIRMIER"}, nil, nil, ""},
-		{"DEMO-AIDESOIGNANT", "Aide-soignant DEMO", "demo.aidesoignant@medcore.local", "Aide-soignant", "Soins", []string{"AIDE_SOIGNANT"}, nil, nil, ""},
+		{"DEMO-AIDESOIGNANT", "Aide-soignant DEMO", "demo.aidesoignant@medcore.local", "Aide-soignant", "Soins", []string{"AIDE_SOIGNANT"}, nil, nil, "URG"},
+		{"DEMO-ACCUEIL", "Accueil DEMO", "demo.accueil@medcore.local", "Agent d'accueil", "Accueil", []string{"ACCUEIL"}, nil, nil, "URG"},
+		{"DEMO-INFIRMIER", "Infirmier DEMO", "demo.infirmier@medcore.local", "Infirmier", "Soins", []string{"INFIRMIER"}, nil, nil, "URG"},
 		{"DEMO-COMPTABLE", "Comptable DEMO", "demo.comptable@medcore.local", "Comptable", "Comptabilité", []string{"COMPTABLE"}, nil, nil, ""},
 		{"DEMO-DIRECTEUR-ADMIN", "Directeur administratif DEMO", "demo.directeur.admin@medcore.local", "Directeur administratif", "Administration", []string{"DIRECTEUR_ADMINISTRATIF"}, nil, nil, ""},
 		{"DEMO-DIRECTEUR-MEDICAL", "Dr Directeur médical DEMO", "demo.directeur.medical@medcore.local", "Directeur médical", "ORL", []string{"DIRECTEUR_MEDICAL"}, []string{"ORL", "MEDECINE_GENERALE"}, nil, ""},
