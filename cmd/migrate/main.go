@@ -25,6 +25,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
+	"github.com/lallene/medcore-his/backend/internal/modules/qa"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
 )
@@ -124,6 +125,9 @@ func main() {
 		&laboratory.Result{},
 		&imaging.Order{},
 		&imaging.Report{},
+		&qa.Campaign{},
+		&qa.TestResult{},
+		&qa.Artifact{},
 	)
 
 	if err != nil {

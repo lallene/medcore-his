@@ -18,6 +18,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
+	"github.com/lallene/medcore-his/backend/internal/modules/qa"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
 )
@@ -56,6 +57,7 @@ func main() {
 	app.RegisterModule(hospitalizations.Module{})
 	app.RegisterModule(laboratory.Module{})
 	app.RegisterModule(imaging.Module{})
+	app.RegisterModule(qa.Module{})
 	if err := organization.BackfillLegacy(app.DB, 1); err != nil {
 		panic(err)
 	}
