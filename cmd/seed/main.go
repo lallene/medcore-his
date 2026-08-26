@@ -226,7 +226,16 @@ func seedAdmin(db *gorm.DB) {
 		IsActive:     true,
 	}
 
-	db.Where(auth.User{Email: user.Email}).FirstOrCreate(&user)
+	result := db.Where("email = ?", user.Email).Assign(auth.User{
+		Name:         user.Name,
+		PasswordHash: user.PasswordHash,
+		Role:         user.Role,
+		IsActive:     user.IsActive,
+	}).FirstOrCreate(&user)
+
+	if result.Error != nil {
+		log.Fatalf("Erreur seed admin: %v", result.Error)
+	}
 }
 
 func seedPatients(
