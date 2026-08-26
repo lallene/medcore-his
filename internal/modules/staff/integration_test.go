@@ -2,11 +2,6 @@ package staff
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/lallene/medcore-his/backend/internal/core/rbac"
-	"github.com/lallene/medcore-his/backend/internal/modules/auth"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +10,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/lallene/medcore-his/backend/internal/core/rbac"
+	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func staffDSN(dsn, schema string) string {
@@ -48,7 +50,17 @@ func staffDB(t *testing.T) *gorm.DB {
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(10)
 	t.Cleanup(func() { sqlDB.Close(); admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`) })
-	if e = db.AutoMigrate(&auth.User{}, &Profile{}, &Function{}, &Specialty{}, &Capability{}, &AuditEvent{}); e != nil {
+	if e = db.AutoMigrate(
+		&auth.User{},
+		&organization.Department{},
+		&organization.Service{},
+		&Profile{},
+		&organization.StaffServiceAssignment{},
+		&Function{},
+		&Specialty{},
+		&Capability{},
+		&AuditEvent{},
+	); e != nil {
 		t.Fatal(e)
 	}
 	return db
