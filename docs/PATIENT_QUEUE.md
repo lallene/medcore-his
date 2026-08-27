@@ -1,4 +1,4 @@
-# LOT 19 — Patient Queue / Clinical Flow
+# LOT 19 / 20 — Patient Queue / Clinical Flow / Doctor Worklist
 
 ## Architecture
 
@@ -29,5 +29,30 @@ contrainte davantage (limite documentée).
 
 Fenêtre retard RDV : constante fixe ±15 minutes (`AppointmentWindow`).
 
+## LOT 20 — Doctor Worklist / visibilité médecin
+
+Acteur **doctor-only** (`queue.doctor.read` sans `queue.reception.read` /
+`queue.triage.read` / `queue.read.all` / `*`) :
+
+- Visible : `WAITING_DOCTOR`, `DOCTOR_IN_PROGRESS` (+ `COMPLETED` si demandé
+  explicitement sur List/Get)
+- Non visible : `RECEPTION`, `WAITING_TRIAGE`, `TRIAGE_IN_PROGRESS`
+
+Appliqué côté backend sur `GET /tickets` (List force les stages post-triage ;
+filtre stage pré-triage → **400**) et `GET /tickets/:id` (pré-triage → **404**,
+pas de fuite d'existence). Accueil / Infirmier / `queue.read.all` inchangés.
+
+`GET /api/queue/doctor/worklist` expose uniquement `WAITING_DOCTOR` et
+`DOCTOR_IN_PROGRESS` (filtre serveur). Les étapes triage ne sont jamais retournées.
+
+Enrichissement read-only depuis les modèles existants :
+- `patients` (identité, âge, sexe, téléphone)
+- `vital_signs` (résumé + drapeaux anormaux)
+- `allergies` / `medical_histories` (panneau détail)
+- motif RDV (`patient_queue_appointments.reason`) ou historique check-in walk-in
+
+Prise en charge atomique inchangée (`doctor_taken_by IS NULL` + `RowsAffected`).
+Clôture via `POST /tickets/:id/complete` (workflow LOT 19).
+
 Frontend Design System : `/queue`, `/queue/reception`, `/queue/triage`,
-`/queue/doctor`, `/queue/[id]`.
+`/queue/doctor` (worklist + panneau clinique), `/queue/[id]`.

@@ -71,15 +71,62 @@ type Filter struct {
 	Limit    int
 }
 
+// VitalSummary is a read-only projection of existing vital_signs (no duplication).
+type VitalSummary struct {
+	ID               uint     `json:"id"`
+	TemperatureC     *float64 `json:"temperatureC,omitempty"`
+	SystolicBP       *int     `json:"systolicBp,omitempty"`
+	DiastolicBP      *int     `json:"diastolicBp,omitempty"`
+	HeartRate        *int     `json:"heartRate,omitempty"`
+	OxygenSaturation *float64 `json:"oxygenSaturation,omitempty"`
+	WeightKg         *float64 `json:"weightKg,omitempty"`
+	HeightCm         *float64 `json:"heightCm,omitempty"`
+	MeasuredAt       *string  `json:"measuredAt,omitempty"`
+	AbnormalTemp     bool     `json:"abnormalTemp"`
+	AbnormalBP       bool     `json:"abnormalBp"`
+	AbnormalHR       bool     `json:"abnormalHr"`
+	AbnormalSpO2     bool     `json:"abnormalSpo2"`
+}
+
+type ClinicalSnippet struct {
+	Label    string `json:"label"`
+	Severity string `json:"severity,omitempty"`
+}
+
 type TicketDTO struct {
 	Ticket
 	PatientCode        string  `json:"patientCode"`
 	PatientName        string  `json:"patientName"`
+	PatientSex         string  `json:"patientSex,omitempty"`
+	PatientAgeYears    *int    `json:"patientAgeYears,omitempty"`
+	PatientDob         *string `json:"patientDob,omitempty"`
+	PatientPhone       string  `json:"patientPhone,omitempty"`
 	ServiceName        string  `json:"serviceName"`
 	ExpectedDoctorName string  `json:"expectedDoctorName"`
+	DoctorTakenByName  string  `json:"doctorTakenByName,omitempty"`
+	Reason             string  `json:"reason,omitempty"`
 	WaitMinutes        int     `json:"waitMinutes"`
 	Punctuality        string  `json:"punctuality,omitempty"`
 	AppointmentTime    *string `json:"appointmentTime,omitempty"`
+	VitalSigns         *VitalSummary `json:"vitalSigns,omitempty"`
+}
+
+type DoctorWorklistKPIs struct {
+	ToTreat                int64    `json:"toTreat"`
+	Urgent                 int64    `json:"urgent"`
+	InConsultation         int64    `json:"inConsultation"`
+	AvgWaitMinutes         float64  `json:"avgWaitMinutes"`
+	CompletedToday         int64    `json:"completedToday"`
+	AvgConsultationMinutes float64  `json:"avgConsultationMinutes"`
+	LastCompletedAt        *string  `json:"lastCompletedAt,omitempty"`
+}
+
+type DoctorWorklistResponse struct {
+	Items []TicketDTO       `json:"items"`
+	Total int64             `json:"total"`
+	Page  int               `json:"page"`
+	Limit int               `json:"limit"`
+	KPIs  DoctorWorklistKPIs `json:"kpis"`
 }
 
 type AppointmentDTO struct {
@@ -118,6 +165,8 @@ type KPIs struct {
 }
 
 type DetailResponse struct {
-	Ticket  TicketDTO `json:"ticket"`
-	History []History `json:"history"`
+	Ticket    TicketDTO         `json:"ticket"`
+	History   []History         `json:"history"`
+	Allergies []ClinicalSnippet `json:"allergies,omitempty"`
+	Histories []ClinicalSnippet `json:"histories,omitempty"`
 }

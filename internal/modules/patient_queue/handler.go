@@ -188,6 +188,20 @@ func (h *Handler) List(c *gin.Context) {
 	c.JSON(200, x)
 }
 
+func (h *Handler) DoctorWorklist(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	x, e := h.service.DoctorWorklist(filter(c), a)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
 func (h *Handler) Get(c *gin.Context) {
 	n, ok := id(c)
 	if !ok {

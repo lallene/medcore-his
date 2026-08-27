@@ -13,6 +13,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.POST("/appointments/:id/no-show", rbac.AnyPermission("queue.checkin", "queue.cancel"), h.MarkNoShow)
 	g.POST("/check-in/walk-in", rbac.Permission("queue.checkin"), h.CheckInWalkIn)
 	g.GET("/tickets", rbac.AnyPermission("queue.reception.read", "queue.triage.read", "queue.doctor.read", "queue.read.service", "queue.read.all"), h.List)
+	g.GET("/doctor/worklist", rbac.AnyPermission("queue.doctor.read", "queue.read.service", "queue.read.all"), h.DoctorWorklist)
 	g.GET("/tickets/:id", rbac.AnyPermission("queue.reception.read", "queue.triage.read", "queue.doctor.read", "queue.read.service", "queue.read.all"), h.Get)
 	g.POST("/tickets/:id/triage/take", rbac.Permission("queue.triage.update"), h.TakeTriage)
 	g.POST("/tickets/:id/triage/complete", rbac.Permission("queue.triage.update"), h.CompleteTriage)

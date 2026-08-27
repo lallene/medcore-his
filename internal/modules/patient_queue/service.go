@@ -78,6 +78,64 @@ func (s *Service) assertCanAccessTicket(t Ticket, a Access) error {
 	return s.assertCanAccessService(t.ServiceID, a)
 }
 
+// isDoctorOnlyReader is true when the actor has physician queue read without
+// reception/triage/global overrides. Such actors may only see post-triage stages.
+func (s *Service) isDoctorOnlyReader(a Access) bool {
+	if a.Has("queue.read.all") || a.Has("*") {
+		return false
+	}
+	if a.Has("queue.reception.read") || a.Has("queue.triage.read") {
+		return false
+	}
+	return a.Has("queue.doctor.read")
+}
+
+// doctorReadableStages — WAITING_DOCTOR / DOCTOR_IN_PROGRESS (+ COMPLETED for history).
+var doctorReadableStages = []string{StageWaitingDoctor, StageDoctorInProgress, StageCompleted}
+
+func doctorCanReadStage(stage string) bool {
+	for _, s := range doctorReadableStages {
+		if s == stage {
+			return true
+		}
+	}
+	return false
+}
+
+func isPreTriageStage(stage string) bool {
+	return stage == StageReception || stage == StageWaitingTriage || stage == StageTriageInProgress
+}
+
+// assertDoctorStageReadable rejects pre-triage stages for doctor-only readers (404, no leak).
+func (s *Service) assertDoctorStageReadable(t Ticket, a Access) error {
+	if !s.isDoctorOnlyReader(a) {
+		return nil
+	}
+	if doctorCanReadStage(t.Stage) {
+		return nil
+	}
+	return coreerrors.NotFound("Ticket")
+}
+
+// applyDoctorListStageFilter forces post-triage stages for doctor-only List queries.
+// Explicit pre-triage stage filters are refused with 400 (not silently emptied).
+func (s *Service) applyDoctorListStageFilter(q *gorm.DB, f Filter, a Access) (*gorm.DB, error) {
+	if !s.isDoctorOnlyReader(a) {
+		if f.Stage != "" {
+			return q.Where("stage = ?", f.Stage), nil
+		}
+		return q, nil
+	}
+	if f.Stage != "" {
+		if isPreTriageStage(f.Stage) || !doctorCanReadStage(f.Stage) {
+			return nil, coreerrors.BadRequest("Étape non autorisée pour la lecture médecin")
+		}
+		return q.Where("stage = ?", f.Stage), nil
+	}
+	// Default: active post-triage only (COMPLETED requires an explicit stage/status filter).
+	return q.Where("stage IN ?", []string{StageWaitingDoctor, StageDoctorInProgress}), nil
+}
+
 func (s *Service) loadTicketForMutation(id uint, a Access) (*Ticket, error) {
 	var t Ticket
 	if err := s.db.First(&t, id).Error; err != nil {
@@ -443,8 +501,9 @@ func (s *Service) List(f Filter, a Access) (*ListResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	if f.Stage != "" {
-		q = q.Where("stage = ?", f.Stage)
+	q, err = s.applyDoctorListStageFilter(q, f, a)
+	if err != nil {
+		return nil, err
 	}
 	if f.Status != "" {
 		q = q.Where("status = ?", f.Status)
@@ -486,11 +545,38 @@ func (s *Service) List(f Filter, a Access) (*ListResponse, error) {
 
 func (s *Service) enrichTicket(t Ticket) TicketDTO {
 	d := TicketDTO{Ticket: t}
-	_ = s.db.Raw(`SELECT code_patient FROM patients WHERE id=?`, t.PatientID).Scan(&d.PatientCode)
-	_ = s.db.Raw(`SELECT TRIM(CONCAT(prenoms,' ',nom)) FROM patients WHERE id=?`, t.PatientID).Scan(&d.PatientName)
+	var demog struct {
+		Code      string
+		Name      string
+		Sex       string
+		Phone     string
+		Dob       *time.Time
+	}
+	_ = s.db.Raw(`
+		SELECT code_patient AS code,
+			TRIM(CONCAT(COALESCE(prenoms,''),' ',COALESCE(nom,''))) AS name,
+			COALESCE(sexe,'') AS sex,
+			COALESCE(telephone,'') AS phone,
+			date_naissance AS dob
+		FROM patients WHERE id=?`, t.PatientID).Scan(&demog)
+	d.PatientCode = demog.Code
+	d.PatientName = strings.TrimSpace(demog.Name)
+	d.PatientSex = demog.Sex
+	d.PatientPhone = demog.Phone
+	if demog.Dob != nil && !demog.Dob.IsZero() {
+		iso := demog.Dob.Format("2006-01-02")
+		d.PatientDob = &iso
+		years := int(time.Now().UTC().Sub(*demog.Dob).Hours() / (24 * 365.25))
+		if years >= 0 && years < 150 {
+			d.PatientAgeYears = &years
+		}
+	}
 	_ = s.db.Raw(`SELECT name FROM organization_services WHERE id=?`, t.ServiceID).Scan(&d.ServiceName)
 	if t.ExpectedDoctorID != nil {
 		_ = s.db.Raw(`SELECT COALESCE(name,'') FROM users WHERE id=?`, *t.ExpectedDoctorID).Scan(&d.ExpectedDoctorName)
+	}
+	if t.DoctorTakenBy != nil {
+		_ = s.db.Raw(`SELECT COALESCE(name,'') FROM users WHERE id=?`, *t.DoctorTakenBy).Scan(&d.DoctorTakenByName)
 	}
 	end := time.Now().UTC()
 	if t.Stage == StageCompleted || t.Status == StatusCompleted {
@@ -498,15 +584,222 @@ func (s *Service) enrichTicket(t Ticket) TicketDTO {
 	}
 	d.WaitMinutes = int(end.Sub(t.ArrivedAt).Minutes())
 	if t.AppointmentID != nil {
-		var scheduled time.Time
-		_ = s.db.Raw(`SELECT scheduled_at FROM patient_queue_appointments WHERE id=?`, *t.AppointmentID).Scan(&scheduled)
-		if !scheduled.IsZero() {
-			iso := scheduled.UTC().Format(time.RFC3339)
+		var appt struct {
+			Scheduled time.Time
+			Reason    string
+		}
+		_ = s.db.Raw(`SELECT scheduled_at AS scheduled, COALESCE(reason,'') AS reason FROM patient_queue_appointments WHERE id=?`, *t.AppointmentID).Scan(&appt)
+		if !appt.Scheduled.IsZero() {
+			iso := appt.Scheduled.UTC().Format(time.RFC3339)
 			d.AppointmentTime = &iso
-			d.Punctuality = Punctuality(scheduled, t.ArrivedAt)
+			d.Punctuality = Punctuality(appt.Scheduled, t.ArrivedAt)
+		}
+		d.Reason = strings.TrimSpace(appt.Reason)
+	}
+	if d.Reason == "" {
+		var histReason string
+		_ = s.db.Raw(`
+			SELECT reason FROM patient_queue_history
+			WHERE ticket_id=? AND event_type='CHECK_IN'
+			ORDER BY created_at ASC LIMIT 1`, t.ID).Scan(&histReason)
+		histReason = strings.TrimSpace(histReason)
+		if strings.HasPrefix(histReason, "walk_in:") {
+			d.Reason = strings.TrimSpace(strings.TrimPrefix(histReason, "walk_in:"))
+		} else if histReason != "" && histReason != "appointment" {
+			d.Reason = histReason
 		}
 	}
+	if t.VitalSignsID != nil {
+		d.VitalSigns = s.loadVitalSummary(*t.VitalSignsID)
+	}
 	return d
+}
+
+func (s *Service) loadVitalSummary(id uint) *VitalSummary {
+	var row struct {
+		ID               uint
+		TemperatureC     *float64
+		SystolicBP       *int
+		DiastolicBP      *int
+		HeartRate        *int
+		OxygenSaturation *float64
+		WeightKg         *float64
+		HeightCm         *float64
+		MeasuredAt       *time.Time
+	}
+	err := s.db.Raw(`
+		SELECT id, temperature_c, systolic_bp, diastolic_bp, heart_rate,
+			oxygen_saturation, weight_kg, height_cm, measured_at
+		FROM vital_signs WHERE id=?`, id).Scan(&row).Error
+	if err != nil || row.ID == 0 {
+		return nil
+	}
+	v := &VitalSummary{
+		ID:               row.ID,
+		TemperatureC:     row.TemperatureC,
+		SystolicBP:       row.SystolicBP,
+		DiastolicBP:      row.DiastolicBP,
+		HeartRate:        row.HeartRate,
+		OxygenSaturation: row.OxygenSaturation,
+		WeightKg:         row.WeightKg,
+		HeightCm:         row.HeightCm,
+	}
+	if row.MeasuredAt != nil {
+		iso := row.MeasuredAt.UTC().Format(time.RFC3339)
+		v.MeasuredAt = &iso
+	}
+	if row.TemperatureC != nil && (*row.TemperatureC >= 38.0 || *row.TemperatureC <= 35.0) {
+		v.AbnormalTemp = true
+	}
+	if (row.SystolicBP != nil && (*row.SystolicBP >= 140 || *row.SystolicBP <= 90)) ||
+		(row.DiastolicBP != nil && *row.DiastolicBP >= 90) {
+		v.AbnormalBP = true
+	}
+	if row.HeartRate != nil && (*row.HeartRate >= 100 || *row.HeartRate <= 50) {
+		v.AbnormalHR = true
+	}
+	if row.OxygenSaturation != nil && *row.OxygenSaturation < 95 {
+		v.AbnormalSpO2 = true
+	}
+	return v
+}
+
+func (s *Service) loadClinicalSnippets(patientID uint) (allergies, histories []ClinicalSnippet) {
+	type allergyRow struct {
+		Name     string
+		Severity string
+	}
+	var al []allergyRow
+	_ = s.db.Raw(`
+		SELECT allergen_name AS name, COALESCE(severity,'') AS severity
+		FROM allergies WHERE patient_id=? AND is_active = true
+		ORDER BY updated_at DESC LIMIT 8`, patientID).Scan(&al)
+	for _, a := range al {
+		allergies = append(allergies, ClinicalSnippet{Label: a.Name, Severity: a.Severity})
+	}
+	type histRow struct {
+		Title string
+	}
+	var hs []histRow
+	_ = s.db.Raw(`
+		SELECT title FROM medical_histories
+		WHERE patient_id=? AND COALESCE(status,'active') IN ('active','')
+		ORDER BY updated_at DESC LIMIT 8`, patientID).Scan(&hs)
+	for _, h := range hs {
+		histories = append(histories, ClinicalSnippet{Label: h.Title})
+	}
+	return allergies, histories
+}
+
+// DoctorWorklist returns only post-triage tickets (WAITING_DOCTOR / DOCTOR_IN_PROGRESS).
+// Triage stages are never included — server-side guarantee for the physician worklist.
+func (s *Service) DoctorWorklist(f Filter, a Access) (*DoctorWorklistResponse, error) {
+	if !s.has(a, "queue.doctor.read") && !s.has(a, "queue.read.service") && !s.has(a, "queue.read.all") && !s.has(a, "*") {
+		return nil, coreerrors.Forbidden("Lecture file médecin refusée")
+	}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.Limit < 1 || f.Limit > 100 {
+		f.Limit = 50
+	}
+	q := s.db.Model(&Ticket{}).Where("status = ? AND stage IN ?", StatusActive, []string{StageWaitingDoctor, StageDoctorInProgress})
+	q, err := s.applyServiceScope(q, a, "service_id")
+	if err != nil {
+		return nil, err
+	}
+	if f.Priority != "" {
+		q = q.Where("priority = ?", f.Priority)
+	}
+	if f.Stage != "" {
+		if f.Stage != StageWaitingDoctor && f.Stage != StageDoctorInProgress {
+			return nil, coreerrors.BadRequest("Étape non autorisée sur la file médecin")
+		}
+		q = q.Where("stage = ?", f.Stage)
+	}
+	if f.Search != "" {
+		like := "%" + strings.TrimSpace(f.Search) + "%"
+		q = q.Where(`patient_id IN (SELECT id FROM patients WHERE code_patient ILIKE ? OR nom ILIKE ? OR prenoms ILIKE ?) OR reference ILIKE ?`, like, like, like, like)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, coreerrors.Internal(err.Error())
+	}
+	var rows []Ticket
+	order := `CASE priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'NORMAL' THEN 3 WHEN 'LOW' THEN 4 ELSE 99 END ASC, arrived_at ASC`
+	if err := q.Order(order).Offset((f.Page - 1) * f.Limit).Limit(f.Limit).Find(&rows).Error; err != nil {
+		return nil, coreerrors.Internal(err.Error())
+	}
+	items := make([]TicketDTO, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, s.enrichTicket(row))
+	}
+	kpis, err := s.doctorWorklistKPIs(a)
+	if err != nil {
+		return nil, err
+	}
+	return &DoctorWorklistResponse{Items: items, Total: total, Page: f.Page, Limit: f.Limit, KPIs: *kpis}, nil
+}
+
+func (s *Service) doctorWorklistKPIs(a Access) (*DoctorWorklistKPIs, error) {
+	base := s.db.Model(&Ticket{}).Where("status = ?", StatusActive)
+	base, err := s.applyServiceScope(base, a, "service_id")
+	if err != nil {
+		return nil, err
+	}
+	k := &DoctorWorklistKPIs{}
+	q := base.Session(&gorm.Session{})
+	q.Where("stage = ?", StageWaitingDoctor).Count(&k.ToTreat)
+	q = base.Session(&gorm.Session{})
+	q.Where("stage = ? AND priority = ?", StageWaitingDoctor, PriorityUrgent).Count(&k.Urgent)
+	q = base.Session(&gorm.Session{})
+	q.Where("stage = ?", StageDoctorInProgress).Count(&k.InConsultation)
+
+	scopeSQL, scopeArgs, err := s.serviceScopeSQL(a, "service_id")
+	if err != nil {
+		return nil, err
+	}
+	avgSQL := `
+		SELECT AVG(EXTRACT(EPOCH FROM (NOW() - arrived_at))/60.0)
+		FROM patient_queue_tickets
+		WHERE status=? AND stage=?` + scopeSQL
+	avgArgs := append([]any{StatusActive, StageWaitingDoctor}, scopeArgs...)
+	var avg *float64
+	s.db.Raw(avgSQL, avgArgs...).Scan(&avg)
+	if avg != nil {
+		k.AvgWaitMinutes = *avg
+	}
+	start := time.Now().UTC().Truncate(24 * time.Hour)
+	done := s.db.Model(&Ticket{}).Where("status=? AND stage=? AND updated_at >= ?", StatusCompleted, StageCompleted, start)
+	done, err = s.applyServiceScope(done, a, "service_id")
+	if err != nil {
+		return nil, err
+	}
+	done.Count(&k.CompletedToday)
+	avgConsultSQL := `
+		SELECT AVG(EXTRACT(EPOCH FROM (updated_at - COALESCE(doctor_taken_at, checked_in_at)))/60.0)
+		FROM patient_queue_tickets
+		WHERE status=? AND stage=? AND updated_at >= ?` + scopeSQL
+	consultArgs := append([]any{StatusCompleted, StageCompleted, start}, scopeArgs...)
+	var avgC *float64
+	s.db.Raw(avgConsultSQL, consultArgs...).Scan(&avgC)
+	if avgC != nil {
+		k.AvgConsultationMinutes = *avgC
+	}
+	var last time.Time
+	lastQ := s.db.Model(&Ticket{}).Select("updated_at").
+		Where("status=? AND stage=?", StatusCompleted, StageCompleted).
+		Order("updated_at DESC")
+	lastQ, err = s.applyServiceScope(lastQ, a, "service_id")
+	if err != nil {
+		return nil, err
+	}
+	_ = lastQ.Limit(1).Scan(&last)
+	if !last.IsZero() {
+		iso := last.UTC().Format(time.RFC3339)
+		k.LastCompletedAt = &iso
+	}
+	return k, nil
 }
 
 func (s *Service) Get(id uint, a Access) (*DetailResponse, error) {
@@ -519,11 +812,20 @@ func (s *Service) Get(id uint, a Access) (*DetailResponse, error) {
 	}
 	var hist []History
 	s.db.Where("ticket_id=?", id).Order("created_at ASC").Find(&hist)
-	return &DetailResponse{Ticket: s.enrichTicket(t), History: hist}, nil
+	allergies, histories := s.loadClinicalSnippets(t.PatientID)
+	return &DetailResponse{
+		Ticket:    s.enrichTicket(t),
+		History:   hist,
+		Allergies: allergies,
+		Histories: histories,
+	}, nil
 }
 
 func (s *Service) assertCanReadTicket(t Ticket, a Access) error {
-	return s.assertCanAccessTicket(t, a)
+	if err := s.assertCanAccessTicket(t, a); err != nil {
+		return err
+	}
+	return s.assertDoctorStageReadable(t, a)
 }
 
 func (s *Service) TakeTriage(id uint, a Access) (*Ticket, error) {

@@ -44,7 +44,8 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	}
 	// Minimal patients / services / users for FK-less raw lookups
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS patients (
-		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT, prenoms TEXT
+		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT, prenoms TEXT,
+		sexe TEXT, date_naissance DATE, telephone TEXT
 	)`)
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS organization_services (
 		id BIGSERIAL PRIMARY KEY, name TEXT, code TEXT
@@ -60,7 +61,22 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	)`)
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS vital_signs (
 		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT NOT NULL,
-		consultation_id BIGINT, comment TEXT
+		consultation_id BIGINT, comment TEXT,
+		temperature_c DOUBLE PRECISION, systolic_bp INT, diastolic_bp INT, heart_rate INT,
+		oxygen_saturation DOUBLE PRECISION, weight_kg DOUBLE PRECISION, height_cm DOUBLE PRECISION,
+		measured_at TIMESTAMPTZ
+	)`)
+	_ = db.Exec(`CREATE TABLE IF NOT EXISTS allergies (
+		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT,
+		allergen_type TEXT, allergen_name TEXT, reaction TEXT, severity TEXT,
+		comment TEXT, is_active BOOLEAN DEFAULT true, created_by BIGINT,
+		created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	_ = db.Exec(`CREATE TABLE IF NOT EXISTS medical_histories (
+		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT,
+		type TEXT, title TEXT, description TEXT, status TEXT DEFAULT 'active',
+		severity TEXT, comment TEXT, created_by BIGINT,
+		created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
 	)`)
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS staff_profiles (
 		id BIGSERIAL PRIMARY KEY, user_id BIGINT, active BOOLEAN DEFAULT true, primary_service_id BIGINT
@@ -68,7 +84,9 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS staff_service_assignments (
 		id BIGSERIAL PRIMARY KEY, profile_id BIGINT, service_id BIGINT, active BOOLEAN DEFAULT true
 	)`)
-	_ = db.Exec(`INSERT INTO patients(id, code_patient, nom, prenoms) VALUES (1,'P-Q-1','Dupont','Alice'),(2,'P-Q-2','Martin','Bob') ON CONFLICT DO NOTHING`)
+	_ = db.Exec(`INSERT INTO patients(id, code_patient, nom, prenoms, sexe, telephone) VALUES
+		(1,'P-Q-1','Dupont','Alice','F','0600000001'),
+		(2,'P-Q-2','Martin','Bob','M','0600000002') ON CONFLICT DO NOTHING`)
 	_ = db.Exec(`INSERT INTO organization_services(id, name, code) VALUES (10,'Urgences','URG'),(11,'Médecine','MED') ON CONFLICT DO NOTHING`)
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (100,'Accueil'),(101,'Infirmier'),(102,'Médecin') ON CONFLICT DO NOTHING`)
 	return db
@@ -435,6 +453,309 @@ func TestPostgresVitalSignsIntegrity(t *testing.T) {
 	}
 	if done.Stage != StageWaitingDoctor || done.VitalSignsID == nil || *done.VitalSignsID != 501 {
 		t.Fatalf("same-patient vital not accepted: %+v", done)
+	}
+}
+
+func TestPostgresDoctorStageVisibility(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	admin := adminAccess(100)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take", "queue.read.service")
+	accueil := scopedAccess(100, 10, "queue.reception.read", "queue.checkin")
+	infirmier := scopedAccess(101, 10, "queue.triage.read", "queue.triage.update")
+	global := Access{UserID: 100, Permissions: map[string]bool{"queue.read.all": true, "queue.reception.read": true}}
+
+	tkA, e := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 1, ServiceID: 10, IdentityConfirmed: true, Reason: "vis-pre",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if tkA.Stage != StageWaitingTriage {
+		t.Fatalf("stage=%s", tkA.Stage)
+	}
+
+	// Doctor List without stage filter: no pre-triage tickets
+	list, e := svc.List(Filter{Limit: 50}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, item := range list.Items {
+		if item.ID == tkA.ID {
+			t.Fatal("doctor List must hide WAITING_TRIAGE")
+		}
+		if item.Stage == StageWaitingTriage || item.Stage == StageTriageInProgress || item.Stage == StageReception {
+			t.Fatalf("pre-triage leaked on doctor List: %s", item.Stage)
+		}
+	}
+
+	// Explicit pre-triage filter → 400
+	if _, e := svc.List(Filter{Stage: StageWaitingTriage, Limit: 50}, doc); statusOf(e) != 400 {
+		t.Fatalf("WAITING_TRIAGE filter want 400 got %d (%v)", statusOf(e), e)
+	}
+	if _, e := svc.List(Filter{Stage: StageTriageInProgress, Limit: 50}, doc); statusOf(e) != 400 {
+		t.Fatalf("TRIAGE_IN_PROGRESS filter want 400 got %d (%v)", statusOf(e), e)
+	}
+
+	// Get pre-triage → 404 (no leak)
+	if _, e := svc.Get(tkA.ID, doc); statusOf(e) != 404 {
+		t.Fatalf("Get WAITING_TRIAGE want 404 got %d (%v)", statusOf(e), e)
+	}
+
+	// Accueil still sees WAITING_TRIAGE in service
+	accList, e := svc.List(Filter{Stage: StageWaitingTriage, Limit: 50}, accueil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	foundAcc := false
+	for _, item := range accList.Items {
+		if item.ID == tkA.ID {
+			foundAcc = true
+			break
+		}
+	}
+	if !foundAcc {
+		t.Fatal("Accueil must see WAITING_TRIAGE in service")
+	}
+
+	// Infirmier sees WAITING_TRIAGE then TRIAGE_IN_PROGRESS
+	infList, e := svc.List(Filter{Limit: 50}, infirmier)
+	if e != nil {
+		t.Fatal(e)
+	}
+	foundInf := false
+	for _, item := range infList.Items {
+		if item.ID == tkA.ID {
+			foundInf = true
+			break
+		}
+	}
+	if !foundInf {
+		t.Fatal("Infirmier must see WAITING_TRIAGE")
+	}
+	if _, e := svc.TakeTriage(tkA.ID, infirmier); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.Get(tkA.ID, doc); statusOf(e) != 404 {
+		t.Fatalf("Get TRIAGE_IN_PROGRESS want 404 got %d (%v)", statusOf(e), e)
+	}
+	infProg, e := svc.List(Filter{Stage: StageTriageInProgress, Limit: 50}, infirmier)
+	if e != nil {
+		t.Fatal(e)
+	}
+	foundProg := false
+	for _, item := range infProg.Items {
+		if item.ID == tkA.ID {
+			foundProg = true
+			break
+		}
+	}
+	if !foundProg {
+		t.Fatal("Infirmier must see TRIAGE_IN_PROGRESS")
+	}
+
+	// queue.read.all still sees pre-triage
+	allList, e := svc.List(Filter{Stage: StageTriageInProgress, Limit: 50}, global)
+	if e != nil {
+		t.Fatal(e)
+	}
+	foundAll := false
+	for _, item := range allList.Items {
+		if item.ID == tkA.ID {
+			foundAll = true
+			break
+		}
+	}
+	if !foundAll {
+		t.Fatal("queue.read.all must see TRIAGE_IN_PROGRESS")
+	}
+
+	_ = db.Exec(`INSERT INTO vital_signs(id, medical_record_id, patient_id, temperature_c, measured_at)
+		VALUES (701,1,1,37.0,NOW())`)
+	done, e := svc.CompleteTriage(tkA.ID, CompleteTriageRequest{VitalSignsID: uintPtr(701)}, infirmier)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if done.Stage != StageWaitingDoctor {
+		t.Fatalf("stage=%s", done.Stage)
+	}
+
+	// Post-triage Get/List OK for doctor
+	detail, e := svc.Get(tkA.ID, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if detail.Ticket.Stage != StageWaitingDoctor {
+		t.Fatalf("stage=%s", detail.Ticket.Stage)
+	}
+	postList, e := svc.List(Filter{Limit: 50}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	foundDoc := false
+	for _, item := range postList.Items {
+		if item.ID == tkA.ID {
+			foundDoc = true
+			break
+		}
+	}
+	if !foundDoc {
+		t.Fatal("doctor List must show WAITING_DOCTOR")
+	}
+
+	taken, e := svc.TakeDoctor(tkA.ID, TakeDoctorRequest{}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if taken.Stage != StageDoctorInProgress {
+		t.Fatalf("stage=%s", taken.Stage)
+	}
+	if _, e := svc.Get(tkA.ID, doc); e != nil {
+		t.Fatal(e)
+	}
+
+	// Cross-service still denied (404)
+	docOther := scopedAccess(102, 11, "queue.doctor.read", "queue.doctor.take", "queue.read.service")
+	if _, e := svc.Get(tkA.ID, docOther); statusOf(e) != 404 {
+		t.Fatalf("cross-service Get want 404 got %d (%v)", statusOf(e), e)
+	}
+	otherList, e := svc.List(Filter{Limit: 50}, docOther)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, item := range otherList.Items {
+		if item.ID == tkA.ID {
+			t.Fatal("cross-service List must not reveal ticket")
+		}
+	}
+}
+
+func TestPostgresDoctorWorklistOnlyAfterTriage(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	admin := adminAccess(100)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+
+	tk, e := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 1, ServiceID: 10, IdentityConfirmed: true, Reason: "céphalées",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	wl, e := svc.DoctorWorklist(Filter{Limit: 50}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, item := range wl.Items {
+		if item.ID == tk.ID {
+			t.Fatal("WAITING_TRIAGE ticket must not appear on doctor worklist")
+		}
+		if item.Stage == StageWaitingTriage || item.Stage == StageTriageInProgress {
+			t.Fatalf("triage stage leaked: %s", item.Stage)
+		}
+	}
+	if _, e := svc.DoctorWorklist(Filter{Stage: StageWaitingTriage}, doc); statusOf(e) != 400 {
+		t.Fatalf("triage stage filter want 400 got %d (%v)", statusOf(e), e)
+	}
+
+	if _, e := svc.TakeTriage(tk.ID, admin); e != nil {
+		t.Fatal(e)
+	}
+	wl, e = svc.DoctorWorklist(Filter{Limit: 50}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, item := range wl.Items {
+		if item.ID == tk.ID {
+			t.Fatal("TRIAGE_IN_PROGRESS must not appear on doctor worklist")
+		}
+	}
+
+	_ = db.Exec(`INSERT INTO vital_signs(id, medical_record_id, patient_id, temperature_c, systolic_bp, diastolic_bp, heart_rate, measured_at)
+		VALUES (601,1,1,38.7,150,95,102,NOW())`)
+	_ = db.Exec(`INSERT INTO allergies(medical_record_id, patient_id, allergen_type, allergen_name, severity, is_active)
+		VALUES (1,1,'medication','Pénicilline','high',true)`)
+	_ = db.Exec(`INSERT INTO medical_histories(medical_record_id, patient_id, type, title, status)
+		VALUES (1,1,'chronic','Hypertension artérielle','active')`)
+
+	done, e := svc.CompleteTriage(tk.ID, CompleteTriageRequest{VitalSignsID: uintPtr(601)}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if done.Stage != StageWaitingDoctor {
+		t.Fatalf("stage=%s", done.Stage)
+	}
+
+	wl, e = svc.DoctorWorklist(Filter{Limit: 50}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var found *TicketDTO
+	for i := range wl.Items {
+		if wl.Items[i].ID == tk.ID {
+			found = &wl.Items[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("WAITING_DOCTOR ticket must appear on doctor worklist")
+	}
+	if found.Reason != "céphalées" {
+		t.Fatalf("reason=%q", found.Reason)
+	}
+	if found.VitalSigns == nil || found.VitalSigns.TemperatureC == nil || *found.VitalSigns.TemperatureC != 38.7 {
+		t.Fatalf("vitals missing: %+v", found.VitalSigns)
+	}
+	if !found.VitalSigns.AbnormalTemp || !found.VitalSigns.AbnormalBP || !found.VitalSigns.AbnormalHR {
+		t.Fatalf("abnormal flags: %+v", found.VitalSigns)
+	}
+	if wl.KPIs.ToTreat < 1 {
+		t.Fatalf("kpi toTreat=%d", wl.KPIs.ToTreat)
+	}
+
+	taken, e := svc.TakeDoctor(tk.ID, TakeDoctorRequest{}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if taken.DoctorTakenBy == nil || *taken.DoctorTakenBy != 102 {
+		t.Fatalf("doctorTakenBy=%v", taken.DoctorTakenBy)
+	}
+	// second doctor cannot silently take
+	docB := scopedAccess(103, 10, "queue.doctor.read", "queue.doctor.take")
+	_ = db.Exec(`INSERT INTO users(id, name) VALUES (103,'Médecin B') ON CONFLICT DO NOTHING`)
+	if _, e := svc.TakeDoctor(tk.ID, TakeDoctorRequest{}, docB); statusOf(e) != 409 {
+		t.Fatalf("concurrent take want 409 got %d (%v)", statusOf(e), e)
+	}
+
+	detail, e := svc.Get(tk.ID, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if detail.Ticket.DoctorTakenByName == "" {
+		t.Fatal("doctorTakenByName required when in progress")
+	}
+	if len(detail.Allergies) == 0 || detail.Allergies[0].Label != "Pénicilline" {
+		t.Fatalf("allergies=%+v", detail.Allergies)
+	}
+	if len(detail.Histories) == 0 {
+		t.Fatalf("histories=%+v", detail.Histories)
+	}
+
+	completed, e := svc.Complete(tk.ID, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if completed.Stage != StageCompleted {
+		t.Fatalf("stage=%s", completed.Stage)
+	}
+	wl, e = svc.DoctorWorklist(Filter{Limit: 50}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, item := range wl.Items {
+		if item.ID == tk.ID {
+			t.Fatal("completed ticket must leave active doctor worklist")
+		}
 	}
 }
 
