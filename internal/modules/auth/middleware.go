@@ -37,6 +37,14 @@ func Middleware(secret string, databases ...*gorm.DB) gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+			var profileCount, activeProfiles int64
+			_ = databases[0].Table("staff_profiles").Where("user_id=?", claims.UserID).Count(&profileCount)
+			_ = databases[0].Table("staff_profiles").Where("user_id=? AND active", claims.UserID).Count(&activeProfiles)
+			if profileCount > 0 && activeProfiles == 0 {
+				response.Error(c, coreerrors.Unauthorized("Profil personnel inactif"))
+				c.Abort()
+				return
+			}
 			functions, specialties, capabilities, e := staffIdentity(databases[0], claims.UserID)
 			if e != nil {
 				response.Error(c, coreerrors.Unauthorized("Profil personnel indisponible"))
@@ -44,7 +52,17 @@ func Middleware(secret string, databases ...*gorm.DB) gin.HandlerFunc {
 				return
 			}
 			claims.Functions, claims.Specialties, claims.Capabilities = functions, specialties, capabilities
-			claims.Permissions = rbac.EffectiveStaffPermissions(claims.Role, functions, specialties)
+			if EffectivePermissionsHook != nil {
+				perms, e := EffectivePermissionsHook(databases[0], claims.UserID, claims.Role, functions, specialties)
+				if e != nil {
+					response.Error(c, coreerrors.Unauthorized("Profil personnel indisponible"))
+					c.Abort()
+					return
+				}
+				claims.Permissions = perms
+			} else {
+				claims.Permissions = rbac.EffectiveStaffPermissions(claims.Role, functions, specialties)
+			}
 		}
 
 		rbac.SetUser(c, claims.UserID, claims.Role, claims.Permissions)

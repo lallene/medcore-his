@@ -2,12 +2,14 @@ package staff
 
 import (
 	"errors"
-	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"sort"
 	"strings"
 	"time"
+
+	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
+	"github.com/lallene/medcore-his/backend/internal/core/rbac"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Service struct{ db *gorm.DB }
@@ -59,6 +61,27 @@ func (s *Service) view(profile Profile) (*View, error) {
 		return nil, e
 	}
 	v.EffectivePermissions = MergePermissions(v.LegacyRole, v.Functions, v.Specialties)
+	// Apply matrix overlays + user GRANT/DENY (same rules as access module / auth middleware).
+	var matrixRows []struct {
+		FunctionCode string
+		Permission   string
+		Effect       string
+	}
+	_ = s.db.Table("rbac_matrix_overrides").Select("function_code, permission, effect").Where("active").Scan(&matrixRows)
+	overlays := make([]rbac.MatrixOverlay, 0, len(matrixRows))
+	for _, r := range matrixRows {
+		overlays = append(overlays, rbac.MatrixOverlay{FunctionCode: r.FunctionCode, Permission: r.Permission, Effect: r.Effect})
+	}
+	var ovRows []struct {
+		Permission string
+		Effect     string
+	}
+	_ = s.db.Table("staff_permission_overrides").Select("permission, effect").Where("user_id=? AND active", profile.UserID).Scan(&ovRows)
+	overrides := make([]rbac.UserOverride, 0, len(ovRows))
+	for _, r := range ovRows {
+		overrides = append(overrides, rbac.UserOverride{Permission: r.Permission, Effect: r.Effect})
+	}
+	v.EffectivePermissions = rbac.EffectiveStaffPermissionsFull(v.LegacyRole, v.Functions, v.Specialties, overlays, overrides)
 	if e := s.db.Table("staff_service_assignments a").Select("a.service_id,a.is_primary,a.active,s.code,s.name").Joins("JOIN organization_services s ON s.id=a.service_id").Where("a.profile_id=? AND a.active", profile.ID).Order("a.is_primary DESC,s.name").Scan(&v.ServiceAssignments).Error; e != nil {
 		return nil, e
 	}
@@ -331,6 +354,15 @@ func (s *Service) Upsert(id uint, r UpsertRequest, actor uint) (*View, error) {
 			}
 		}
 		profileID = p.ID
+		if AfterProfileChangeValidate != nil {
+			if x := AfterProfileChangeValidate(tx, p.UserID, p.Active, functions, specialties); x != nil {
+				return x
+			}
+		}
+		// Keep login/middleware gate aligned with staff profile activity.
+		if x := tx.Table("users").Where("id=?", p.UserID).Update("is_active", p.Active).Error; x != nil {
+			return x
+		}
 		return nil
 	})
 	if e != nil {

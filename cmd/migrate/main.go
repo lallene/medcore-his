@@ -9,6 +9,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/workflow"
 	"github.com/lallene/medcore-his/backend/internal/database"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/access"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
@@ -51,6 +52,9 @@ func main() {
 		&staff.Specialty{},
 		&staff.Capability{},
 		&staff.AuditEvent{},
+		&access.PermissionOverride{},
+		&access.MatrixOverride{},
+		&access.AccessAuditEvent{},
 		&billing.Tariff{},
 		&billing.Invoice{},
 		&billing.InvoiceLine{},
