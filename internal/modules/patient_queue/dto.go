@@ -59,6 +59,12 @@ type TakeDoctorRequest struct {
 	CreateConsultation bool `json:"createConsultation"`
 }
 
+// CompleteRequest — clôture médecin (décision médicale optionnelle, stockée sur SOAP existant).
+type CompleteRequest struct {
+	Disposition     string `json:"disposition"`
+	DispositionNote string `json:"dispositionNote"`
+}
+
 type Filter struct {
 	Search   string
 	Stage    string

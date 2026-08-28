@@ -913,6 +913,112 @@ func (s *Service) CompleteTriage(id uint, r CompleteTriageRequest, a Access) (*T
 
 // validateVitalSignsForTicket ensures vital_signs.id exists and patient_id matches the ticket.
 // Encounter/consultation binding is only enforced when both sides carry a consultation_id.
+var allowedClinicalDispositions = map[string]bool{
+	"DISCHARGED":   true,
+	"HOSPITALIZED": true,
+	"OBSERVATION":  true,
+	"TRANSFERRED":  true,
+	"REFERRED":     true,
+	"OTHER":        true,
+}
+
+func validateClinicalDisposition(d string) error {
+	if d == "" {
+		return nil
+	}
+	if !allowedClinicalDispositions[d] {
+		return coreerrors.BadRequest("Disposition médicale invalide")
+	}
+	return nil
+}
+
+func (s *Service) activateConsultationTx(tx *gorm.DB, consultationID uint, doctorUserID uint) error {
+	now := time.Now().UTC()
+	var status string
+	if err := tx.Raw(`SELECT status FROM consultations WHERE id=?`, consultationID).Scan(&status).Error; err != nil {
+		return coreerrors.Internal(err.Error())
+	}
+	switch status {
+	case consultations.ConsultationStatusCompleted, consultations.ConsultationStatusCancelled:
+		return nil
+	case consultations.ConsultationStatusInProgress:
+		return nil
+	case consultations.ConsultationStatusDraft, "":
+		return tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(map[string]any{
+			"status":     consultations.ConsultationStatusInProgress,
+			"started_at": now,
+			"updated_at": now,
+		}).Error
+	default:
+		return nil
+	}
+}
+
+func (s *Service) linkVitalSignsToConsultationTx(tx *gorm.DB, vitalID, consultationID, patientID uint) error {
+	res := tx.Exec(`
+		UPDATE vital_signs SET consultation_id=?, updated_at=NOW()
+		WHERE id=? AND patient_id=? AND (consultation_id IS NULL OR consultation_id=?)`,
+		consultationID, vitalID, patientID, consultationID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return coreerrors.Forbidden("Constantes hors patient/consultation du ticket")
+	}
+	return nil
+}
+
+func (s *Service) completeConsultationTx(tx *gorm.DB, consultationID uint, disposition, dispositionNote string, authorID uint) error {
+	var status string
+	if err := tx.Raw(`SELECT status FROM consultations WHERE id=?`, consultationID).Scan(&status).Error; err != nil {
+		return coreerrors.Internal(err.Error())
+	}
+	if status == consultations.ConsultationStatusCompleted || status == consultations.ConsultationStatusCancelled {
+		return nil
+	}
+	now := time.Now().UTC()
+	if err := tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(map[string]any{
+		"status":       consultations.ConsultationStatusCompleted,
+		"completed_at": now,
+		"updated_at":   now,
+	}).Error; err != nil {
+		return err
+	}
+	if disposition != "" || dispositionNote != "" {
+		var soapID uint
+		err := tx.Raw(`SELECT id FROM consultation_soaps WHERE consultation_id=?`, consultationID).Scan(&soapID).Error
+		if err == nil && soapID > 0 {
+			updates := map[string]any{"updated_at": now, "updated_by": authorID}
+			if disposition != "" {
+				updates["disposition"] = disposition
+			}
+			if dispositionNote != "" {
+				updates["patient_advice"] = dispositionNote
+			}
+			_ = tx.Table("consultation_soaps").Where("consultation_id=?", consultationID).Updates(updates).Error
+		} else {
+			_ = tx.Exec(`
+				INSERT INTO consultation_soaps(consultation_id, disposition, patient_advice, created_by, updated_by, created_at, updated_at)
+				VALUES (?,?,?,?,?,?,?)`,
+				consultationID, disposition, dispositionNote, authorID, authorID, now, now).Error
+		}
+	}
+	return nil
+}
+
+func (s *Service) assertDoctorCanComplete(t Ticket, a Access) error {
+	if a.Has("*") || a.Has("queue.read.all") {
+		return nil
+	}
+	if t.DoctorTakenBy == nil {
+		return coreerrors.Conflict("Prise en charge non initiée")
+	}
+	if *t.DoctorTakenBy != a.UserID {
+		return coreerrors.Forbidden("Seul le médecin en charge peut clôturer la prise en charge")
+	}
+	return nil
+}
+
 func (s *Service) validateVitalSignsForTicket(tx *gorm.DB, t Ticket, vitalID uint) error {
 	var row struct {
 		ID             uint
@@ -965,17 +1071,33 @@ func (s *Service) TakeDoctor(id uint, r TakeDoctorRequest, a Access) (*Ticket, e
 			var serviceName string
 			_ = tx.Raw(`SELECT COALESCE(name,'') FROM organization_services WHERE id=?`, out.ServiceID).Scan(&serviceName)
 			sid := out.ServiceID
-			c := consultations.Consultation{
-				PatientID:  out.PatientID,
-				DoctorName: doctorName,
-				Service:    serviceName,
-				ServiceID:  &sid,
-				Status:     consultations.ConsultationStatusDraft,
-				Diagnosis:  "Parcours file " + out.Reference,
-			}
-			if err := tx.Create(&c).Error; err == nil {
-				_ = tx.Model(&Ticket{}).Where("id=?", out.ID).Update("consultation_id", c.ID).Error
+			now := time.Now().UTC()
+			if out.ConsultationID != nil {
+				if err := s.activateConsultationTx(tx, *out.ConsultationID, a.UserID); err != nil {
+					return err
+				}
+			} else {
+				c := consultations.Consultation{
+					PatientID:  out.PatientID,
+					DoctorName: doctorName,
+					Service:    serviceName,
+					ServiceID:  &sid,
+					Status:     consultations.ConsultationStatusInProgress,
+					StartedAt:  &now,
+					Diagnosis:  "Parcours file " + out.Reference,
+				}
+				if err := tx.Create(&c).Error; err != nil {
+					return coreerrors.Internal(err.Error())
+				}
+				if err := tx.Model(&Ticket{}).Where("id=?", out.ID).Update("consultation_id", c.ID).Error; err != nil {
+					return err
+				}
 				out.ConsultationID = &c.ID
+			}
+		}
+		if out.ConsultationID != nil && out.VitalSignsID != nil {
+			if err := s.linkVitalSignsToConsultationTx(tx, *out.VitalSignsID, *out.ConsultationID, out.PatientID); err != nil {
+				return err
 			}
 		}
 		if out.AppointmentID != nil {
@@ -992,9 +1114,12 @@ func (s *Service) TakeDoctor(id uint, r TakeDoctorRequest, a Access) (*Ticket, e
 	return &out, nil
 }
 
-func (s *Service) Complete(id uint, a Access) (*Ticket, error) {
+func (s *Service) Complete(id uint, r CompleteRequest, a Access) (*Ticket, error) {
 	if !s.has(a, "queue.doctor.take") && !s.has(a, "*") {
 		return nil, coreerrors.Forbidden("Permission refusée")
+	}
+	if err := validateClinicalDisposition(r.Disposition); err != nil {
+		return nil, err
 	}
 	if _, err := s.loadTicketForMutation(id, a); err != nil {
 		return nil, err
@@ -1005,8 +1130,20 @@ func (s *Service) Complete(id uint, a Access) (*Ticket, error) {
 		if err := tx.First(&t, id).Error; err != nil {
 			return coreerrors.NotFound("Ticket")
 		}
+		if t.Stage == StageCompleted && t.Status == StatusCompleted {
+			out = t
+			return nil
+		}
+		if err := s.assertDoctorCanComplete(t, a); err != nil {
+			return err
+		}
 		if err := AssertTransition(t.Stage, StageCompleted); err != nil {
 			return coreerrors.Conflict(err.Error())
+		}
+		if t.ConsultationID != nil {
+			if err := s.completeConsultationTx(tx, *t.ConsultationID, r.Disposition, r.DispositionNote, a.UserID); err != nil {
+				return err
+			}
 		}
 		from := t.Stage
 		now := time.Now().UTC()
@@ -1022,13 +1159,50 @@ func (s *Service) Complete(id uint, a Access) (*Ticket, error) {
 				"status": ApptCompleted, "updated_at": now,
 			}).Error
 		}
-		if err := s.writeHistory(tx, id, a.UserID, from, StageCompleted, "COMPLETED", ""); err != nil {
+		if err := s.writeHistory(tx, id, a.UserID, from, StageCompleted, "COMPLETED", r.Disposition); err != nil {
 			return err
 		}
 		out = t
 		return nil
 	})
 	return &out, err
+}
+
+// GetByConsultationID returns the queue ticket linked to a consultation (reverse lookup).
+func (s *Service) GetByConsultationID(consultationID uint, a Access) (*TicketDTO, error) {
+	if !s.has(a, "queue.doctor.read") && !s.has(a, "queue.read.service") && !s.has(a, "queue.read.all") && !s.has(a, "*") {
+		return nil, coreerrors.Forbidden("Lecture file refusée")
+	}
+	var t Ticket
+	if err := s.db.Where("consultation_id = ?", consultationID).First(&t).Error; err != nil {
+		return nil, coreerrors.NotFound("Ticket")
+	}
+	if err := s.assertCanAccessTicket(t, a); err != nil {
+		return nil, err
+	}
+	d := s.enrichTicket(t)
+	return &d, nil
+}
+
+// GetActiveTicketForPatient returns the active doctor-stage ticket for a patient, if any.
+func (s *Service) GetActiveTicketForPatient(patientID uint, a Access) (*TicketDTO, error) {
+	if !s.has(a, "queue.doctor.read") && !s.has(a, "queue.read.service") && !s.has(a, "queue.read.all") &&
+		!s.has(a, "patients.360.read") && !s.has(a, "*") {
+		return nil, coreerrors.Forbidden("Lecture file refusée")
+	}
+	var t Ticket
+	err := s.db.Where(
+		"patient_id=? AND status=? AND stage IN ?",
+		patientID, StatusActive, []string{StageWaitingDoctor, StageDoctorInProgress},
+	).Order("arrived_at DESC").First(&t).Error
+	if err != nil {
+		return nil, coreerrors.NotFound("Ticket")
+	}
+	if err := s.assertCanAccessTicket(t, a); err != nil {
+		return nil, err
+	}
+	d := s.enrichTicket(t)
+	return &d, nil
 }
 
 func (s *Service) Cancel(id uint, r CancelRequest, a Access) (*Ticket, error) {

@@ -103,7 +103,15 @@ func (r *Repository) FindByID(id uint) (*Consultation, error) {
 		Preload("SpecialtyData").
 		First(&consultation, id).Error
 
-	return &consultation, err
+	if err != nil {
+		return &consultation, err
+	}
+
+	var queueTicketID *uint
+	_ = r.db.Raw(`SELECT id FROM patient_queue_tickets WHERE consultation_id = ? LIMIT 1`, id).Scan(&queueTicketID)
+	consultation.QueueTicketID = queueTicketID
+
+	return &consultation, nil
 }
 
 func (r *Repository) FindByPatientID(patientID uint) ([]Consultation, error) {

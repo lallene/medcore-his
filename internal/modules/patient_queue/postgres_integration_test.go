@@ -64,7 +64,7 @@ func queuePostgres(t *testing.T) *gorm.DB {
 		consultation_id BIGINT, comment TEXT,
 		temperature_c DOUBLE PRECISION, systolic_bp INT, diastolic_bp INT, heart_rate INT,
 		oxygen_saturation DOUBLE PRECISION, weight_kg DOUBLE PRECISION, height_cm DOUBLE PRECISION,
-		measured_at TIMESTAMPTZ
+		measured_at TIMESTAMPTZ, updated_at TIMESTAMPTZ DEFAULT NOW()
 	)`)
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS allergies (
 		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT,
@@ -306,7 +306,7 @@ func TestPostgresCrossServiceMutationsDenied(t *testing.T) {
 	if _, e := svc.TakeDoctor(tkB.ID, TakeDoctorRequest{}, admin); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := svc.Complete(tkB.ID, docA); statusOf(e) != 404 {
+	if _, e := svc.Complete(tkB.ID, CompleteRequest{}, docA); statusOf(e) != 404 {
 		t.Fatalf("Complete cross-service want 404 got %d (%v)", statusOf(e), e)
 	}
 	// fresh ticket for cancel/priority
@@ -741,7 +741,7 @@ func TestPostgresDoctorWorklistOnlyAfterTriage(t *testing.T) {
 		t.Fatalf("histories=%+v", detail.Histories)
 	}
 
-	completed, e := svc.Complete(tk.ID, doc)
+	completed, e := svc.Complete(tk.ID, CompleteRequest{}, doc)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -756,6 +756,154 @@ func TestPostgresDoctorWorklistOnlyAfterTriage(t *testing.T) {
 		if item.ID == tk.ID {
 			t.Fatal("completed ticket must leave active doctor worklist")
 		}
+	}
+}
+
+func migrateClinicalFlowTables(db *gorm.DB) {
+	_ = db.Exec(`CREATE TABLE IF NOT EXISTS consultations (
+		id BIGSERIAL PRIMARY KEY, patient_id BIGINT NOT NULL, doctor_name TEXT, service TEXT,
+		service_id BIGINT, status TEXT DEFAULT 'draft', started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+		cancelled_at TIMESTAMPTZ, cancellation_reason TEXT, diagnosis TEXT, observations TEXT,
+		treatment TEXT, sick_leave_required BOOLEAN DEFAULT false, sick_leave_days INT DEFAULT 0,
+		sick_leave_start_date TIMESTAMPTZ, sick_leave_end_date TIMESTAMPTZ,
+		hospitalization_required BOOLEAN DEFAULT false, hospitalization_reason TEXT,
+		hospitalization_type TEXT, hospitalization_duration INT DEFAULT 0,
+		created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	_ = db.Exec(`CREATE TABLE IF NOT EXISTS consultation_soaps (
+		id BIGSERIAL PRIMARY KEY, consultation_id BIGINT UNIQUE, disposition TEXT,
+		patient_advice TEXT, created_by BIGINT, updated_by BIGINT,
+		created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+}
+
+func clinicalFlowReadyTicket(t *testing.T, db *gorm.DB, svc *Service) *Ticket {
+	t.Helper()
+	migrateClinicalFlowTables(db)
+	admin := adminAccess(100)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+	tk, e := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 1, ServiceID: 10, IdentityConfirmed: true, Reason: "sync-test",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.TakeTriage(tk.ID, admin); e != nil {
+		t.Fatal(e)
+	}
+	_ = db.Exec(`INSERT INTO vital_signs(id, medical_record_id, patient_id, temperature_c, measured_at)
+		VALUES (701,1,1,37.2,NOW()) ON CONFLICT DO NOTHING`)
+	if _, e := svc.CompleteTriage(tk.ID, CompleteTriageRequest{VitalSignsID: uintPtr(701)}, admin); e != nil {
+		t.Fatal(e)
+	}
+	taken, e := svc.TakeDoctor(tk.ID, TakeDoctorRequest{CreateConsultation: true}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if taken.ConsultationID == nil {
+		t.Fatal("consultation expected")
+	}
+	return taken
+}
+
+func TestPostgresClinicalFlowConsultationSyncOnComplete(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	taken := clinicalFlowReadyTicket(t, db, svc)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+
+	var status string
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=?`, *taken.ConsultationID).Scan(&status).Error; err != nil {
+		t.Fatal(err)
+	}
+	if status != "in_progress" {
+		t.Fatalf("consultation status after take want in_progress got %s", status)
+	}
+
+	var linkedConsultationID *uint
+	if err := db.Raw(`SELECT consultation_id FROM vital_signs WHERE id=701`).Scan(&linkedConsultationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if linkedConsultationID == nil || *linkedConsultationID != *taken.ConsultationID {
+		t.Fatalf("vital_signs consultation link=%v want %d", linkedConsultationID, *taken.ConsultationID)
+	}
+
+	completed, e := svc.Complete(taken.ID, CompleteRequest{Disposition: "DISCHARGED"}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if completed.Stage != StageCompleted {
+		t.Fatalf("stage=%s", completed.Stage)
+	}
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=?`, *taken.ConsultationID).Scan(&status).Error; err != nil {
+		t.Fatal(err)
+	}
+	if status != "completed" {
+		t.Fatalf("consultation not completed: %s", status)
+	}
+}
+
+func TestPostgresClinicalFlowDoctorBOtherCannotComplete(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	taken := clinicalFlowReadyTicket(t, db, svc)
+	docB := scopedAccess(103, 10, "queue.doctor.read", "queue.doctor.take")
+	_ = db.Exec(`INSERT INTO users(id, name) VALUES (103,'Médecin B') ON CONFLICT DO NOTHING`)
+	if _, e := svc.Complete(taken.ID, CompleteRequest{}, docB); statusOf(e) != 403 {
+		t.Fatalf("other doctor complete want 403 got %d (%v)", statusOf(e), e)
+	}
+}
+
+func TestPostgresClinicalFlowReuseExistingConsultation(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	admin := adminAccess(100)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+	tk, e := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 1, ServiceID: 10, IdentityConfirmed: true,
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.TakeTriage(tk.ID, admin); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.CompleteTriage(tk.ID, CompleteTriageRequest{}, admin); e != nil {
+		t.Fatal(e)
+	}
+	_ = db.Exec(`INSERT INTO consultations(id, patient_id, doctor_name, service, service_id, status, diagnosis)
+		VALUES (9001, 1, 'Dr Test', 'Urgences', 10, 'draft', 'existante')`)
+	_ = db.Model(&Ticket{}).Where("id=?", tk.ID).Update("consultation_id", 9001).Error
+
+	taken, e := svc.TakeDoctor(tk.ID, TakeDoctorRequest{CreateConsultation: true}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if taken.ConsultationID == nil || *taken.ConsultationID != 9001 {
+		t.Fatalf("consultation reuse failed: %v", taken.ConsultationID)
+	}
+	var status string
+	_ = db.Raw(`SELECT status FROM consultations WHERE id=9001`).Scan(&status)
+	if status != "in_progress" {
+		t.Fatalf("existing consultation not activated: %s", status)
+	}
+}
+
+func TestPostgresClinicalFlowGetByConsultationAndActivePatient(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	taken := clinicalFlowReadyTicket(t, db, svc)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+
+	byConsult, e := svc.GetByConsultationID(*taken.ConsultationID, doc)
+	if e != nil || byConsult.ID != taken.ID {
+		t.Fatalf("GetByConsultationID: %v %+v", e, byConsult)
+	}
+	active, e := svc.GetActiveTicketForPatient(taken.PatientID, doc)
+	if e != nil || active.ID != taken.ID {
+		t.Fatalf("GetActiveTicketForPatient: %v %+v", e, active)
 	}
 }
 

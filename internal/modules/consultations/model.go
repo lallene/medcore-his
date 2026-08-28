@@ -60,6 +60,9 @@ type Consultation struct {
 
 	SOAP *ConsultationSOAP `json:"soap,omitempty" gorm:"foreignKey:ConsultationID"`
 
+	// Lecture seule — ticket file lié (patient_queue_tickets.consultation_id).
+	QueueTicketID *uint `json:"queueTicketId,omitempty" gorm:"-"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

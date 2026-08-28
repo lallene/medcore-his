@@ -289,12 +289,51 @@ func (h *Handler) Complete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	var r CompleteRequest
+	// Body optionnel (disposition).
+	_ = c.ShouldBindJSON(&r)
 	a, ok := access(c)
 	if !ok {
 		return
 	}
 	h.enrich(&a)
-	x, e := h.service.Complete(n, a)
+	x, e := h.service.Complete(n, r, a)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) GetByConsultation(c *gin.Context) {
+	cid, ok := id(c)
+	if !ok {
+		return
+	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	x, e := h.service.GetByConsultationID(cid, a)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) GetActiveTicketForPatient(c *gin.Context) {
+	pid, ok := patientID(c)
+	if !ok {
+		return
+	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	x, e := h.service.GetActiveTicketForPatient(pid, a)
 	if e != nil {
 		fail(c, e)
 		return
