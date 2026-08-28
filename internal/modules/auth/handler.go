@@ -62,6 +62,11 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 	permissions := rbac.EffectiveStaffPermissions(user.Role, functions, specialties)
+	if EffectivePermissionsHook != nil {
+		if computed, hookErr := EffectivePermissionsHook(h.db, user.ID, user.Role, functions, specialties); hookErr == nil {
+			permissions = computed
+		}
+	}
 
 	token, err := GenerateToken(h.jwtSecret, user, permissions, functions, specialties, capabilities)
 

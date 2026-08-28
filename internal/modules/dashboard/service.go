@@ -20,9 +20,8 @@ func (s *service) GetDashboard() (*DashboardResponse, error) {
 	}
 
 	activities, err := s.repository.GetRecentActivities(10)
-
 	if err != nil {
-		return nil, err
+		activities = []ActivityItem{}
 	}
 
 	stats.RecentActivities = activities
