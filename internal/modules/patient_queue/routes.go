@@ -10,7 +10,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.POST("/appointments", rbac.Permission("queue.checkin"), h.CreateAppointment)
 	g.GET("/appointments/today", rbac.Permission("queue.reception.read"), h.ListAppointmentsToday)
 	g.POST("/appointments/:id/check-in", rbac.Permission("queue.checkin"), h.CheckInAppointment)
-	g.POST("/appointments/:id/no-show", rbac.AnyPermission("queue.checkin", "queue.cancel"), h.MarkNoShow)
+	g.POST("/appointments/:id/no-show", rbac.AnyPermission("appointment.no_show.service", "appointment.no_show.all"), h.MarkNoShow)
 	g.POST("/check-in/walk-in", rbac.Permission("queue.checkin"), h.CheckInWalkIn)
 	g.GET("/tickets", rbac.AnyPermission("queue.reception.read", "queue.triage.read", "queue.doctor.read", "queue.read.service", "queue.read.all"), h.List)
 	g.GET("/doctor/worklist", rbac.AnyPermission("queue.doctor.read", "queue.read.service", "queue.read.all"), h.DoctorWorklist)
@@ -50,4 +50,15 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 
 	// LOT 23D — transactional booking (authoritative; does not trust availability snapshots)
 	r.POST("/appointments", rbac.AnyPermission("queue.checkin", "schedule.manage.service", "schedule.manage.all"), h.BookAppointment)
+	// LOT 23E — lifecycle (reschedule / cancel / no-show); queue.checkin is NOT lifecycle authority
+	r.PATCH("/appointments/:id/reschedule", rbac.AnyPermission(
+		"appointment.reschedule.service", "appointment.reschedule.all",
+		"schedule.manage.service", "schedule.manage.all",
+	), h.RescheduleAppointment)
+	r.POST("/appointments/:id/cancel", rbac.AnyPermission(
+		"appointment.cancel.service", "appointment.cancel.all",
+	), h.CancelAppointment)
+	r.POST("/appointments/:id/no-show", rbac.AnyPermission(
+		"appointment.no_show.service", "appointment.no_show.all",
+	), h.MarkNoShowAuthoritative)
 }

@@ -157,23 +157,6 @@ func (h *Handler) CheckInWalkIn(c *gin.Context) {
 	c.JSON(201, x)
 }
 
-func (h *Handler) MarkNoShow(c *gin.Context) {
-	n, ok := id(c)
-	if !ok {
-		return
-	}
-	a, ok := access(c)
-	if !ok {
-		return
-	}
-	h.enrich(&a)
-	if e := h.service.MarkNoShow(n, a.UserID, a); e != nil {
-		fail(c, e)
-		return
-	}
-	c.Status(204)
-}
-
 func (h *Handler) List(c *gin.Context) {
 	a, ok := access(c)
 	if !ok {

@@ -1053,8 +1053,8 @@ func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
 		t.Fatalf("end<=start want 400 got %d (%v)", statusOf(e), e)
 	}
 
-	// I — no-show on a fresh scheduled appointment
-	nsStart := time.Now().UTC().Add(3 * time.Hour).Truncate(time.Minute)
+	// I — no-show on a past scheduled appointment (future no-show rejected by 23E)
+	nsStart := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Minute)
 	nsEnd := nsStart.Add(30 * time.Minute)
 	ns, e := svc.CreateAppointment(CreateAppointmentRequest{
 		PatientID: 2, ServiceID: 11, ScheduledAt: nsStart, ScheduledEndAt: &nsEnd,
@@ -1062,7 +1062,7 @@ func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e := svc.MarkNoShow(ns.ID, 100, admin); e != nil {
+	if _, e := svc.MarkNoShow(ns.ID, NoShowAppointmentRequest{}, admin); e != nil {
 		t.Fatal(e)
 	}
 	var noshow Appointment

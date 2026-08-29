@@ -190,13 +190,16 @@ func appointmentOverlapsRequested(ap apptBlockRow, start, end time.Time, typeDur
 	return apStart.Before(end) && apEnd.After(start)
 }
 
-func (s *Service) patientHasOverlapTx(tx *gorm.DB, patientID uint, start, end time.Time) (bool, error) {
+func (s *Service) patientHasOverlapTx(tx *gorm.DB, patientID uint, start, end time.Time, excludeID uint) (bool, error) {
 	appts, err := s.loadPatientAppointmentsTx(tx, patientID, start, end)
 	if err != nil {
 		return false, err
 	}
 	typeDur := s.loadTypeDurMap(tx, appts)
 	for _, ap := range appts {
+		if excludeID != 0 && ap.ID == excludeID {
+			continue
+		}
 		if appointmentOverlapsRequested(ap, start, end, typeDur) {
 			return true, nil
 		}
@@ -204,7 +207,7 @@ func (s *Service) patientHasOverlapTx(tx *gorm.DB, patientID uint, start, end ti
 	return false, nil
 }
 
-func (s *Service) isIntervalFullyAvailableTx(tx *gorm.DB, practitionerID, serviceID uint, start, end time.Time) (bool, error) {
+func (s *Service) isIntervalFullyAvailableTx(tx *gorm.DB, practitionerID, serviceID uint, start, end time.Time, excludeID uint) (bool, error) {
 	from, to := start.UTC(), end.UTC()
 	loc := scheduling.Location()
 	queryBound := scheduling.Interval{Start: from, End: to}
@@ -227,6 +230,15 @@ func (s *Service) isIntervalFullyAvailableTx(tx *gorm.DB, practitionerID, servic
 	if err != nil {
 		return false, err
 	}
+	if excludeID != 0 {
+		filtered := appts[:0]
+		for _, ap := range appts {
+			if ap.ID != excludeID {
+				filtered = append(filtered, ap)
+			}
+		}
+		appts = filtered
+	}
 	typeDur := s.loadTypeDurMap(tx, appts)
 	free := s.computePractitionerFreeIntervals(practitionerID, serviceID, from, to, loc, queryBound, schedules, exceptions, appts, typeDur)
 	for _, iv := range free {
@@ -242,7 +254,7 @@ func (s *Service) resolveBookingCandidates(serviceID uint, practitionerID *uint,
 		if err := s.assertPractitionerAssignedToService(*practitionerID, serviceID); err != nil {
 			return nil, err
 		}
-		ok, err := s.isIntervalFullyAvailableTx(s.db, *practitionerID, serviceID, start, end)
+		ok, err := s.isIntervalFullyAvailableTx(s.db, *practitionerID, serviceID, start, end, 0)
 		if err != nil {
 			return nil, coreerrors.Internal(err.Error())
 		}
@@ -257,7 +269,7 @@ func (s *Service) resolveBookingCandidates(serviceID uint, practitionerID *uint,
 	}
 	var candidates []uint
 	for _, id := range ids {
-		ok, e := s.isIntervalFullyAvailableTx(s.db, id, serviceID, start, end)
+		ok, e := s.isIntervalFullyAvailableTx(s.db, id, serviceID, start, end, 0)
 		if e != nil {
 			return nil, coreerrors.Internal(e.Error())
 		}
@@ -429,7 +441,7 @@ func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointm
 			}
 		}
 
-		overlap, e := s.patientHasOverlapTx(tx, r.PatientID, resolved.Start, resolved.End)
+		overlap, e := s.patientHasOverlapTx(tx, r.PatientID, resolved.Start, resolved.End, 0)
 		if e != nil {
 			return coreerrors.Internal(e.Error())
 		}
@@ -440,7 +452,7 @@ func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointm
 		var chosen uint
 		found := false
 		for _, pid := range cands {
-			ok, e := s.isIntervalFullyAvailableTx(tx, pid, r.ServiceID, resolved.Start, resolved.End)
+			ok, e := s.isIntervalFullyAvailableTx(tx, pid, r.ServiceID, resolved.Start, resolved.End, 0)
 			if e != nil {
 				return coreerrors.Internal(e.Error())
 			}

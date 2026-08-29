@@ -295,32 +295,6 @@ func (s *Service) enrichAppointment(a Appointment) AppointmentDTO {
 	return d
 }
 
-func (s *Service) MarkNoShow(appointmentID uint, actor uint, a Access) error {
-	if !s.has(a, "queue.checkin") && !s.has(a, "queue.cancel") && !s.has(a, "*") {
-		return coreerrors.Forbidden("Permission refusée")
-	}
-	var appt Appointment
-	if err := s.db.First(&appt, appointmentID).Error; err != nil {
-		return coreerrors.NotFound("Rendez-vous")
-	}
-	if err := s.assertCanAccessService(appt.ServiceID, a); err != nil {
-		return coreerrors.NotFound("Rendez-vous")
-	}
-	if appt.Status == ApptCheckedIn || appt.QueueTicketID != nil {
-		return coreerrors.Conflict("Rendez-vous déjà check-in")
-	}
-	from := appt.Status
-	now := time.Now().UTC()
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		appt.Status = ApptNoShow
-		appt.UpdatedAt = now
-		if err := tx.Save(&appt).Error; err != nil {
-			return err
-		}
-		return s.writeAppointmentHistory(tx, appt.ID, actor, ApptHistNoShow, from, ApptNoShow, "", "")
-	})
-}
-
 func (s *Service) CheckInAppointment(appointmentID uint, r AppointmentCheckInRequest, a Access) (*Ticket, error) {
 	if !s.has(a, "queue.checkin") && !s.has(a, "*") {
 		return nil, coreerrors.Forbidden("Permission check-in requise")

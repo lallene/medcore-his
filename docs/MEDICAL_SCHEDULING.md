@@ -455,6 +455,8 @@ Table `patient_queue_appointment_history` — separate from schedule audit. Book
 
 **LOT 23D:** transactional advisory locks + overlap re-check. No persisted slots.
 
+**LOT 23E:** reschedule/cancel/no-show under same locks + `FOR UPDATE`; self-exclusion on overlap.
+
 ## Indexes
 
 **23A appointments:** service/doctor/patient/status/type + `scheduled_at`.
@@ -469,8 +471,130 @@ Table `patient_queue_appointment_history` — separate from schedule audit. Book
 
 | Phase | Focus |
 |-------|--------|
-| 23E | Reschedule / cancel workflows |
 | 23F | Richer Queue check-in UX |
 | 23G | Reception / practitioner calendars |
 | 23H | Patient 360 upcoming RDV |
 | 23J | QA / release gate |
+
+---
+
+## LOT 23E — Appointment lifecycle (reschedule / cancel / no-show)
+
+### State machine
+
+| From \ Op | Reschedule | Cancel | No-show |
+|-----------|------------|--------|---------|
+| SCHEDULED | yes | yes | yes if `scheduled_at ≤ now` |
+| ARRIVED | no | no | yes if time eligible & no ticket |
+| CHECKED_IN | no | no | no |
+| IN_PROGRESS | no | no | no |
+| COMPLETED | terminal | terminal | terminal |
+| CANCELLED | terminal | idempotent OK | terminal |
+| NO_SHOW | terminal | terminal | idempotent OK |
+
+Operational rule: if `queue_ticket_id` is set or status is CHECKED_IN / IN_PROGRESS → **reject** (LOT 23E does **not** mutate queue tickets).
+
+### Reschedule semantics
+
+- **Same** `patient_queue_appointments.id` (never cancel+recreate).
+- `service_id` immutable.
+- Omitted `practitionerId` = **keep current** practitioner (not auto-assign).
+- Duration: keep current unless type/duration explicitly changed (23C/23D rules).
+- Always non-null `scheduled_end_at`.
+- Self-exclusion: overlap / availability checks exclude the appointment being moved.
+- **Required concurrency precondition:** `expectedScheduledAt` + `expectedScheduledEndAt` must match the row under `FOR UPDATE`. Mismatch → **409** (stale). Concurrent writers from the same expected state: exactly one succeeds; the other gets 409. Last-writer-wins across different expected bases is removed for same-origin races.
+
+### Transaction / locks
+
+```
+BEGIN
+  [lifecycle idempotency advisory lock if key]
+  SELECT appointment FOR UPDATE
+  validate scope + state + no queue link
+  validate expectedScheduledAt/EndAt (stale → 409)
+  resolve interval
+  lock patient → practitioners (old∪new, ascending, dedup)
+  re-read + re-check expected precondition
+  patient overlap excluding self
+  practitioner availability excluding self
+  UPDATE appointment
+  append RESCHEDULED history (payload old/new JSON)
+COMMIT
+```
+
+Lock namespaces (reuse 23D + lifecycle):
+
+| Resource | key1 | key2 |
+|----------|------|------|
+| Lifecycle idempotency | `230404` | `int32(FNV(op:apptID:caller:key))` |
+| Patient | `230401` | `patient_id` |
+| Practitioner | `230402` | `practitioner_id` |
+
+Concurrent reschedules sharing the **same expected** interval: one **200**, one **409 stale**. A client that re-reads the new interval may reschedule again successfully.
+
+### Cancellation
+
+`POST /api/appointments/:id/cancel` → status `CANCELLED`, row preserved, original booking reason untouched, cancel reason in history. Immediately non-blocking (23C matrix).
+
+**Terminal idempotence:** already `CANCELLED` + cancel again (with or without key that does not conflict) → **200 no-op**, no new history row. Does not reopen.
+
+### No-show
+
+`POST /api/appointments/:id/no-show` (and legacy `/api/queue/appointments/:id/no-show`).
+
+Rule: `scheduled_at ≤ now` (UTC compare). Future appointments → **400**.
+
+**Terminal idempotence:** already `NO_SHOW` + no-show again → **200 no-op**, no duplicate history.
+
+### History
+
+Append-only `patient_queue_appointment_history`:
+
+- `RESCHEDULED` — payload `{old,new,idempotencyKey?}` with practitioner/start/end/type
+- `CANCELLED` / `NO_SHOW` — reason + optional idempotency key in payload
+
+Actor = JWT `Access.UserID` only.
+
+### Idempotency (lifecycle)
+
+Optional `idempotencyKey` / `Idempotency-Key` header. Scoped as caller + operation + appointment + key.
+
+Lookup: load recent history rows by `(appointment_id, actor_user_id, event_type)`, **JSON-unmarshal** `payload` (TEXT), compare `IdempotencyKey` with **exact string equality** (not substring). Malformed payloads skipped. `abc` ≠ `abc2`.
+
+Semantic equality:
+
+- **Reschedule:** start, end, type ID, practitioner, normalized reason (+ key/caller/op/appt)
+- **Cancel / No-show:** normalized reason (+ key/caller/op/appt)
+
+Same scoped key + same semantics → reuse without duplicate history. Same key + different semantics → **409**. Booking idempotency keys are **not** reused.
+
+### RBAC
+
+| Op | Permissions |
+|----|-------------|
+| Reschedule | `appointment.reschedule.service` \| `appointment.reschedule.all` \| `schedule.manage.service` \| `schedule.manage.all` \| `*` |
+| Cancel | `appointment.cancel.service` \| `appointment.cancel.all` \| `*` |
+| No-show | `appointment.no_show.service` \| `appointment.no_show.all` \| `*` |
+
+**`queue.checkin` is NOT lifecycle authority** (check-in / booking arrival only).
+
+Function grants:
+
+- **ACCUEIL:** `appointment.cancel.service`, `appointment.no_show.service` (no reschedule)
+- **DIRECTEUR_MEDICAL:** `appointment.reschedule.service`, `appointment.cancel.service`, `appointment.no_show.service` (+ existing `schedule.manage.service`)
+- **DIRECTEUR_ADMINISTRATIF:** `appointment.reschedule.all`, `appointment.cancel.all`, `appointment.no_show.all` (+ `schedule.manage.all`)
+
+Service scope via `assertCanAccessService` (`.all` / `*` bypass). Out of scope → **404**.
+
+### API
+
+```
+PATCH /api/appointments/:id/reschedule
+POST  /api/appointments/:id/cancel
+POST  /api/appointments/:id/no-show
+POST  /api/queue/appointments/:id/no-show   → same MarkNoShow service
+```
+
+### Deferred
+
+Queue rollback, reopen cancelled/no-show, service change on reschedule, reminders, recurring series, frontend calendars.

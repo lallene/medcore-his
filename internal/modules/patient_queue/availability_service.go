@@ -479,5 +479,5 @@ func (s *Service) IsIntervalAvailable(practitionerID, serviceID uint, start, end
 	if err := s.assertCanReadAvailability(serviceID, &practitionerID, a); err != nil {
 		return false, err
 	}
-	return s.isIntervalFullyAvailableTx(s.db, practitionerID, serviceID, start.UTC(), end.UTC())
+	return s.isIntervalFullyAvailableTx(s.db, practitionerID, serviceID, start.UTC(), end.UTC(), 0)
 }
