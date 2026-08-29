@@ -235,9 +235,13 @@ func TestPostgresWorkingSchedules23B(t *testing.T) {
 		t.Fatal("O missing ticket reference")
 	}
 
-	// Appointments not mutated by schedule disable
+// Appointments not mutated by schedule disable
+	seedPractitionerForService(t, db, 3, 102, 10)
+	seedAllDaySchedules(t, db, 102, 10)
+	apptStart := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC)
+	apptEnd := apptStart.Add(30 * time.Minute)
 	appt, err := svc.CreateAppointment(CreateAppointmentRequest{
-		PatientID: 501, ServiceID: 10, ScheduledAt: time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC),
+		PatientID: 501, ServiceID: 10, ScheduledAt: apptStart, ScheduledEndAt: &apptEnd,
 	}, adminAccess(100))
 	if err != nil {
 		t.Fatalf("create appt: %v", err)

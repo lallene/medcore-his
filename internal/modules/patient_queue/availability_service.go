@@ -479,52 +479,5 @@ func (s *Service) IsIntervalAvailable(practitionerID, serviceID uint, start, end
 	if err := s.assertCanReadAvailability(serviceID, &practitionerID, a); err != nil {
 		return false, err
 	}
-	free := s.computePractitionerFreeIntervalsQuick(practitionerID, serviceID, start.UTC(), end.UTC())
-	for _, iv := range free {
-		if !iv.Start.After(start.UTC()) && !iv.End.Before(end.UTC()) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (s *Service) computePractitionerFreeIntervalsQuick(practitionerID, serviceID uint, from, to time.Time) []scheduling.Interval {
-	loc := scheduling.Location()
-	queryBound := scheduling.Interval{Start: from, End: to}
-	fromDate := dateOnlyUTC(from.In(loc))
-	toDate := dateOnlyUTC(to.In(loc).Add(-time.Nanosecond))
-	var schedules []StaffWorkingSchedule
-	_ = s.db.Where("practitioner_id = ? AND service_id = ? AND active = true", practitionerID, serviceID).
-		Where("valid_from <= ? AND (valid_until IS NULL OR valid_until >= ?)", toDate, fromDate).
-		Find(&schedules)
-	var exceptions []ScheduleException
-	_ = s.db.Where("practitioner_id = ? AND service_id = ? AND active = true AND cancelled_at IS NULL", practitionerID, serviceID).
-		Where("start_at < ? AND end_at > ?", to, from).
-		Find(&exceptions)
-	var appts []apptBlockRow
-	_ = s.db.Model(&Appointment{}).
-		Select("id, expected_doctor_id, scheduled_at, scheduled_end_at, appointment_type_id, status").
-		Where("service_id = ? AND expected_doctor_id = ?", serviceID, practitionerID).
-		Where("scheduled_at < ?", to).
-		Where("(scheduled_end_at IS NULL OR scheduled_end_at > ?)", from).
-		Find(&appts)
-	typeDur := map[uint]int{}
-	ids := map[uint]struct{}{}
-	for _, ap := range appts {
-		if ap.AppointmentTypeID != nil {
-			ids[*ap.AppointmentTypeID] = struct{}{}
-		}
-	}
-	if len(ids) > 0 {
-		list := make([]uint, 0, len(ids))
-		for id := range ids {
-			list = append(list, id)
-		}
-		var types []AppointmentType
-		_ = s.db.Where("id IN ?", list).Find(&types)
-		for _, t := range types {
-			typeDur[t.ID] = t.DefaultDurationMinutes
-		}
-	}
-	return s.computePractitionerFreeIntervals(practitionerID, serviceID, from, to, loc, queryBound, schedules, exceptions, appts, typeDur)
+	return s.isIntervalFullyAvailableTx(s.db, practitionerID, serviceID, start.UTC(), end.UTC())
 }

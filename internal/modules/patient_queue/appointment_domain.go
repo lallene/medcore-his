@@ -8,8 +8,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// EnsureAppointmentIndexes adds composite indexes used by future schedule queries.
-// Overlap exclusion (tstzrange) is deferred to LOT 23D.
+// EnsureAppointmentIndexes adds composite indexes used by schedule/availability/booking queries.
+// PostgreSQL EXCLUDE on intervals is not added: legacy NULL ends + status filtering make a
+// partial EXCLUDE brittle; application advisory locks remain the authority (LOT 23D).
 func EnsureAppointmentIndexes(db *gorm.DB) error {
 	statements := []string{
 		`CREATE INDEX IF NOT EXISTS idx_pq_appt_service_scheduled ON patient_queue_appointments (service_id, scheduled_at)`,
@@ -17,6 +18,9 @@ func EnsureAppointmentIndexes(db *gorm.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_pq_appt_patient_scheduled ON patient_queue_appointments (patient_id, scheduled_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_pq_appt_status_scheduled ON patient_queue_appointments (status, scheduled_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_pq_appt_type_scheduled ON patient_queue_appointments (appointment_type_id, scheduled_at)`,
+		// Replace global idempotency unique with caller-scoped unique (created_by, idempotency_key).
+		`DROP INDEX IF EXISTS ux_pq_appt_idempotency`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS ux_pq_appt_idempotency_caller ON patient_queue_appointments (created_by, idempotency_key) WHERE idempotency_key IS NOT NULL`,
 	}
 	for _, sql := range statements {
 		if err := db.Exec(sql).Error; err != nil {

@@ -96,7 +96,7 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		fail(c, e)
 		return
 	}
-	c.JSON(201, x)
+	c.JSON(201, h.service.enrichAppointment(*x))
 }
 
 func (h *Handler) ListAppointmentsToday(c *gin.Context) {

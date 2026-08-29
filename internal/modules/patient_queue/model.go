@@ -34,6 +34,7 @@ type Appointment struct {
 	ArrivedAt         *time.Time `json:"arrivedAt"`
 	CheckedInAt       *time.Time `json:"checkedInAt"`
 	QueueTicketID     *uint      `gorm:"index" json:"queueTicketId"`
+	IdempotencyKey    *string    `gorm:"size:150" json:"idempotencyKey,omitempty"` // LOT 23D optional client retry key
 	CreatedBy         uint       `gorm:"not null" json:"createdBy"`
 	CreatedAt         time.Time  `gorm:"not null" json:"createdAt"`
 	UpdatedAt         time.Time  `gorm:"not null" json:"updatedAt"`

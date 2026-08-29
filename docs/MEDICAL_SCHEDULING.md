@@ -306,13 +306,131 @@ Availability is read-only: never creates/updates appointments, schedules, except
 
 ---
 
+## LOT 23D — Transactional booking & double-booking protection
+
+### Snapshot vs booking
+
+`GET /availability` is a **snapshot**, not a reservation.
+
+`POST /api/appointments` is the authoritative booking path. It always:
+
+1. validates request + duration
+2. resolves candidates (specific or auto)
+3. `BEGIN`
+4. advisory-locks patient, then practitioner(s) ascending
+5. re-checks patient overlap
+6. re-checks schedule ∪ EXTRA − negatives − appointments (full containment)
+7. inserts appointment with non-null `scheduled_end_at`
+8. appends history `CREATED` (actor = JWT)
+9. `COMMIT` (or `ROLLBACK` on any failure)
+
+### Lock strategy
+
+PostgreSQL `pg_advisory_xact_lock` (same family as 23B schedule definition locks):
+
+| Resource | key1 | key2 |
+|----------|------|------|
+| Idempotency (caller+key) | `230403` | `int32(FNV-1a32("{userID}:{key}"))` |
+| Patient booking | `230401` | `patient_id` |
+| Practitioner booking | `230402` | `practitioner_id` |
+
+**Lock order (deadlock prevention):**
+1. If idempotency key present: idempotency lock first
+2. Patient
+3. All candidate practitioners in **ascending ID** order
+
+Then try candidates in that same ascending order.
+
+Hash collisions on the idempotency lock key only serialize unrelated (caller,key) pairs briefly; uniqueness remains on `(created_by, idempotency_key)`.
+
+No process-local mutexes. No long-lived locks outside the transaction.
+
+### Overlap rules
+
+Half-open `[start, end)`.
+
+Overlap: `existing.start < requested.end AND existing.end > requested.start`.
+
+Adjacent allowed. Blocking statuses = shared `AppointmentBlocksAvailability` (same matrix as 23C). Legacy NULL end uses `ResolveAppointmentEnd` (same fallback as 23C).
+
+Patient overlap is independent of practitioner: one patient cannot hold two blocking intervals that overlap, even across practitioners/services.
+
+### Automatic practitioner selection
+
+Eligible staff assigned to the service whose free intervals fully contain the request (snapshot). Deterministic order: **practitioner ID ascending**. Under transaction, try each candidate; first that still fits wins. If all conflict → **409**.
+
+### Duration
+
+Same policy as 23C. New bookings **always** persist `scheduled_end_at` (never NULL).
+
+### Idempotency
+
+Optional `idempotencyKey` body field or `Idempotency-Key` header.
+
+**Identity:** `(created_by, idempotency_key)` — caller-scoped. User A key `abc` does not block User B key `abc`.
+
+**Partial unique index:** `ux_pq_appt_idempotency_caller ON (created_by, idempotency_key) WHERE idempotency_key IS NOT NULL`.
+
+Startup/`cmd/migrate` drop obsolete global `ux_pq_appt_idempotency` if present, then create the caller-scoped index.
+
+**Same semantic booking request** (exact match required for reuse):
+
+- caller (`created_by`)
+- patient
+- service
+- requested start + resulting end (duration)
+- appointment type identity (`appointment_type_id`, not duration alone)
+- practitioner intent: specific practitioner must match; auto-assignment (`practitionerId` omitted) remains auto (stored winner may differ only if re-executed as create — reuse returns prior row as-is)
+- **reason** — **included** in semantics (`strings.TrimSpace`); different reason with same key → **409**
+
+Behavior:
+
+- Same caller + key + same semantics → return original appointment (**200** if reused, **201** on first create)
+- Same caller + key + different semantics → **409**
+- Concurrent identical retries: advisory lock serializes; both succeed with the **same** appointment ID (never 409 for identical retry)
+- `created_by` is always JWT actor (non-null) on new bookings
+
+### RBAC
+
+Reuses existing permissions (no parallel auth system):
+
+`queue.checkin` | `schedule.manage.service` | `schedule.manage.all` | `*`
+
+Service scope via `assertServiceInScope`. Practitioner must be assigned to service. Patient must exist.
+
+### API
+
+```
+POST /api/appointments          → BookAppointment (authoritative)
+POST /api/queue/appointments    → CreateAppointment → delegates to BookAppointment
+```
+
+Both HTTP paths that **insert** scheduled appointments use the same transactional guarantees (locks, schedule, overlaps, non-null `scheduled_end_at`).
+
+Legacy body maps `expectedDoctorId` → `practitionerId`, `scheduledAt` → `startAt`. Requires `appointmentTypeId` and/or `scheduledEndAt` (no silent duration invent). Walk-in check-in is unchanged and does not create appointments via this path.
+
+### Indexes / EXCLUDE
+
+Existing `(expected_doctor_id|patient_id|service_id, scheduled_at)` indexes used.
+
+Partial unique: `ux_pq_appt_idempotency_caller` on `(created_by, idempotency_key) WHERE NOT NULL`.
+
+**No EXCLUDE constraint:** legacy NULL ends + status-based blocking make a safe EXCLUDE brittle; advisory locks are mandatory.
+
+### Deferred (23E+)
+
+Reschedule, cancel API changes, reminders, holds, waitlists, recurring series, frontend calendar/wizard.
+
+---
+
 ## Appointment interval semantics (23A)
 
 - `scheduled_at` = **start inclusive**
 - `scheduled_end_at` = **end exclusive** → half-open `[start, end)`
 - Invariant: `end > start` when end is set
 - Adjacent intervals `09:00–09:30` and `09:30–10:00` do **not** overlap
-- Legacy / queue-only creates may leave `scheduled_end_at` **NULL**
+- Legacy / queue-only creates may leave `scheduled_end_at` **NULL** (pre-23D rows only)
+- HTTP CreateAppointment / BookAppointment always set `scheduled_end_at`
 - When `appointment_type_id` is set and end omitted, end = start + `default_duration_minutes`
 
 ## AppointmentType
@@ -331,11 +449,11 @@ Table `patient_queue_appointment_types`: unique `code`, `default_duration_minute
 
 ## Appointment history (23A)
 
-Table `patient_queue_appointment_history` — separate from schedule audit.
+Table `patient_queue_appointment_history` — separate from schedule audit. Booking uses event `CREATED`.
 
 ## Overlap protection (appointments)
 
-**PostgreSQL EXCLUDE / booking locks belong to LOT 23D.**
+**LOT 23D:** transactional advisory locks + overlap re-check. No persisted slots.
 
 ## Indexes
 
@@ -345,11 +463,12 @@ Table `patient_queue_appointment_history` — separate from schedule audit.
 
 **23C:** no new tables; uses existing indexes for batched loads.
 
+**23D:** caller-scoped partial unique idempotency index `(created_by, idempotency_key)`; no slot table; no EXCLUDE.
+
 ## Future phases
 
 | Phase | Focus |
 |-------|--------|
-| 23D | Booking concurrency / overlap |
 | 23E | Reschedule / cancel workflows |
 | 23F | Richer Queue check-in UX |
 | 23G | Reception / practitioner calendars |

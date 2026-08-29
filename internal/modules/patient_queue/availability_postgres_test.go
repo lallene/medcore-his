@@ -247,12 +247,15 @@ func TestPostgresAvailabilityEngine23C(t *testing.T) {
 		t.Fatalf("L type scope want 400 got %d %v", statusOf(err), err)
 	}
 
-	// M. legacy NULL end blocks with fallback
+	// M. legacy NULL end blocks with fallback (pre-23D rows; CreateAppointment no longer allows nil end)
 	legacyStart := time.Date(2026, 9, 14, 15, 0, 0, 0, time.UTC)
-	leg, err := svc.CreateAppointment(CreateAppointmentRequest{
-		PatientID: 2, ServiceID: 10, ExpectedDoctorID: &doc, ScheduledAt: legacyStart,
-	}, admin)
-	if err != nil {
+	nowIns := time.Now().UTC()
+	leg := Appointment{
+		PatientID: 2, ServiceID: 10, ExpectedDoctorID: &doc,
+		ScheduledAt: legacyStart, ScheduledEndAt: nil, Status: ApptScheduled,
+		CreatedBy: 100, CreatedAt: nowIns, UpdatedAt: nowIns,
+	}
+	if err := db.Create(&leg).Error; err != nil {
 		t.Fatal(err)
 	}
 	if leg.ScheduledEndAt != nil {

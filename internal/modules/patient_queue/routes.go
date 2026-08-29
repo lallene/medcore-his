@@ -47,4 +47,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	ag.GET("", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.GetAvailability)
 	ag.GET("/first", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.GetFirstAvailability)
 	ag.GET("/mine", rbac.AnyPermission("schedule.read.own", "schedule.read.all", "schedule.manage.own"), h.GetMyAvailability)
+
+	// LOT 23D — transactional booking (authoritative; does not trust availability snapshots)
+	r.POST("/appointments", rbac.AnyPermission("queue.checkin", "schedule.manage.service", "schedule.manage.all"), h.BookAppointment)
 }

@@ -214,46 +214,12 @@ func (s *Service) writeHistory(tx *gorm.DB, ticketID, actor uint, from, to, even
 }
 
 func (s *Service) CreateAppointment(r CreateAppointmentRequest, a Access) (*Appointment, error) {
-	if r.PatientID == 0 || r.ServiceID == 0 {
-		return nil, coreerrors.BadRequest("patient et service requis")
-	}
-	if err := s.assertServiceInScope(r.ServiceID, a); err != nil {
-		return nil, err
-	}
-	start, end, typeID, err := s.resolveAppointmentInterval(r)
+	book, err := mapLegacyCreateToBook(r)
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
-	appt := Appointment{
-		PatientID:         r.PatientID,
-		ServiceID:         r.ServiceID,
-		ExpectedDoctorID:  r.ExpectedDoctorID,
-		AppointmentTypeID: typeID,
-		ScheduledAt:       start,
-		ScheduledEndAt:    end,
-		Reason:            strings.TrimSpace(r.Reason),
-		Status:            ApptScheduled,
-		CreatedBy:         a.UserID,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-	}
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&appt).Error; err != nil {
-			return coreerrors.Internal(err.Error())
-		}
-		payload := ""
-		if end != nil {
-			payload = fmt.Sprintf(`{"scheduledAt":%q,"scheduledEndAt":%q}`, start.Format(time.RFC3339), end.Format(time.RFC3339))
-		} else {
-			payload = fmt.Sprintf(`{"scheduledAt":%q,"scheduledEndAt":null}`, start.Format(time.RFC3339))
-		}
-		return s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCreated, "", ApptScheduled, r.Reason, payload)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &appt, nil
+	appt, _, err := s.BookAppointment(book, a)
+	return appt, err
 }
 
 // assertServiceInScope is used when the actor explicitly chooses a serviceId (walk-in / create RDV).

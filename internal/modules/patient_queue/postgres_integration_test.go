@@ -95,6 +95,35 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	return db
 }
 
+// seedPractitionerForService wires staff assignment used by booking/create fixtures.
+func seedPractitionerForService(t *testing.T, db *gorm.DB, profileID, userID, serviceID uint) {
+	t.Helper()
+	if err := db.Exec(`INSERT INTO staff_profiles(id, user_id, active, primary_service_id) VALUES (?,?,true,?) ON CONFLICT DO NOTHING`,
+		profileID, userID, serviceID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO staff_service_assignments(profile_id, service_id, active) VALUES (?,?,true) ON CONFLICT DO NOTHING`,
+		profileID, serviceID).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedAllDaySchedules makes practitioner bookable for CreateAppointment fixtures (LOT 23D).
+func seedAllDaySchedules(t *testing.T, db *gorm.DB, practitionerID, serviceID uint) {
+	t.Helper()
+	vf := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
+	for wd := 0; wd <= 6; wd++ {
+		if err := db.Create(&StaffWorkingSchedule{
+			PractitionerID: practitionerID, ServiceID: serviceID, Weekday: wd,
+			StartTime: "00:00:00", EndTime: "23:59:59", ValidFrom: vf, Active: true,
+			CreatedBy: 100, CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed schedule wd=%d: %v", wd, err)
+		}
+	}
+}
+
 func adminAccess(uid uint) Access {
 	return Access{UserID: uid, Permissions: map[string]bool{"*": true}}
 }
@@ -228,9 +257,13 @@ func TestPostgresForbiddenSkipAndConcurrency(t *testing.T) {
 func TestPostgresAppointmentCheckInAndFinance(t *testing.T) {
 	db := queuePostgres(t)
 	svc := NewService(db)
+	seedPractitionerForService(t, db, 3, 102, 10)
+	seedAllDaySchedules(t, db, 102, 10)
 	now := time.Now().UTC()
+	start := now.Add(-20 * time.Minute)
+	end := start.Add(30 * time.Minute)
 	appt, e := svc.CreateAppointment(CreateAppointmentRequest{
-		PatientID: 2, ServiceID: 10, ScheduledAt: now.Add(-20 * time.Minute), Reason: "Suivi",
+		PatientID: 2, ServiceID: 10, ScheduledAt: start, ScheduledEndAt: &end, Reason: "Suivi",
 	}, adminAccess(100))
 	if e != nil {
 		t.Fatal(e)
@@ -367,10 +400,14 @@ func TestPostgresKPIServiceIsolation(t *testing.T) {
 	db := queuePostgres(t)
 	svc := NewService(db)
 	admin := adminAccess(100)
+	seedPractitionerForService(t, db, 3, 102, 10)
+	seedAllDaySchedules(t, db, 102, 10)
 	now := time.Now().UTC()
+	startA := now.Add(-40 * time.Minute)
+	endA := startA.Add(30 * time.Minute)
 	// Service A: one late appointment ticket
 	apptA, e := svc.CreateAppointment(CreateAppointmentRequest{
-		PatientID: 1, ServiceID: 10, ScheduledAt: now.Add(-40 * time.Minute), Reason: "A-late",
+		PatientID: 1, ServiceID: 10, ScheduledAt: startA, ScheduledEndAt: &endA, Reason: "A-late",
 	}, admin)
 	if e != nil {
 		t.Fatal(e)
@@ -915,17 +952,41 @@ func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
 	svc := NewService(db)
 	admin := adminAccess(100)
 	docID := uint(102)
+	seedPractitionerForService(t, db, 3, 102, 10)
+	seedPractitionerForService(t, db, 4, 102, 11)
+	seedAllDaySchedules(t, db, 102, 10)
+	seedAllDaySchedules(t, db, 102, 11)
 
-	// A/B — legacy create (no type, no end) still works + check-in creates ticket
-	legacy, e := svc.CreateAppointment(CreateAppointmentRequest{
+	// A — missing type/end rejected (23D: no silent weaken via legacy CreateAppointment)
+	if _, e := svc.CreateAppointment(CreateAppointmentRequest{
 		PatientID: 1, ServiceID: 10, ExpectedDoctorID: &docID,
-		ScheduledAt: time.Now().UTC().Add(30 * time.Minute), Reason: "legacy-23a",
+		ScheduledAt: time.Now().UTC().Add(30 * time.Minute), Reason: "no-duration",
+	}, admin); statusOf(e) != 400 {
+		t.Fatalf("missing type/end want 400 got %d (%v)", statusOf(e), e)
+	}
+
+	at, e := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
+		Code: "GEN-CONSULT", Name: "Consultation générale", DefaultDurationMinutes: 30,
 	}, admin)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if legacy.ScheduledEndAt != nil {
-		t.Fatal("legacy create must leave scheduled_end_at nil")
+	if _, e := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
+		Code: "BAD", Name: "Bad", DefaultDurationMinutes: 0,
+	}, admin); statusOf(e) != 400 {
+		t.Fatalf("duration<=0 want 400 got %d (%v)", statusOf(e), e)
+	}
+
+	// B — typed create + check-in creates ticket; scheduled_end_at always set
+	legacy, e := svc.CreateAppointment(CreateAppointmentRequest{
+		PatientID: 1, ServiceID: 10, ExpectedDoctorID: &docID, AppointmentTypeID: &at.ID,
+		ScheduledAt: time.Now().UTC().Add(30 * time.Minute).Truncate(time.Minute), Reason: "legacy-23a",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if legacy.ScheduledEndAt == nil {
+		t.Fatal("CreateAppointment must persist scheduled_end_at")
 	}
 	if legacy.ExpectedDoctorID == nil || *legacy.ExpectedDoctorID != docID {
 		t.Fatalf("practitioner users.id expected 102 got %v", legacy.ExpectedDoctorID)
@@ -967,24 +1028,11 @@ func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
 		t.Fatal("walk-in must have nil appointment_id")
 	}
 
-	// D/E/F — appointment type + rich interval
-	at, e := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
-		Code: "GEN-CONSULT", Name: "Consultation générale", DefaultDurationMinutes: 30,
-	}, admin)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if _, e := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
-		Code: "BAD", Name: "Bad", DefaultDurationMinutes: 0,
-	}, admin); statusOf(e) != 400 {
-		t.Fatalf("duration<=0 want 400 got %d (%v)", statusOf(e), e)
-	}
-
+	// D/E/F — rich interval from type
 	start := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Minute)
 	rich, e := svc.CreateAppointment(CreateAppointmentRequest{
 		PatientID: 1, ServiceID: 10, AppointmentTypeID: &at.ID, ScheduledAt: start,
 	}, admin)
-	// patient 1 already has active ticket from legacy check-in — create still ok (no ticket yet)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -1006,8 +1054,10 @@ func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
 	}
 
 	// I — no-show on a fresh scheduled appointment
+	nsStart := time.Now().UTC().Add(3 * time.Hour).Truncate(time.Minute)
+	nsEnd := nsStart.Add(30 * time.Minute)
 	ns, e := svc.CreateAppointment(CreateAppointmentRequest{
-		PatientID: 2, ServiceID: 11, ScheduledAt: time.Now().UTC().Add(3 * time.Hour),
+		PatientID: 2, ServiceID: 11, ScheduledAt: nsStart, ScheduledEndAt: &nsEnd,
 	}, admin)
 	if e != nil {
 		t.Fatal(e)
