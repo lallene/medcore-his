@@ -12,6 +12,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/audit"
 	"github.com/lallene/medcore-his/backend/internal/core/container"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
+	"github.com/lallene/medcore-his/backend/internal/core/scheduling"
 	"github.com/lallene/medcore-his/backend/internal/core/workflow"
 	"github.com/lallene/medcore-his/backend/internal/database"
 	"github.com/lallene/medcore-his/backend/internal/middleware"
@@ -33,6 +34,12 @@ func New() *Application {
 
 	logger.Init(cfg.AppEnv)
 	logger.Info("Démarrage MedCore HIS", "env", cfg.AppEnv)
+
+	if err := scheduling.SetLocation(cfg.Timezone); err != nil {
+		logger.Error("Timezone planning", "error", err)
+		panic(err)
+	}
+	logger.Info("Timezone planning", "iana", scheduling.LocationName())
 
 	db := database.Connect(cfg.DatabaseURL)
 	di := container.New()

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -15,6 +16,8 @@ type Config struct {
 	DatabaseURL string
 	JWTSecret   string
 	CORSOrigin  string
+	// Timezone is the IANA zone for recurring wall-clock schedules (MEDCORE_TIMEZONE).
+	Timezone string
 }
 
 func Load() Config {
@@ -28,6 +31,7 @@ func Load() Config {
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 		JWTSecret:   getEnv("JWT_SECRET", "change_me"),
 		CORSOrigin:  getEnv("CORS_ORIGIN", "http://localhost:5173"),
+		Timezone:    getEnv("MEDCORE_TIMEZONE", "UTC"),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -40,6 +44,12 @@ func Load() Config {
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return fmt.Errorf("DATABASE_URL est obligatoire")
+	}
+
+	if strings.TrimSpace(c.Timezone) != "" {
+		if _, err := time.LoadLocation(c.Timezone); err != nil {
+			return fmt.Errorf("MEDCORE_TIMEZONE invalide %q: %w", c.Timezone, err)
+		}
 	}
 
 	if strings.EqualFold(strings.TrimSpace(c.AppEnv), "production") {

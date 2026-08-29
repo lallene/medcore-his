@@ -39,10 +39,12 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	}
 	sqlDB, _ := db.DB()
 	t.Cleanup(func() { sqlDB.Close(); admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`) })
-	if e = db.AutoMigrate(&AppointmentType{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{}); e != nil {
+	if e = db.AutoMigrate(&AppointmentType{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
+		&StaffWorkingSchedule{}, &ScheduleException{}, &ScheduleAuditEvent{}); e != nil {
 		t.Fatal(e)
 	}
 	_ = EnsureAppointmentIndexes(db)
+	_ = EnsureScheduleIndexes(db)
 	// Minimal patients / services / users for FK-less raw lookups
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS patients (
 		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT, prenoms TEXT,

@@ -37,6 +37,13 @@ func init() {
 	add("queue.read.service", "Lire la file (scope service)", "Patient Queue", "SERVICE")
 	add("queue.read.all", "Lire toute la file (global)", "Patient Queue", "GLOBAL")
 	add("queue.priority.update", "Modifier la priorité", "Patient Queue", "SERVICE")
+	// Medical scheduling LOT 23B
+	add("schedule.read.own", "Lire mon planning", "Scheduling", "OWN")
+	add("schedule.read.service", "Lire les plannings du service", "Scheduling", "SERVICE")
+	add("schedule.read.all", "Lire tous les plannings", "Scheduling", "GLOBAL")
+	add("schedule.manage.own", "Gérer mon planning", "Scheduling", "OWN")
+	add("schedule.manage.service", "Gérer les plannings du service", "Scheduling", "SERVICE")
+	add("schedule.manage.all", "Gérer tous les plannings", "Scheduling", "GLOBAL")
 	// Consultations / hosp
 	add("consultations.read", "Lire les consultations", "Consultations", "SERVICE")
 	add("consultations.create", "Créer une consultation", "Consultations", "SERVICE")

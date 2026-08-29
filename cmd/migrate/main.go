@@ -147,6 +147,9 @@ func main() {
 		&patient_queue.AppointmentHistory{},
 		&patient_queue.Ticket{},
 		&patient_queue.History{},
+		&patient_queue.StaffWorkingSchedule{},
+		&patient_queue.ScheduleException{},
+		&patient_queue.ScheduleAuditEvent{},
 	)
 
 	if err != nil {
@@ -154,6 +157,9 @@ func main() {
 	}
 	if err := patient_queue.EnsureAppointmentIndexes(db); err != nil {
 		log.Fatal("Erreur index patient_queue appointments:", err)
+	}
+	if err := patient_queue.EnsureScheduleIndexes(db); err != nil {
+		log.Fatal("Erreur index patient_queue schedules:", err)
 	}
 	if err := pharmacy.BackfillVouchers(db); err != nil {
 		log.Fatal("Erreur matérialisation bons pharmacie:", err)
