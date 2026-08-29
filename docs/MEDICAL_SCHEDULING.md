@@ -24,8 +24,8 @@ Walk-in tickets keep `appointment_id = NULL`.
 | **Appointment** | Booked interval for a patient | 23A |
 | **Working Schedule** | Recurring staff hours (wall-clock) | **23B** |
 | **Schedule Exception** | Date-specific absences / extra openings | **23B** |
-| **Availability** | Derived free intervals | Deferred 23C |
-| **Generated Slot** | Ephemeral search result | Not persisted |
+| **Availability** | Derived free intervals | **23C** |
+| **Generated Slot** | Ephemeral search result | **23C** (in memory only) |
 | **Queue Ticket** | Operational clinical journey | Unchanged (LOT 19–22) |
 | **Doctor Worklist** | Post-triage operational list | Unchanged |
 
@@ -175,27 +175,134 @@ GET/PATCH/DELETE  /api/schedule-exceptions/:id
 
 Filters: `practitionerId`, `serviceId`, `weekday`, `active`, `date` / `from`+`to`.
 
-**No** `GET /availability` (23C).
+### LOT 23B domain contract (inputs for 23C)
 
-### LOT 23C domain contract
-
-Service methods (not HTTP DTOs):
-
-- `ListApplicableWorkingWindows(practitionerID, serviceID, fromDate, toDate) ([]WorkingWindow, error)`
-- `ListApplicableExceptions(practitionerID, serviceID, from, to) ([]ScheduleException, error)`
-- `ExceptionPrecedenceNegativeWins() bool` → true
-
-Future equation:
-
-```
-Working Schedule + Schedule Exceptions − Existing Appointments = Availability
-```
-
-23B implements only the first two inputs.
+- `ListApplicableWorkingWindows(practitionerID, serviceID, fromDate, toDate)`
+- `ListApplicableExceptions(practitionerID, serviceID, from, to)`
+- `ExceptionPrecedenceNegativeWins()` → true
 
 ### Boundary with Queue / Worklist
 
 After patient arrival, Queue / check-in / finance / triage / Doctor Worklist / LOT 22 remain authoritative. Schedules do not feed the worklist.
+
+---
+
+## LOT 23C — Medical availability engine
+
+### Equation (derived, never persisted)
+
+```
+Recurring Working Windows
+    ∪ Positive Exceptions (EXTRA_AVAILABILITY)
+    − Negative Exceptions (negative wins)
+    − Blocking Appointments
+  = Free Intervals
+    → Generated Candidate Slots (in memory)
+```
+
+**Availability response ≠ booking guarantee.** Between `GET /availability` and a future booking, another transaction may consume the interval. LOT **23D** re-checks under authoritative locks. No long-lived DB locks on availability reads.
+
+### No slot table
+
+Slots are ephemeral. **No** `availability_slots` / `generated_slots` migration.
+
+### Interval algebra
+
+Package `internal/core/scheduling`: half-open `[start,end)`.
+
+Operations: Normalize, Merge (overlap + adjacent), Intersect, Subtract, Clip, GenerateSlots.
+
+### Working schedule projection
+
+Wall-clock `TIME` + calendar date → concrete instant via `scheduling.ProjectWallClock` using `MEDCORE_TIMEZONE` IANA location.
+
+DST (Go `time.Date`):
+
+- Spring gap (nonexistent): normalized forward
+- Autumn fold (ambiguous): earlier occurrence
+- Never fixed `UTC+1` / `UTC+2`
+
+### Exception processing
+
+1. Project active schedules for weekday + validity
+2. Union `EXTRA_AVAILABILITY` into base (merge overlaps)
+3. Subtract all negative exceptions (ABSENCE, LEAVE, MEETING, BLOCKED, TRAINING, OTHER)
+4. Subtract blocking appointments (clipped to query)
+
+### Appointment blocking matrix
+
+| Status | Blocks? |
+|--------|---------|
+| `SCHEDULED` | yes |
+| `ARRIVED` | yes |
+| `CHECKED_IN` | yes |
+| `IN_PROGRESS` | yes |
+| `COMPLETED` | yes (deterministic occupancy) |
+| `CANCELLED` | **no** |
+| `NO_SHOW` | **no** (capacity released) |
+| unknown | yes (fail closed) |
+
+### Legacy `scheduled_end_at == NULL`
+
+Read-time only (no DB mutation):
+
+1. use `scheduled_end_at` when set
+2. else type `default_duration_minutes` when type present
+3. else `MEDCORE_LEGACY_APPOINTMENT_FALLBACK_MINUTES` (default **30**)
+
+### Duration resolution
+
+- `appointmentTypeId` only → type duration
+- `durationMinutes` only → explicit
+- both → **reject** if inconsistent
+- neither → reject
+- type with `service_id` set must match query `serviceId`
+
+Limits: duration 5–480 min; step 5–240 min (default step = duration); range ≤ **31** days; max **10000** slots (reject if exceeded).
+
+### Slot generation
+
+Align from the **start of each free interval** (not Unix epoch). No partial slots. `step` may be `<` duration.
+
+### Service-wide availability
+
+Eligible practitioners = active `staff_profiles` + active `staff_service_assignments` for the service (no parallel doctor table; no reliable exclusive clinician flag beyond assignment — capacity further constrained by schedules/exceptions).
+
+Slots keep `practitionerId`. Sort: `startAt ASC`, `practitionerId ASC`, `endAt ASC`.
+
+**Query strategy (no N+1):** one eligible-practitioner query + one schedules batch + one exceptions batch + one appointments batch + optional appointment-types batch; group in memory.
+
+### First available
+
+`GET /api/availability/first` — earliest candidate, **read-only** (no hold/lock/create). 404 when empty. Optional `to` (default +7 days from `from`).
+
+### Own availability
+
+`GET /api/availability/mine` — practitioner from JWT; `serviceId` still required among assigned services.
+
+### API
+
+```
+GET /api/availability
+GET /api/availability/first
+GET /api/availability/mine
+```
+
+Query: `serviceId`, `practitionerId?`, `appointmentTypeId?`, `durationMinutes?`, `from`, `to`, `slotStepMinutes?` (RFC3339).
+
+### RBAC
+
+Reuses `schedule.read.own|service|all` (and manage.* for route convenience). No separate `availability.read`. Service scope enforced; own-only cannot enumerate service-wide practitioners.
+
+### Domain API for LOT 23D
+
+- `ComputeAvailability(query, access)`
+- `FirstAvailable(query, access)`
+- `IsIntervalAvailable(practitionerID, serviceID, start, end, access)` — **not** concurrency protection
+
+### Mutation safety
+
+Availability is read-only: never creates/updates appointments, schedules, exceptions, or queue tickets.
 
 ---
 
@@ -236,11 +343,12 @@ Table `patient_queue_appointment_history` — separate from schedule audit.
 
 **23B schedules:** `(practitioner_id, service_id, weekday)`, validity/active; exceptions range; audit entity.
 
+**23C:** no new tables; uses existing indexes for batched loads.
+
 ## Future phases
 
 | Phase | Focus |
 |-------|--------|
-| 23C | Availability engine |
 | 23D | Booking concurrency / overlap |
 | 23E | Reschedule / cancel workflows |
 | 23F | Richer Queue check-in UX |

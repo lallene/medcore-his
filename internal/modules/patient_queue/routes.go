@@ -41,4 +41,10 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	eg.GET("/:id", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.GetScheduleException)
 	eg.PATCH("/:id", rbac.AnyPermission("schedule.manage.own", "schedule.manage.service", "schedule.manage.all"), h.UpdateScheduleException)
 	eg.DELETE("/:id", rbac.AnyPermission("schedule.manage.own", "schedule.manage.service", "schedule.manage.all"), h.DeleteScheduleException)
+
+	// LOT 23C — read-only availability (no booking, no persisted slots)
+	ag := r.Group("/availability")
+	ag.GET("", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.GetAvailability)
+	ag.GET("/first", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.GetFirstAvailability)
+	ag.GET("/mine", rbac.AnyPermission("schedule.read.own", "schedule.read.all", "schedule.manage.own"), h.GetMyAvailability)
 }
