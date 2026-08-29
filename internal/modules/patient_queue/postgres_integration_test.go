@@ -39,9 +39,10 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	}
 	sqlDB, _ := db.DB()
 	t.Cleanup(func() { sqlDB.Close(); admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`) })
-	if e = db.AutoMigrate(&Appointment{}, &Ticket{}, &History{}); e != nil {
+	if e = db.AutoMigrate(&AppointmentType{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{}); e != nil {
 		t.Fatal(e)
 	}
+	_ = EnsureAppointmentIndexes(db)
 	// Minimal patients / services / users for FK-less raw lookups
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS patients (
 		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT, prenoms TEXT,
@@ -904,6 +905,141 @@ func TestPostgresClinicalFlowGetByConsultationAndActivePatient(t *testing.T) {
 	active, e := svc.GetActiveTicketForPatient(taken.PatientID, doc)
 	if e != nil || active.ID != taken.ID {
 		t.Fatalf("GetActiveTicketForPatient: %v %+v", e, active)
+	}
+}
+
+func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	admin := adminAccess(100)
+	docID := uint(102)
+
+	// A/B — legacy create (no type, no end) still works + check-in creates ticket
+	legacy, e := svc.CreateAppointment(CreateAppointmentRequest{
+		PatientID: 1, ServiceID: 10, ExpectedDoctorID: &docID,
+		ScheduledAt: time.Now().UTC().Add(30 * time.Minute), Reason: "legacy-23a",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if legacy.ScheduledEndAt != nil {
+		t.Fatal("legacy create must leave scheduled_end_at nil")
+	}
+	if legacy.ExpectedDoctorID == nil || *legacy.ExpectedDoctorID != docID {
+		t.Fatalf("practitioner users.id expected 102 got %v", legacy.ExpectedDoctorID)
+	}
+	var histCount int64
+	db.Model(&AppointmentHistory{}).Where("appointment_id=? AND event_type=?", legacy.ID, ApptHistCreated).Count(&histCount)
+	if histCount != 1 {
+		t.Fatalf("CREATED history want 1 got %d", histCount)
+	}
+
+	tk, e := svc.CheckInAppointment(legacy.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if tk.AppointmentID == nil || *tk.AppointmentID != legacy.ID {
+		t.Fatal("ticket must link same canonical appointment id")
+	}
+	var apptAfter Appointment
+	_ = db.First(&apptAfter, legacy.ID)
+	if apptAfter.QueueTicketID == nil || *apptAfter.QueueTicketID != tk.ID {
+		t.Fatal("appointment.queue_ticket_id must link ticket")
+	}
+	if apptAfter.Status != ApptCheckedIn {
+		t.Fatalf("status=%s", apptAfter.Status)
+	}
+	db.Model(&AppointmentHistory{}).Where("appointment_id=? AND event_type=?", legacy.ID, ApptHistCheckedIn).Count(&histCount)
+	if histCount != 1 {
+		t.Fatalf("CHECKED_IN history want 1 got %d", histCount)
+	}
+
+	// C — walk-in remains functional (no appointment)
+	walk, e := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 2, ServiceID: 10, IdentityConfirmed: true, Reason: "walk-23a",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if walk.AppointmentID != nil {
+		t.Fatal("walk-in must have nil appointment_id")
+	}
+
+	// D/E/F — appointment type + rich interval
+	at, e := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
+		Code: "GEN-CONSULT", Name: "Consultation générale", DefaultDurationMinutes: 30,
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
+		Code: "BAD", Name: "Bad", DefaultDurationMinutes: 0,
+	}, admin); statusOf(e) != 400 {
+		t.Fatalf("duration<=0 want 400 got %d (%v)", statusOf(e), e)
+	}
+
+	start := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Minute)
+	rich, e := svc.CreateAppointment(CreateAppointmentRequest{
+		PatientID: 1, ServiceID: 10, AppointmentTypeID: &at.ID, ScheduledAt: start,
+	}, admin)
+	// patient 1 already has active ticket from legacy check-in — create still ok (no ticket yet)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if rich.ScheduledEndAt == nil {
+		t.Fatal("typed appointment must derive scheduled_end_at")
+	}
+	if !rich.ScheduledEndAt.Equal(start.Add(30 * time.Minute)) {
+		t.Fatalf("end=%v want start+30m", rich.ScheduledEndAt)
+	}
+	if !rich.ScheduledEndAt.After(rich.ScheduledAt) {
+		t.Fatal("end must be after start")
+	}
+
+	badEnd := start.Add(-time.Minute)
+	if _, e := svc.CreateAppointment(CreateAppointmentRequest{
+		PatientID: 2, ServiceID: 10, ScheduledAt: start, ScheduledEndAt: &badEnd,
+	}, admin); statusOf(e) != 400 {
+		t.Fatalf("end<=start want 400 got %d (%v)", statusOf(e), e)
+	}
+
+	// I — no-show on a fresh scheduled appointment
+	ns, e := svc.CreateAppointment(CreateAppointmentRequest{
+		PatientID: 2, ServiceID: 11, ScheduledAt: time.Now().UTC().Add(3 * time.Hour),
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e := svc.MarkNoShow(ns.ID, 100, admin); e != nil {
+		t.Fatal(e)
+	}
+	var noshow Appointment
+	if err := db.First(&noshow, ns.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if noshow.Status != ApptNoShow {
+		t.Fatalf("no-show status=%s", noshow.Status)
+	}
+	db.Model(&AppointmentHistory{}).Where("appointment_id=? AND event_type=?", ns.ID, ApptHistNoShow).Count(&histCount)
+	if histCount != 1 {
+		t.Fatalf("NO_SHOW history want 1 got %d", histCount)
+	}
+
+	// H — history is append-only (service never updates history rows)
+	var events []AppointmentHistory
+	_ = db.Where("appointment_id=?", ns.ID).Order("id ASC").Find(&events)
+	if len(events) < 2 || events[0].EventType != ApptHistCreated || events[1].EventType != ApptHistNoShow {
+		t.Fatalf("history sequence=%+v", events)
+	}
+	if events[0].ActorUserID != 100 || events[1].ActorUserID != 100 {
+		t.Fatal("actor must come from JWT/access user, not frontend")
+	}
+
+	// Duplicate type code → conflict
+	if _, e := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
+		Code: "gen-consult", Name: "dup", DefaultDurationMinutes: 20,
+	}, admin); statusOf(e) != 409 {
+		t.Fatalf("duplicate type code want 409 got %d (%v)", statusOf(e), e)
 	}
 }
 

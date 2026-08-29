@@ -29,6 +29,9 @@ contrainte davantage (limite documentée).
 
 Fenêtre retard RDV : constante fixe ±15 minutes (`AppointmentWindow`).
 
+LOT 23A étend `patient_queue_appointments` (types, intervalle `[start,end)`, historique).
+Voir `docs/MEDICAL_SCHEDULING.md` — cette table reste **canonique** (pas de second modèle RDV).
+
 ## LOT 20 — Doctor Worklist / visibilité médecin
 
 Acteur **doctor-only** (`queue.doctor.read` sans `queue.reception.read` /

@@ -10,7 +10,10 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "patient_queue")
-	app.MustMigrate(&Appointment{}, &Ticket{}, &History{})
+	app.MustMigrate(&AppointmentType{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{})
+	if err := EnsureAppointmentIndexes(app.DB); err != nil {
+		logger.Error("Index patient_queue appointments", "error", err)
+	}
 	s := NewService(app.DB)
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))

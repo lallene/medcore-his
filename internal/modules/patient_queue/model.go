@@ -2,13 +2,33 @@ package patient_queue
 
 import "time"
 
-// Appointment is the schedule source for queue check-in (no separate agenda module).
+// AppointmentType is a scheduling catalog entry (duration / code), not a clinical reason.
+// Distinct from consultations.ConsultationReason.
+type AppointmentType struct {
+	ID                     uint      `gorm:"primaryKey" json:"id"`
+	Code                   string    `gorm:"size:64;not null;uniqueIndex" json:"code"`
+	Name                   string    `gorm:"size:160;not null" json:"name"`
+	DefaultDurationMinutes int       `gorm:"column:default_duration_minutes;not null" json:"defaultDurationMinutes"` // must be > 0
+	ServiceID              *uint     `gorm:"index" json:"serviceId,omitempty"`                                       // optional service constraint
+	Active                 bool      `gorm:"not null;default:true;index" json:"active"`
+	CreatedAt              time.Time `gorm:"not null" json:"createdAt"`
+	UpdatedAt              time.Time `gorm:"not null" json:"updatedAt"`
+}
+
+func (AppointmentType) TableName() string { return "patient_queue_appointment_types" }
+
+// Appointment is the canonical medical appointment row (LOT 23 Option A).
+// It is the schedule source for queue check-in — there is no second appointments table.
+// Timing: ScheduledAt = start (inclusive); ScheduledEndAt = end (exclusive) half-open [start, end).
+// ScheduledEndAt may be nil on legacy rows; new creates should set it when duration/type is known.
 type Appointment struct {
 	ID                uint       `gorm:"primaryKey" json:"id"`
 	PatientID         uint       `gorm:"not null;index" json:"patientId"`
 	ServiceID         uint       `gorm:"not null;index" json:"serviceId"`
-	ExpectedDoctorID  *uint      `gorm:"index" json:"expectedDoctorId"`
-	ScheduledAt       time.Time  `gorm:"not null;index" json:"scheduledAt"`
+	ExpectedDoctorID  *uint      `gorm:"index" json:"expectedDoctorId"` // scheduled practitioner = users.id
+	AppointmentTypeID *uint      `gorm:"index" json:"appointmentTypeId,omitempty"`
+	ScheduledAt       time.Time  `gorm:"not null;index" json:"scheduledAt"`     // start inclusive
+	ScheduledEndAt    *time.Time `gorm:"index" json:"scheduledEndAt,omitempty"` // end exclusive; nil = legacy
 	Reason            string     `gorm:"size:200" json:"reason"`
 	Status            string     `gorm:"size:24;not null;index" json:"status"`
 	ArrivedAt         *time.Time `json:"arrivedAt"`
@@ -20,6 +40,22 @@ type Appointment struct {
 }
 
 func (Appointment) TableName() string { return "patient_queue_appointments" }
+
+// AppointmentHistory is an append-only audit log for scheduling lifecycle events.
+// Distinct from patient_queue_history (ticket operational transitions).
+type AppointmentHistory struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	AppointmentID uint      `gorm:"not null;index" json:"appointmentId"`
+	ActorUserID   uint      `gorm:"not null;index" json:"actorUserId"`
+	EventType     string    `gorm:"size:40;not null;index" json:"eventType"`
+	FromStatus    string    `gorm:"size:24" json:"fromStatus"`
+	ToStatus      string    `gorm:"size:24" json:"toStatus"`
+	Reason        string    `gorm:"type:text" json:"reason"`
+	Payload       string    `gorm:"type:text" json:"payload"` // optional JSON context
+	CreatedAt     time.Time `gorm:"not null;index" json:"createdAt"`
+}
+
+func (AppointmentHistory) TableName() string { return "patient_queue_appointment_history" }
 
 // Ticket is the active clinical arrival journey after validated check-in.
 type Ticket struct {
@@ -70,16 +106,16 @@ func (History) TableName() string { return "patient_queue_history" }
 
 // Stages
 const (
-	StageReception         = "RECEPTION"
-	StageWaitingTriage     = "WAITING_TRIAGE"
-	StageTriageInProgress  = "TRIAGE_IN_PROGRESS"
-	StageWaitingDoctor     = "WAITING_DOCTOR"
-	StageDoctorInProgress  = "DOCTOR_IN_PROGRESS"
-	StageCompleted         = "COMPLETED"
-	StageCancelled         = "CANCELLED"
-	StageNoShow            = "NO_SHOW"
-	StageOnHold            = "ON_HOLD"
-	StageRedirected        = "REDIRECTED"
+	StageReception        = "RECEPTION"
+	StageWaitingTriage    = "WAITING_TRIAGE"
+	StageTriageInProgress = "TRIAGE_IN_PROGRESS"
+	StageWaitingDoctor    = "WAITING_DOCTOR"
+	StageDoctorInProgress = "DOCTOR_IN_PROGRESS"
+	StageCompleted        = "COMPLETED"
+	StageCancelled        = "CANCELLED"
+	StageNoShow           = "NO_SHOW"
+	StageOnHold           = "ON_HOLD"
+	StageRedirected       = "REDIRECTED"
 )
 
 const (
@@ -103,6 +139,19 @@ const (
 	ApptCompleted  = "COMPLETED"
 	ApptCancelled  = "CANCELLED"
 	ApptNoShow     = "NO_SHOW"
+)
+
+// Appointment history event types (append-only scheduling audit).
+const (
+	ApptHistCreated             = "CREATED"
+	ApptHistConfirmed           = "CONFIRMED"
+	ApptHistRescheduled         = "RESCHEDULED"
+	ApptHistPractitionerChanged = "PRACTITIONER_CHANGED"
+	ApptHistCancelled           = "CANCELLED"
+	ApptHistCheckedIn           = "CHECKED_IN"
+	ApptHistNoShow              = "NO_SHOW"
+	ApptHistInProgress          = "IN_PROGRESS"
+	ApptHistCompleted           = "COMPLETED"
 )
 
 const (

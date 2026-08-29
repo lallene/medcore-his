@@ -13,22 +13,32 @@ func (a Access) Has(p string) bool {
 }
 
 type CreateAppointmentRequest struct {
-	PatientID        uint      `json:"patientId" binding:"required"`
-	ServiceID        uint      `json:"serviceId" binding:"required"`
-	ExpectedDoctorID *uint     `json:"expectedDoctorId"`
-	ScheduledAt      time.Time `json:"scheduledAt" binding:"required"`
-	Reason           string    `json:"reason"`
+	PatientID         uint       `json:"patientId" binding:"required"`
+	ServiceID         uint       `json:"serviceId" binding:"required"`
+	ExpectedDoctorID  *uint      `json:"expectedDoctorId"`
+	AppointmentTypeID *uint      `json:"appointmentTypeId"`
+	ScheduledAt       time.Time  `json:"scheduledAt" binding:"required"`
+	ScheduledEndAt    *time.Time `json:"scheduledEndAt"` // optional; derived from type duration when omitted
+	Reason            string     `json:"reason"`
+}
+
+type CreateAppointmentTypeRequest struct {
+	Code                   string `json:"code" binding:"required"`
+	Name                   string `json:"name" binding:"required"`
+	DefaultDurationMinutes int    `json:"defaultDurationMinutes" binding:"required"`
+	ServiceID              *uint  `json:"serviceId"`
+	Active                 *bool  `json:"active"`
 }
 
 type WalkInCheckInRequest struct {
-	PatientID          uint   `json:"patientId" binding:"required"`
-	ServiceID          uint   `json:"serviceId" binding:"required"`
-	ExpectedDoctorID   *uint  `json:"expectedDoctorId"`
-	IdentityConfirmed  bool   `json:"identityConfirmed"`
-	FinanceOverride    bool   `json:"financeOverride"`
+	PatientID           uint   `json:"patientId" binding:"required"`
+	ServiceID           uint   `json:"serviceId" binding:"required"`
+	ExpectedDoctorID    *uint  `json:"expectedDoctorId"`
+	IdentityConfirmed   bool   `json:"identityConfirmed"`
+	FinanceOverride     bool   `json:"financeOverride"`
 	FinanceOverrideNote string `json:"financeOverrideNote"`
-	Priority           string `json:"priority"`
-	Reason             string `json:"reason"`
+	Priority            string `json:"priority"`
+	Reason              string `json:"reason"`
 }
 
 type AppointmentCheckInRequest struct {
@@ -101,48 +111,50 @@ type ClinicalSnippet struct {
 
 type TicketDTO struct {
 	Ticket
-	PatientCode        string  `json:"patientCode"`
-	PatientName        string  `json:"patientName"`
-	PatientSex         string  `json:"patientSex,omitempty"`
-	PatientAgeYears    *int    `json:"patientAgeYears,omitempty"`
-	PatientDob         *string `json:"patientDob,omitempty"`
-	PatientPhone       string  `json:"patientPhone,omitempty"`
-	ServiceName        string  `json:"serviceName"`
-	ExpectedDoctorName string  `json:"expectedDoctorName"`
-	DoctorTakenByName  string  `json:"doctorTakenByName,omitempty"`
-	Reason             string  `json:"reason,omitempty"`
-	WaitMinutes        int     `json:"waitMinutes"`
-	Punctuality        string  `json:"punctuality,omitempty"`
-	AppointmentTime    *string `json:"appointmentTime,omitempty"`
+	PatientCode        string        `json:"patientCode"`
+	PatientName        string        `json:"patientName"`
+	PatientSex         string        `json:"patientSex,omitempty"`
+	PatientAgeYears    *int          `json:"patientAgeYears,omitempty"`
+	PatientDob         *string       `json:"patientDob,omitempty"`
+	PatientPhone       string        `json:"patientPhone,omitempty"`
+	ServiceName        string        `json:"serviceName"`
+	ExpectedDoctorName string        `json:"expectedDoctorName"`
+	DoctorTakenByName  string        `json:"doctorTakenByName,omitempty"`
+	Reason             string        `json:"reason,omitempty"`
+	WaitMinutes        int           `json:"waitMinutes"`
+	Punctuality        string        `json:"punctuality,omitempty"`
+	AppointmentTime    *string       `json:"appointmentTime,omitempty"`
 	VitalSigns         *VitalSummary `json:"vitalSigns,omitempty"`
 }
 
 type DoctorWorklistKPIs struct {
-	ToTreat                int64    `json:"toTreat"`
-	Urgent                 int64    `json:"urgent"`
-	InConsultation         int64    `json:"inConsultation"`
-	AvgWaitMinutes         float64  `json:"avgWaitMinutes"`
-	CompletedToday         int64    `json:"completedToday"`
-	AvgConsultationMinutes float64  `json:"avgConsultationMinutes"`
-	LastCompletedAt        *string  `json:"lastCompletedAt,omitempty"`
+	ToTreat                int64   `json:"toTreat"`
+	Urgent                 int64   `json:"urgent"`
+	InConsultation         int64   `json:"inConsultation"`
+	AvgWaitMinutes         float64 `json:"avgWaitMinutes"`
+	CompletedToday         int64   `json:"completedToday"`
+	AvgConsultationMinutes float64 `json:"avgConsultationMinutes"`
+	LastCompletedAt        *string `json:"lastCompletedAt,omitempty"`
 }
 
 type DoctorWorklistResponse struct {
-	Items []TicketDTO       `json:"items"`
-	Total int64             `json:"total"`
-	Page  int               `json:"page"`
-	Limit int               `json:"limit"`
+	Items []TicketDTO        `json:"items"`
+	Total int64              `json:"total"`
+	Page  int                `json:"page"`
+	Limit int                `json:"limit"`
 	KPIs  DoctorWorklistKPIs `json:"kpis"`
 }
 
 type AppointmentDTO struct {
 	Appointment
-	PatientCode        string `json:"patientCode"`
-	PatientName        string `json:"patientName"`
-	ServiceName        string `json:"serviceName"`
-	ExpectedDoctorName string `json:"expectedDoctorName"`
-	Punctuality        string `json:"punctuality,omitempty"`
-	HasActiveTicket    bool   `json:"hasActiveTicket"`
+	PatientCode         string `json:"patientCode"`
+	PatientName         string `json:"patientName"`
+	ServiceName         string `json:"serviceName"`
+	ExpectedDoctorName  string `json:"expectedDoctorName"`
+	AppointmentTypeCode string `json:"appointmentTypeCode,omitempty"`
+	AppointmentTypeName string `json:"appointmentTypeName,omitempty"`
+	Punctuality         string `json:"punctuality,omitempty"`
+	HasActiveTicket     bool   `json:"hasActiveTicket"`
 }
 
 type ListResponse struct {
@@ -160,14 +172,14 @@ type AppointmentListResponse struct {
 }
 
 type KPIs struct {
-	ArrivedToday      int64   `json:"arrivedToday"`
-	WaitingReception  int64   `json:"waitingReception"`
-	WaitingTriage     int64   `json:"waitingTriage"`
-	WaitingDoctor     int64   `json:"waitingDoctor"`
-	InProgress        int64   `json:"inProgress"`
-	CompletedToday    int64   `json:"completedToday"`
-	AvgWaitMinutes    float64 `json:"avgWaitMinutes"`
-	LateAppointments  int64   `json:"lateAppointments"`
+	ArrivedToday     int64   `json:"arrivedToday"`
+	WaitingReception int64   `json:"waitingReception"`
+	WaitingTriage    int64   `json:"waitingTriage"`
+	WaitingDoctor    int64   `json:"waitingDoctor"`
+	InProgress       int64   `json:"inProgress"`
+	CompletedToday   int64   `json:"completedToday"`
+	AvgWaitMinutes   float64 `json:"avgWaitMinutes"`
+	LateAppointments int64   `json:"lateAppointments"`
 }
 
 type DetailResponse struct {

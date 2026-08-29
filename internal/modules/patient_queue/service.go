@@ -220,19 +220,38 @@ func (s *Service) CreateAppointment(r CreateAppointmentRequest, a Access) (*Appo
 	if err := s.assertServiceInScope(r.ServiceID, a); err != nil {
 		return nil, err
 	}
-	appt := Appointment{
-		PatientID:        r.PatientID,
-		ServiceID:        r.ServiceID,
-		ExpectedDoctorID: r.ExpectedDoctorID,
-		ScheduledAt:      r.ScheduledAt.UTC(),
-		Reason:           strings.TrimSpace(r.Reason),
-		Status:           ApptScheduled,
-		CreatedBy:        a.UserID,
-		CreatedAt:        time.Now().UTC(),
-		UpdatedAt:        time.Now().UTC(),
+	start, end, typeID, err := s.resolveAppointmentInterval(r)
+	if err != nil {
+		return nil, err
 	}
-	if err := s.db.Create(&appt).Error; err != nil {
-		return nil, coreerrors.Internal(err.Error())
+	now := time.Now().UTC()
+	appt := Appointment{
+		PatientID:         r.PatientID,
+		ServiceID:         r.ServiceID,
+		ExpectedDoctorID:  r.ExpectedDoctorID,
+		AppointmentTypeID: typeID,
+		ScheduledAt:       start,
+		ScheduledEndAt:    end,
+		Reason:            strings.TrimSpace(r.Reason),
+		Status:            ApptScheduled,
+		CreatedBy:         a.UserID,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&appt).Error; err != nil {
+			return coreerrors.Internal(err.Error())
+		}
+		payload := ""
+		if end != nil {
+			payload = fmt.Sprintf(`{"scheduledAt":%q,"scheduledEndAt":%q}`, start.Format(time.RFC3339), end.Format(time.RFC3339))
+		} else {
+			payload = fmt.Sprintf(`{"scheduledAt":%q,"scheduledEndAt":null}`, start.Format(time.RFC3339))
+		}
+		return s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCreated, "", ApptScheduled, r.Reason, payload)
+	})
+	if err != nil {
+		return nil, err
 	}
 	return &appt, nil
 }
@@ -294,6 +313,15 @@ func (s *Service) enrichAppointment(a Appointment) AppointmentDTO {
 	if a.ExpectedDoctorID != nil {
 		_ = s.db.Raw(`SELECT COALESCE(name,'') FROM users WHERE id=?`, *a.ExpectedDoctorID).Scan(&d.ExpectedDoctorName)
 	}
+	if a.AppointmentTypeID != nil {
+		var trow struct {
+			Code string
+			Name string
+		}
+		_ = s.db.Raw(`SELECT code, name FROM patient_queue_appointment_types WHERE id=?`, *a.AppointmentTypeID).Scan(&trow)
+		d.AppointmentTypeCode = trow.Code
+		d.AppointmentTypeName = trow.Name
+	}
 	if a.ArrivedAt != nil {
 		d.Punctuality = Punctuality(a.ScheduledAt, *a.ArrivedAt)
 	}
@@ -315,10 +343,16 @@ func (s *Service) MarkNoShow(appointmentID uint, actor uint, a Access) error {
 	if appt.Status == ApptCheckedIn || appt.QueueTicketID != nil {
 		return coreerrors.Conflict("Rendez-vous déjà check-in")
 	}
+	from := appt.Status
 	now := time.Now().UTC()
-	appt.Status = ApptNoShow
-	appt.UpdatedAt = now
-	return s.db.Save(&appt).Error
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		appt.Status = ApptNoShow
+		appt.UpdatedAt = now
+		if err := tx.Save(&appt).Error; err != nil {
+			return err
+		}
+		return s.writeAppointmentHistory(tx, appt.ID, actor, ApptHistNoShow, from, ApptNoShow, "", "")
+	})
 }
 
 func (s *Service) CheckInAppointment(appointmentID uint, r AppointmentCheckInRequest, a Access) (*Ticket, error) {
@@ -340,6 +374,7 @@ func (s *Service) CheckInAppointment(appointmentID uint, r AppointmentCheckInReq
 		if appt.QueueTicketID != nil || appt.Status == ApptCheckedIn {
 			return coreerrors.Conflict("Check-in déjà effectué pour ce rendez-vous")
 		}
+		fromApptStatus := appt.Status
 		var active int64
 		tx.Model(&Ticket{}).Where("patient_id=? AND status=?", appt.PatientID, StatusActive).Count(&active)
 		if active > 0 {
@@ -403,6 +438,9 @@ func (s *Service) CheckInAppointment(appointmentID uint, r AppointmentCheckInReq
 		appt.QueueTicketID = &t.ID
 		appt.UpdatedAt = now
 		if err := tx.Save(&appt).Error; err != nil {
+			return err
+		}
+		if err := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCheckedIn, fromApptStatus, ApptCheckedIn, "check-in", ""); err != nil {
 			return err
 		}
 		if err := s.writeHistory(tx, t.ID, a.UserID, StageReception, StageWaitingTriage, "CHECK_IN", "appointment"); err != nil {
@@ -1101,10 +1139,17 @@ func (s *Service) TakeDoctor(id uint, r TakeDoctorRequest, a Access) (*Ticket, e
 			}
 		}
 		if out.AppointmentID != nil {
-			_ = tx.Model(&Appointment{}).Where("id=?", *out.AppointmentID).Updates(map[string]any{
+			var prev string
+			_ = tx.Raw(`SELECT status FROM patient_queue_appointments WHERE id=?`, *out.AppointmentID).Scan(&prev)
+			if err := tx.Model(&Appointment{}).Where("id=?", *out.AppointmentID).Updates(map[string]any{
 				"status":     ApptInProgress,
 				"updated_at": time.Now().UTC(),
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+			if err := s.writeAppointmentHistory(tx, *out.AppointmentID, a.UserID, ApptHistInProgress, prev, ApptInProgress, "doctor_take", ""); err != nil {
+				return err
+			}
 		}
 		return s.writeHistory(tx, id, a.UserID, StageWaitingDoctor, StageDoctorInProgress, "DOCTOR_TAKE", "")
 	})
@@ -1155,9 +1200,16 @@ func (s *Service) Complete(id uint, r CompleteRequest, a Access) (*Ticket, error
 			return err
 		}
 		if t.AppointmentID != nil {
-			_ = tx.Model(&Appointment{}).Where("id=?", *t.AppointmentID).Updates(map[string]any{
+			var prev string
+			_ = tx.Raw(`SELECT status FROM patient_queue_appointments WHERE id=?`, *t.AppointmentID).Scan(&prev)
+			if err := tx.Model(&Appointment{}).Where("id=?", *t.AppointmentID).Updates(map[string]any{
 				"status": ApptCompleted, "updated_at": now,
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+			if err := s.writeAppointmentHistory(tx, *t.AppointmentID, a.UserID, ApptHistCompleted, prev, ApptCompleted, r.Disposition, ""); err != nil {
+				return err
+			}
 		}
 		if err := s.writeHistory(tx, id, a.UserID, from, StageCompleted, "COMPLETED", r.Disposition); err != nil {
 			return err

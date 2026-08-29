@@ -142,13 +142,18 @@ func main() {
 		&ticketing.Assignment{},
 		&ticketing.History{},
 		&ticketing.Notification{},
+		&patient_queue.AppointmentType{},
 		&patient_queue.Appointment{},
+		&patient_queue.AppointmentHistory{},
 		&patient_queue.Ticket{},
 		&patient_queue.History{},
 	)
 
 	if err != nil {
 		log.Fatal("Erreur migration:", err)
+	}
+	if err := patient_queue.EnsureAppointmentIndexes(db); err != nil {
+		log.Fatal("Erreur index patient_queue appointments:", err)
 	}
 	if err := pharmacy.BackfillVouchers(db); err != nil {
 		log.Fatal("Erreur matérialisation bons pharmacie:", err)
