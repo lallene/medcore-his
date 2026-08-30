@@ -46,6 +46,11 @@ func (h *Handler) ListAppointments(c *gin.Context) {
 		fail(c, err)
 		return
 	}
+	patientID, err := parseUintQuery(c.Query("patientId"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	f := AppointmentListFilter{
@@ -53,6 +58,7 @@ func (h *Handler) ListAppointments(c *gin.Context) {
 		To:                to,
 		ServiceID:         svcID,
 		PractitionerID:    pracID,
+		PatientID:         patientID,
 		Status:            c.Query("status"),
 		AppointmentTypeID: typeID,
 		Page:              page,

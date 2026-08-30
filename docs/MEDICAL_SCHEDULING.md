@@ -552,7 +552,7 @@ Minimal authoritative reads for medical agenda (no new models / slots).
 
 **Required query:** `from`, `to` (RFC3339).
 
-**Optional:** `serviceId`, `practitionerId` (filters `expected_doctor_id`), `status`, `appointmentTypeId`, `page`, `limit` (max 100).
+**Optional:** `serviceId`, `practitionerId` (filters `expected_doctor_id`), `patientId`, `status`, `appointmentTypeId`, `page`, `limit` (max 100).
 
 **Range:** half-open intersection `[from, to)`:
 

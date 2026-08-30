@@ -11,12 +11,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// AppointmentListFilter — GET /api/appointments query (LOT 23F.1).
+// AppointmentListFilter — GET /api/appointments query (LOT 23F.1 / 23H).
 type AppointmentListFilter struct {
 	From              time.Time
 	To                time.Time
 	ServiceID         *uint
 	PractitionerID    *uint
+	PatientID         *uint
 	Status            string
 	AppointmentTypeID *uint
 	Page              int
@@ -165,6 +166,9 @@ func (s *Service) ListAppointments(f AppointmentListFilter, a Access) (*Appointm
 	}
 	if f.PractitionerID != nil {
 		q = q.Where("a.expected_doctor_id = ?", *f.PractitionerID)
+	}
+	if f.PatientID != nil {
+		q = q.Where("a.patient_id = ?", *f.PatientID)
 	}
 	if f.Status != "" {
 		q = q.Where("a.status = ?", f.Status)

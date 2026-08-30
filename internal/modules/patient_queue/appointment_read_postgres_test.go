@@ -248,6 +248,73 @@ func TestPostgresAppointmentReadRBAC23F1(t *testing.T) {
 	_ = db
 }
 
+func TestPostgresAppointmentListPatientIDFilter23H(t *testing.T) {
+	db, svc, admin, prac, at := readSetup(t)
+	day := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	a1 := bookRead(t, svc, admin, 701, prac, 10, at.ID, day)
+	a2 := bookRead(t, svc, admin, 702, prac, 10, at.ID, day.Add(time.Hour))
+	from, to := day.Add(-time.Hour), day.Add(5*time.Hour)
+
+	pid701 := uint(701)
+	res, err := svc.ListAppointments(AppointmentListFilter{
+		From: from, To: to, PatientID: &pid701, Page: 1, Limit: 100,
+	}, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsAppt(res.Items, a1.ID) {
+		t.Fatal("patient 701 appointment missing")
+	}
+	if containsAppt(res.Items, a2.ID) {
+		t.Fatal("patient 702 appointment must not appear for patientId=701")
+	}
+	for _, it := range res.Items {
+		if it.PatientID != 701 {
+			t.Fatalf("leak patientId=%d", it.PatientID)
+		}
+	}
+
+	// Without patientId: both remain visible (regression).
+	res, err = svc.ListAppointments(AppointmentListFilter{From: from, To: to, Page: 1, Limit: 100}, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsAppt(res.Items, a1.ID) || !containsAppt(res.Items, a2.ID) {
+		t.Fatal("unfiltered list must still return both patients")
+	}
+
+	// OWN + patientId: doctor 700 sees own row for patient 701, not other practitioner's row.
+	otherPrac := uint(701)
+	otherOnSamePatient := bookRead(t, svc, admin, 701, otherPrac, 11, at.ID, day.Add(2*time.Hour))
+	ownAccess := scopedAccess(700, 10, "schedule.read.own")
+	res, err = svc.ListAppointments(AppointmentListFilter{
+		From: from, To: to, PatientID: &pid701, Page: 1, Limit: 100,
+	}, ownAccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsAppt(res.Items, a1.ID) {
+		t.Fatal("OWN+patientId should include own appointment")
+	}
+	if containsAppt(res.Items, otherOnSamePatient.ID) {
+		t.Fatal("OWN+patientId must not leak other practitioner appointments")
+	}
+
+	checkinOnly := scopedAccess(702, 10, "queue.checkin")
+	if _, err := svc.ListAppointments(AppointmentListFilter{
+		From: from, To: to, PatientID: &pid701,
+	}, checkinOnly); statusOf(err) != 403 {
+		t.Fatalf("queue.checkin+patientId must 403 got %d", statusOf(err))
+	}
+	consultOnly := scopedAccess(702, 10, "consultations.read")
+	if _, err := svc.ListAppointments(AppointmentListFilter{
+		From: from, To: to, PatientID: &pid701,
+	}, consultOnly); statusOf(err) != 403 {
+		t.Fatalf("consultations.read+patientId must 403 got %d", statusOf(err))
+	}
+	_ = db
+}
+
 func TestPostgresAppointmentGetByIDAndLifecycle23F1(t *testing.T) {
 	db, svc, admin, prac, at := readSetup(t)
 	day := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
