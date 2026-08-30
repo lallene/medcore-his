@@ -27,7 +27,12 @@ Constantes (`vitalSignsId`) : vérification same-patient obligatoire via
 `consultation_id`, ils doivent coïncider. Sinon la visite/encounter n'est pas
 contrainte davantage (limite documentée).
 
-Fenêtre retard RDV : constante fixe ±15 minutes (`AppointmentWindow`).
+Fenêtre retard RDV (affichage punctualité) : constante fixe ±15 minutes (`AppointmentWindow`).
+
+**LOT 23F — check-in timing:** `MEDCORE_APPOINTMENT_EARLY_CHECKIN_MINUTES` (défaut 60).
+Check-in refusé avant `scheduled_at − N`; retard autorisé si statut encore `SCHEDULED`.
+Check-in RDV atomique → ticket `WAITING_TRIAGE` (pas de bypass triage / consultation).
+Walk-in inchangé (sans rendez-vous). Index partiel unique : un ticket max par `appointment_id`.
 
 LOT 23A étend `patient_queue_appointments` (types, intervalle `[start,end)`, historique).
 Voir `docs/MEDICAL_SCHEDULING.md` — cette table reste **canonique** (pas de second modèle RDV).

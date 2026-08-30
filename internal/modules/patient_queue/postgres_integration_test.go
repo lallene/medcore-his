@@ -45,6 +45,7 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	}
 	_ = EnsureAppointmentIndexes(db)
 	_ = EnsureScheduleIndexes(db)
+	_ = EnsureTicketIndexes(db)
 	// Minimal patients / services / users for FK-less raw lookups
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS patients (
 		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT, prenoms TEXT,
@@ -273,10 +274,10 @@ func TestPostgresAppointmentCheckInAndFinance(t *testing.T) {
 	if e != nil || fin != FinancePaymentRequired {
 		t.Fatalf("finance=%s err=%v", fin, e)
 	}
-	if _, e := svc.CheckInAppointment(appt.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, adminAccess(100)); e == nil {
+	if _, _, e := svc.CheckInAppointment(appt.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, adminAccess(100)); e == nil {
 		t.Fatal("check-in without override should fail when payment required")
 	}
-	tk, e := svc.CheckInAppointment(appt.ID, AppointmentCheckInRequest{
+	tk, _, e := svc.CheckInAppointment(appt.ID, AppointmentCheckInRequest{
 		IdentityConfirmed: true, FinanceOverride: true, FinanceOverrideNote: "DEMO override",
 	}, adminAccess(100))
 	if e != nil {
@@ -289,8 +290,12 @@ func TestPostgresAppointmentCheckInAndFinance(t *testing.T) {
 	if dto.Punctuality != PunctualLate {
 		t.Fatalf("expected LATE got %s", dto.Punctuality)
 	}
-	if _, e := svc.CheckInAppointment(appt.ID, AppointmentCheckInRequest{IdentityConfirmed: true, FinanceOverride: true}, adminAccess(100)); e == nil {
-		t.Fatal("double appointment check-in should conflict")
+	tk2, reused, e := svc.CheckInAppointment(appt.ID, AppointmentCheckInRequest{IdentityConfirmed: true, FinanceOverride: true}, adminAccess(100))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !reused || tk2.ID != tk.ID {
+		t.Fatalf("idempotent check-in want same ticket reused=%v id=%d/%d", reused, tk.ID, tk2.ID)
 	}
 }
 
@@ -412,7 +417,7 @@ func TestPostgresKPIServiceIsolation(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	tkA, e := svc.CheckInAppointment(apptA.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, admin)
+	tkA, _, e := svc.CheckInAppointment(apptA.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, admin)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -997,7 +1002,7 @@ func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
 		t.Fatalf("CREATED history want 1 got %d", histCount)
 	}
 
-	tk, e := svc.CheckInAppointment(legacy.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, admin)
+	tk, _, e := svc.CheckInAppointment(legacy.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, admin)
 	if e != nil {
 		t.Fatal(e)
 	}

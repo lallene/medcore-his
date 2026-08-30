@@ -161,6 +161,9 @@ func main() {
 	if err := patient_queue.EnsureScheduleIndexes(db); err != nil {
 		log.Fatal("Erreur index patient_queue schedules:", err)
 	}
+	if err := patient_queue.EnsureTicketIndexes(db); err != nil {
+		log.Fatal("Erreur index patient_queue tickets:", err)
+	}
 	if err := pharmacy.BackfillVouchers(db); err != nil {
 		log.Fatal("Erreur matérialisation bons pharmacie:", err)
 	}

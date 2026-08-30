@@ -295,109 +295,12 @@ func (s *Service) enrichAppointment(a Appointment) AppointmentDTO {
 	return d
 }
 
-func (s *Service) CheckInAppointment(appointmentID uint, r AppointmentCheckInRequest, a Access) (*Ticket, error) {
-	if !s.has(a, "queue.checkin") && !s.has(a, "*") {
-		return nil, coreerrors.Forbidden("Permission check-in requise")
-	}
-	if !r.IdentityConfirmed {
-		return nil, coreerrors.BadRequest("Confirmation d'identité requise")
-	}
-	var out *Ticket
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		var appt Appointment
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&appt, appointmentID).Error; err != nil {
-			return coreerrors.NotFound("Rendez-vous")
-		}
-		if err := s.assertCanAccessService(appt.ServiceID, a); err != nil {
-			return coreerrors.NotFound("Rendez-vous")
-		}
-		if appt.QueueTicketID != nil || appt.Status == ApptCheckedIn {
-			return coreerrors.Conflict("Check-in déjà effectué pour ce rendez-vous")
-		}
-		fromApptStatus := appt.Status
-		var active int64
-		tx.Model(&Ticket{}).Where("patient_id=? AND status=?", appt.PatientID, StatusActive).Count(&active)
-		if active > 0 {
-			return coreerrors.Conflict("Le patient a déjà un parcours actif")
-		}
-		fin, err := s.EvaluateFinance(appt.PatientID)
-		if err != nil {
-			return err
-		}
-		if (fin == FinancePaymentRequired || fin == FinanceBlocked) && !r.FinanceOverride {
-			return coreerrors.Conflict("Paiement requis avant check-in (finance=" + fin + ")")
-		}
-		if r.FinanceOverride && !s.has(a, "queue.checkin") && !s.has(a, "*") {
-			return coreerrors.Forbidden("Override finance non autorisé")
-		}
-		prio := r.Priority
-		if prio == "" {
-			prio = PriorityNormal
-		}
-		if PriorityRank(prio) == 99 {
-			return coreerrors.BadRequest("Priorité invalide")
-		}
-		ref, err := s.nextReference(tx)
-		if err != nil {
-			return coreerrors.Internal(err.Error())
-		}
-		now := time.Now().UTC()
-		arrived := now
-		if appt.ArrivedAt != nil {
-			arrived = *appt.ArrivedAt
-		} else {
-			appt.ArrivedAt = &now
-			appt.Status = ApptArrived
-		}
-		t := Ticket{
-			Reference:           ref,
-			PatientID:           appt.PatientID,
-			AppointmentID:       &appt.ID,
-			Source:              SourceAppointment,
-			ServiceID:           appt.ServiceID,
-			ExpectedDoctorID:    appt.ExpectedDoctorID,
-			ArrivedAt:           arrived,
-			CheckedInAt:         now,
-			Stage:               StageWaitingTriage,
-			Status:              StatusActive,
-			Priority:            prio,
-			FinanceStatus:       fin,
-			FinanceOverride:     r.FinanceOverride,
-			FinanceOverrideNote: r.FinanceOverrideNote,
-			IdentityConfirmed:   true,
-			Version:             1,
-			CreatedBy:           a.UserID,
-			CreatedAt:           now,
-			UpdatedAt:           now,
-		}
-		if err := tx.Create(&t).Error; err != nil {
-			return coreerrors.Internal(err.Error())
-		}
-		appt.Status = ApptCheckedIn
-		appt.CheckedInAt = &now
-		appt.QueueTicketID = &t.ID
-		appt.UpdatedAt = now
-		if err := tx.Save(&appt).Error; err != nil {
-			return err
-		}
-		if err := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCheckedIn, fromApptStatus, ApptCheckedIn, "check-in", ""); err != nil {
-			return err
-		}
-		if err := s.writeHistory(tx, t.ID, a.UserID, StageReception, StageWaitingTriage, "CHECK_IN", "appointment"); err != nil {
-			return err
-		}
-		if r.FinanceOverride {
-			_ = s.writeHistory(tx, t.ID, a.UserID, StageReception, StageWaitingTriage, "FINANCE_OVERRIDE", r.FinanceOverrideNote)
-		}
-		out = &t
-		return nil
-	})
-	return out, err
-}
-
 func (s *Service) CheckInWalkIn(r WalkInCheckInRequest, a Access) (*Ticket, error) {
 	if !s.has(a, "queue.checkin") && !s.has(a, "*") {
 		return nil, coreerrors.Forbidden("Permission check-in requise")
+	}
+	if a.UserID == 0 {
+		return nil, coreerrors.Unauthorized("Utilisateur non authentifié")
 	}
 	if !r.IdentityConfirmed {
 		return nil, coreerrors.BadRequest("Confirmation d'identité requise")
@@ -410,8 +313,13 @@ func (s *Service) CheckInWalkIn(r WalkInCheckInRequest, a Access) (*Ticket, erro
 	}
 	var out *Ticket
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.advisoryLockPatient(tx, r.PatientID); err != nil {
+			return err
+		}
 		var active int64
-		tx.Model(&Ticket{}).Where("patient_id=? AND status=?", r.PatientID, StatusActive).Count(&active)
+		if err := tx.Model(&Ticket{}).Where("patient_id=? AND status=?", r.PatientID, StatusActive).Count(&active).Error; err != nil {
+			return coreerrors.Internal(err.Error())
+		}
 		if active > 0 {
 			return coreerrors.Conflict("Le patient a déjà un parcours actif")
 		}

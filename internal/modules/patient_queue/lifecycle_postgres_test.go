@@ -16,6 +16,7 @@ func lifeSetup(t *testing.T) (*gorm.DB, *Service, Access, uint, uint, *Appointme
 	svc := NewService(db)
 	_ = scheduling.SetLocation("UTC")
 	_ = EnsureAppointmentIndexes(db)
+	_ = EnsureTicketIndexes(db)
 
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (900,'DrLife'),(901,'DrLife2'),(902,'LifeActor') ON CONFLICT DO NOTHING`)
 	_ = db.Exec(`INSERT INTO staff_profiles(id, user_id, active, primary_service_id) VALUES

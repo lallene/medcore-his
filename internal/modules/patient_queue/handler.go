@@ -130,9 +130,13 @@ func (h *Handler) CheckInAppointment(c *gin.Context) {
 		return
 	}
 	h.enrich(&a)
-	x, e := h.service.CheckInAppointment(n, r, a)
+	x, reused, e := h.service.CheckInAppointment(n, r, a)
 	if e != nil {
 		fail(c, e)
+		return
+	}
+	if reused {
+		c.JSON(200, x)
 		return
 	}
 	c.JSON(201, x)

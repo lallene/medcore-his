@@ -18,6 +18,11 @@ func (Module) Register(app *application.Application) {
 	if err := EnsureScheduleIndexes(app.DB); err != nil {
 		logger.Error("Index patient_queue schedules", "error", err)
 	}
+	// LOT 23F: one lifetime ticket per appointment — hard invariant; must abort startup.
+	if err := EnsureTicketIndexes(app.DB); err != nil {
+		logger.Error("Index patient_queue tickets", "error", err)
+		panic(err)
+	}
 	s := NewService(app.DB)
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))

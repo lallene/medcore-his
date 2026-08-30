@@ -445,7 +445,70 @@ Table `patient_queue_appointment_types`: unique `code`, `default_duration_minute
 
 **Before check-in** — appointment owns scheduling status.
 
-**After check-in** — Queue owns operational flow.
+**After check-in** — Queue ticket owns operational flow (`WAITING_TRIAGE` → … → `COMPLETED`). Appointment status is synchronized by existing LOT 22 writers (`TakeDoctor` → `IN_PROGRESS`, `Complete` → `COMPLETED`).
+
+**Models stay separate:** an appointment may exist without a ticket; a walk-in ticket may exist without an appointment. After successful check-in, bidirectional link: `appointment.queue_ticket_id` ↔ `ticket.appointment_id`.
+
+---
+
+## LOT 23F — Appointment check-in / reception / queue integration
+
+### Canonical API
+
+`POST /api/queue/appointments/:id/check-in` (`queue.checkin`) → `CheckInAppointment`.
+
+Walk-in remains independent: `POST /api/queue/check-in/walk-in` — **no appointment required**.
+
+### Transaction (atomic)
+
+```
+BEGIN
+  SELECT appointment FOR UPDATE
+  service scope (out-of-scope → 404)
+  if already CHECKED_IN / linked → validateCompletedCheckInReuse (full link) then return existing (HTTP 200)
+  validate lifecycle (SCHEDULED / ARRIVED only; terminals reject)
+  early check-in timing policy
+  advisory lock patient (230401)
+  reject if patient has ACTIVE ticket
+  EvaluateFinance (LOT 19) — PAYMENT_REQUIRED / BLOCKED without override → reject (appointment stays SCHEDULED)
+  create ticket WAITING_TRIAGE (patient/service/expected doctor from appointment)
+  link both sides; appointment → CHECKED_IN
+  appointment history CHECKED_IN + queue history CHECK_IN
+COMMIT
+```
+
+Lock order (compatible with 23E cancel / no-show / reschedule): **appointment `FOR UPDATE` → patient advisory**. No practitioner lock on check-in.
+
+### Timing policy
+
+`MEDCORE_APPOINTMENT_EARLY_CHECKIN_MINUTES` (default **60**).
+
+Earliest check-in = `scheduled_at − N minutes`. Before that → 400. Late arrival while still `SCHEDULED` is allowed (no auto no-show). Uses absolute UTC instants; wall-clock ops should keep `MEDCORE_TIMEZONE` consistent with scheduling.
+
+### Idempotency / uniqueness
+
+Natural key: appointment↔ticket linkage. Retry returns the same ticket (HTTP **200** when reused; **201** on create) **only** when `validateAppointmentTicketLink` passes:
+
+- `queue_ticket_id` ↔ ticket id
+- `ticket.appointment_id` ↔ appointment id
+- patient_id / service_id match
+- scheduled `expected_doctor_id` match when appointment has one (ignores `doctor_taken_by` / TakeDoctor)
+
+Partial unique index `ux_pq_tickets_appointment` on `patient_queue_tickets(appointment_id) WHERE appointment_id IS NOT NULL`.
+
+Orphan / incomplete link (e.g. `SCHEDULED` + ticket.`appointment_id` set, no `queue_ticket_id`) or any mismatch → **409** Conflict — no soft success, no auto-repair.
+
+`EnsureTicketIndexes` is a **hard** API startup invariant (`Module.Register` panics on failure; `cmd/migrate` fatals). Duplicate historical `appointment_id` values fail clearly without silent repair.
+
+Same gate as walk-in. Booking does **not** bypass finance. Failure creates no ticket and does not mark `CHECKED_IN`.
+
+### RBAC
+
+`queue.checkin` only for check-in (23E: not for reschedule / cancel / no-show). Cross-service → 404.
+
+### Non-goals preserved
+
+No triage bypass, no consultation at check-in, no schedule/exception/slot mutation, no fake appointments for walk-ins.
 
 ## Appointment history (23A)
 
@@ -467,11 +530,12 @@ Table `patient_queue_appointment_history` — separate from schedule audit. Book
 
 **23D:** caller-scoped partial unique idempotency index `(created_by, idempotency_key)`; no slot table; no EXCLUDE.
 
+**23F:** partial unique `ux_pq_tickets_appointment` (one ticket per appointment; walk-in `appointment_id` NULL).
+
 ## Future phases
 
 | Phase | Focus |
 |-------|--------|
-| 23F | Richer Queue check-in UX |
 | 23G | Reception / practitioner calendars |
 | 23H | Patient 360 upcoming RDV |
 | 23J | QA / release gate |
