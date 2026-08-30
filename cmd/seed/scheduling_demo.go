@@ -21,15 +21,14 @@ func seedDemoScheduling(db *gorm.DB, actor uint) {
 	for _, t := range types {
 		res := db.Exec(`
 			INSERT INTO patient_queue_appointment_types
-				(code, name, default_duration, default_duration_minutes, active, created_at, updated_at)
-			VALUES (?, ?, ?, ?, true, ?, ?)
+				(code, name, default_duration_minutes, active, created_at, updated_at)
+			VALUES (?, ?, ?, true, ?, ?)
 			ON CONFLICT (code) DO UPDATE SET
 				name = EXCLUDED.name,
-				default_duration = EXCLUDED.default_duration,
 				default_duration_minutes = EXCLUDED.default_duration_minutes,
 				active = true,
 				updated_at = EXCLUDED.updated_at
-		`, t.Code, t.Name, t.DefaultDurationMinutes, t.DefaultDurationMinutes, now, now)
+		`, t.Code, t.Name, t.DefaultDurationMinutes, now, now)
 		if res.Error != nil {
 			log.Fatalf("appointment type %s: %v", t.Code, res.Error)
 		}
