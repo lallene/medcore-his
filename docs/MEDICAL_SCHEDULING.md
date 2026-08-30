@@ -532,11 +532,73 @@ Table `patient_queue_appointment_history` — separate from schedule audit. Book
 
 **23F:** partial unique `ux_pq_tickets_appointment` (one ticket per appointment; walk-in `appointment_id` NULL).
 
+---
+
+## LOT 23F.1 — Scheduling read APIs (agenda)
+
+Minimal authoritative reads for medical agenda (no new models / slots).
+
+### Routes
+
+| Method | Path | Permission |
+|--------|------|------------|
+| `GET` | `/api/appointments` | `schedule.read.own` \| `service` \| `all` |
+| `GET` | `/api/appointments/:id` | same |
+| `GET` | `/api/appointment-types` | same |
+
+`queue.checkin` and `consultations.read` do **not** grant agenda read.
+
+### `GET /api/appointments`
+
+**Required query:** `from`, `to` (RFC3339).
+
+**Optional:** `serviceId`, `practitionerId` (filters `expected_doctor_id`), `status`, `appointmentTypeId`, `page`, `limit` (max 100).
+
+**Range:** half-open intersection `[from, to)`:
+
+- `scheduled_at < to`
+- effective end `> from`
+
+**Effective end** (matches availability `ResolveAppointmentEnd`):
+
+1. `scheduled_end_at` when set;
+2. else appointment-type `default_duration_minutes`;
+3. else legacy **30** minutes (`MEDCORE_LEGACY_APPOINTMENT_FALLBACK_MINUTES` / `LegacyAppointmentFallbackMinutes`).
+
+**Max range:** `scheduling.MaxQueryRangeDays` (**31**).
+
+**Sort:** `scheduled_at ASC, id ASC`.
+
+**Scope:**
+
+- `schedule.read.all` / `*`: all services;
+- `schedule.read.service`: assigned services (SQL `IN`);
+- `schedule.read.own`: `expected_doctor_id = JWT user` (not `created_by` / `doctor_taken_by`);
+- OWN+SERVICE: union.
+
+Out-of-scope service filter / GET → **404**. OWN requesting another `practitionerId` → **403**.
+
+**Response:** `{ items: AppointmentDTO[], total, page, limit }` — same enrichment as today list + `durationMinutes`. Batched enrichment (no N+1).
+
+### `GET /api/appointments/:id`
+
+Same DTO + scope. Missing/out-of-scope → **404**.
+
+### `GET /api/appointment-types`
+
+Query: `serviceId?` (includes global `service_id NULL` + matching service), `active?` (`true`/`false`; omitted = all).
+
+Response: `{ items: AppointmentType[] }`. Inactive types remain available for historical appointment enrichment.
+
+### Today endpoint
+
+`GET /api/queue/appointments/today` unchanged (permission `queue.reception.read`, same envelope). Internals reuse batched `enrichAppointments`.
+
 ## Future phases
 
 | Phase | Focus |
 |-------|--------|
-| 23G | Reception / practitioner calendars |
+| 23G | Reception / practitioner calendars (frontend) |
 | 23H | Patient 360 upcoming RDV |
 | 23J | QA / release gate |
 

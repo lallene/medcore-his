@@ -264,35 +264,12 @@ func (s *Service) ListAppointmentsToday(a Access, page, limit int) (*Appointment
 	if err := q.Order("scheduled_at ASC").Offset((page - 1) * limit).Limit(limit).Find(&rows).Error; err != nil {
 		return nil, coreerrors.Internal(err.Error())
 	}
-	items := make([]AppointmentDTO, 0, len(rows))
-	for _, row := range rows {
-		items = append(items, s.enrichAppointment(row))
-	}
-	return &AppointmentListResponse{Items: items, Total: total, Page: page, Limit: limit}, nil
+	return &AppointmentListResponse{Items: s.enrichAppointments(rows), Total: total, Page: page, Limit: limit}, nil
 }
 
 func (s *Service) enrichAppointment(a Appointment) AppointmentDTO {
-	d := AppointmentDTO{Appointment: a}
-	_ = s.db.Raw(`SELECT code_patient FROM patients WHERE id=?`, a.PatientID).Scan(&d.PatientCode)
-	_ = s.db.Raw(`SELECT TRIM(CONCAT(prenoms,' ',nom)) FROM patients WHERE id=?`, a.PatientID).Scan(&d.PatientName)
-	_ = s.db.Raw(`SELECT name FROM organization_services WHERE id=?`, a.ServiceID).Scan(&d.ServiceName)
-	if a.ExpectedDoctorID != nil {
-		_ = s.db.Raw(`SELECT COALESCE(name,'') FROM users WHERE id=?`, *a.ExpectedDoctorID).Scan(&d.ExpectedDoctorName)
-	}
-	if a.AppointmentTypeID != nil {
-		var trow struct {
-			Code string
-			Name string
-		}
-		_ = s.db.Raw(`SELECT code, name FROM patient_queue_appointment_types WHERE id=?`, *a.AppointmentTypeID).Scan(&trow)
-		d.AppointmentTypeCode = trow.Code
-		d.AppointmentTypeName = trow.Name
-	}
-	if a.ArrivedAt != nil {
-		d.Punctuality = Punctuality(a.ScheduledAt, *a.ArrivedAt)
-	}
-	d.HasActiveTicket = a.QueueTicketID != nil
-	return d
+	items := s.enrichAppointments([]Appointment{a})
+	return items[0]
 }
 
 func (s *Service) CheckInWalkIn(r WalkInCheckInRequest, a Access) (*Ticket, error) {

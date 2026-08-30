@@ -153,6 +153,7 @@ type AppointmentDTO struct {
 	ExpectedDoctorName  string `json:"expectedDoctorName"`
 	AppointmentTypeCode string `json:"appointmentTypeCode,omitempty"`
 	AppointmentTypeName string `json:"appointmentTypeName,omitempty"`
+	DurationMinutes     int    `json:"durationMinutes,omitempty"`
 	Punctuality         string `json:"punctuality,omitempty"`
 	HasActiveTicket     bool   `json:"hasActiveTicket"`
 }
