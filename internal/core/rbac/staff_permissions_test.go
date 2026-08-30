@@ -31,3 +31,25 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 		t.Fatalf("admin=%v", got)
 	}
 }
+
+// LOT 23G.1 — scheduling read least-privilege packs (catalog authority).
+func TestSchedulingReadLeastPrivilegePacks(t *testing.T) {
+	accueil := EffectiveStaffPermissions("staff", []string{"ACCUEIL"}, nil)
+	if !has(accueil, "schedule.read.service") {
+		t.Fatalf("ACCUEIL missing schedule.read.service: %v", accueil)
+	}
+	if has(accueil, "schedule.read.all") || has(accueil, "schedule.read.own") || has(accueil, "*") {
+		t.Fatalf("ACCUEIL must not gain broader schedule read: %v", accueil)
+	}
+	if !has(accueil, "queue.checkin") {
+		t.Fatalf("ACCUEIL missing queue.checkin: %v", accueil)
+	}
+
+	physician := EffectiveStaffPermissions("staff", nil, []string{"MEDECINE_GENERALE"})
+	if !has(physician, "schedule.read.own") {
+		t.Fatalf("physician missing schedule.read.own: %v", physician)
+	}
+	if has(physician, "schedule.read.all") || has(physician, "schedule.read.service") || has(physician, "*") {
+		t.Fatalf("physician must not gain broader schedule read: %v", physician)
+	}
+}

@@ -40,6 +40,17 @@ func main() {
 		log.Println("Seed DEMO complet exécuté avec succès")
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "--demo-scheduling" {
+		seedAdmin(db)
+		var adminID uint
+		db.Table("users").Select("id").Where("email = ?", "admin@medcore.local").Scan(&adminID)
+		if adminID == 0 {
+			log.Fatal("administrateur DEMO introuvable")
+		}
+		seedDemoScheduling(db, adminID)
+		log.Println("Seed DEMO scheduling exécuté avec succès")
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--pharmacy-only" {
 		seedPharmacyCatalog(db)
 		log.Println("Seed DEMO pharmacie exécuté avec succès")

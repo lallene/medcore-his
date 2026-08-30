@@ -45,6 +45,7 @@ func seedFullDemo(db *gorm.DB) {
 		log.Fatal(err)
 	}
 	seedDemoStaff(db, adminID)
+	seedDemoScheduling(db, adminID)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	patientsByCode := map[string]*patients.Patient{}

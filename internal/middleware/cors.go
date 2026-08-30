@@ -21,7 +21,7 @@ func CORS(origin string) gin.HandlerFunc {
 
 		c.Writer.Header().Set(
 			"Access-Control-Allow-Headers",
-			"Content-Type, Authorization",
+			"Content-Type, Authorization, Idempotency-Key",
 		)
 		c.Writer.Header().Set(
 			"Access-Control-Allow-Methods",
