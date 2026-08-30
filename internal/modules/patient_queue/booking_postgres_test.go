@@ -260,7 +260,7 @@ func TestPostgresBooking23D(t *testing.T) {
 	}
 
 	// X service IDOR
-	other := scopedAccess(210, 11, "queue.checkin")
+	other := scopedAccess(210, 11, "appointment.create.service")
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (210,'IDOR') ON CONFLICT DO NOTHING`)
 	_ = db.Exec(`INSERT INTO staff_profiles(id, user_id, active, primary_service_id) VALUES (80,210,true,11) ON CONFLICT DO NOTHING`)
 	_ = db.Exec(`INSERT INTO staff_service_assignments(profile_id, service_id, active) VALUES (80,11,true) ON CONFLICT DO NOTHING`)

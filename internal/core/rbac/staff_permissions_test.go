@@ -32,11 +32,14 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	}
 }
 
-// LOT 23G.1 — scheduling read least-privilege packs (catalog authority).
+// LOT 23G.1 / 23I — scheduling read + booking least-privilege packs.
 func TestSchedulingReadLeastPrivilegePacks(t *testing.T) {
 	accueil := EffectiveStaffPermissions("staff", []string{"ACCUEIL"}, nil)
 	if !has(accueil, "schedule.read.service") {
 		t.Fatalf("ACCUEIL missing schedule.read.service: %v", accueil)
+	}
+	if !has(accueil, "appointment.create.service") {
+		t.Fatalf("ACCUEIL missing appointment.create.service: %v", accueil)
 	}
 	if has(accueil, "schedule.read.all") || has(accueil, "schedule.read.own") || has(accueil, "*") {
 		t.Fatalf("ACCUEIL must not gain broader schedule read: %v", accueil)
@@ -51,5 +54,22 @@ func TestSchedulingReadLeastPrivilegePacks(t *testing.T) {
 	}
 	if has(physician, "schedule.read.all") || has(physician, "schedule.read.service") || has(physician, "*") {
 		t.Fatalf("physician must not gain broader schedule read: %v", physician)
+	}
+	if has(physician, "appointment.create.service") || has(physician, "appointment.create.all") {
+		t.Fatalf("physician must not gain booking create: %v", physician)
+	}
+
+	legacy := EffectiveStaffPermissions("accueil", nil, nil)
+	if !has(legacy, "schedule.read.service") || !has(legacy, "appointment.create.service") {
+		t.Fatalf("legacy role accueil must align scheduling read+create: %v", legacy)
+	}
+
+	dirMed := EffectiveStaffPermissions("staff", []string{"DIRECTEUR_MEDICAL"}, nil)
+	if !has(dirMed, "appointment.create.service") || has(dirMed, "appointment.create.all") {
+		t.Fatalf("DirMed create.service only: %v", dirMed)
+	}
+	dirAdmin := EffectiveStaffPermissions("staff", []string{"DIRECTEUR_ADMINISTRATIF"}, nil)
+	if !has(dirAdmin, "appointment.create.all") {
+		t.Fatalf("DirAdmin missing create.all: %v", dirAdmin)
 	}
 }

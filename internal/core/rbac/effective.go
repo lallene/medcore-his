@@ -10,13 +10,13 @@ const (
 
 // Source kinds for effective permission explanations.
 const (
-	SourceWildcard    = "WILDCARD"
-	SourceFunction    = "FUNCTION"
-	SourceSpecialty   = "SPECIALTY"
-	SourceBase        = "BASE"
-	SourceDirectGrant = "DIRECT_GRANT"
-	SourceDirectDeny  = "DIRECT_DENY"
-	SourceMatrixAdd   = "MATRIX_ADD"
+	SourceWildcard     = "WILDCARD"
+	SourceFunction     = "FUNCTION"
+	SourceSpecialty    = "SPECIALTY"
+	SourceBase         = "BASE"
+	SourceDirectGrant  = "DIRECT_GRANT"
+	SourceDirectDeny   = "DIRECT_DENY"
+	SourceMatrixAdd    = "MATRIX_ADD"
 	SourceMatrixRevoke = "MATRIX_REVOKE"
 )
 
@@ -35,31 +35,31 @@ type MatrixOverlay struct {
 
 // EffectiveEntry explains one permission decision.
 type EffectiveEntry struct {
-	Permission string   `json:"permission"`
-	Allowed    bool     `json:"allowed"`
-	Source     string   `json:"source"`
-	SourceName string   `json:"sourceName,omitempty"`
-	Domain     string   `json:"domain,omitempty"`
-	Label      string   `json:"label,omitempty"`
-	Sensitive  bool     `json:"sensitive"`
-	ScopeHint  string   `json:"scopeHint,omitempty"` // GLOBAL | SERVICE | OWN
+	Permission string `json:"permission"`
+	Allowed    bool   `json:"allowed"`
+	Source     string `json:"source"`
+	SourceName string `json:"sourceName,omitempty"`
+	Domain     string `json:"domain,omitempty"`
+	Label      string `json:"label,omitempty"`
+	Sensitive  bool   `json:"sensitive"`
+	ScopeHint  string `json:"scopeHint,omitempty"` // GLOBAL | SERVICE | OWN
 }
 
 // SensitivePermissions require reinforced UI confirmation.
 var SensitivePermissions = map[string]bool{
-	"*":                   true,
-	"rbac.read":           true,
-	"rbac.user.manage":    true,
+	"*":                    true,
+	"rbac.read":            true,
+	"rbac.user.manage":     true,
 	"rbac.override.manage": true,
-	"rbac.matrix.manage":  true,
-	"rbac.audit.read":     true,
-	"staff.manage":        true,
-	"staff.audit.read":    true,
-	"billing.cancel":      true,
-	"cash.payment.cancel": true,
-	"queue.read.all":      true,
-	"ticket.read.all":     true,
-	"organization.manage": true,
+	"rbac.matrix.manage":   true,
+	"rbac.audit.read":      true,
+	"staff.manage":         true,
+	"staff.audit.read":     true,
+	"billing.cancel":       true,
+	"cash.payment.cancel":  true,
+	"queue.read.all":       true,
+	"ticket.read.all":      true,
+	"organization.manage":  true,
 }
 
 // IsSensitive reports whether a permission is high-risk.
@@ -105,6 +105,9 @@ func InheritedPermissions(role string, functions, specialties []string, overlays
 		for _, p := range []string{
 			"patients:read", "patients:create", "patients:update", "hospitalizations.read", "rooms.read", "beds.read", "bed_assignments.read",
 			"queue.reception.read", "queue.checkin", "queue.cancel",
+			"schedule.read.service",
+			"appointment.create.service",
+			"appointment.cancel.service", "appointment.no_show.service",
 		} {
 			set[p] = true
 		}
@@ -185,6 +188,9 @@ func ExplainEffective(role string, functions, specialties []string, overlays []M
 		for _, p := range []string{
 			"patients:read", "patients:create", "patients:update", "hospitalizations.read", "rooms.read", "beds.read", "bed_assignments.read",
 			"queue.reception.read", "queue.checkin", "queue.cancel",
+			"schedule.read.service",
+			"appointment.create.service",
+			"appointment.cancel.service", "appointment.no_show.service",
 		} {
 			inheritedFrom[p] = prov{SourceBase, "role:accueil"}
 		}

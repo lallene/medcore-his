@@ -19,14 +19,14 @@ const bookingLockNSLifecycle = 230404
 // RescheduleAppointmentRequest — omitted practitionerId keeps current practitioner.
 // expectedScheduledAt / expectedScheduledEndAt are required concurrency preconditions (stale → 409).
 type RescheduleAppointmentRequest struct {
-	StartAt                time.Time  `json:"startAt" binding:"required"`
-	ExpectedScheduledAt    time.Time  `json:"expectedScheduledAt" binding:"required"`
-	ExpectedScheduledEndAt time.Time  `json:"expectedScheduledEndAt" binding:"required"`
-	PractitionerID         *uint      `json:"practitionerId"`
-	AppointmentTypeID      *uint      `json:"appointmentTypeId"`
-	DurationMinutes        *int       `json:"durationMinutes"`
-	Reason                 string     `json:"reason"`
-	IdempotencyKey         string     `json:"idempotencyKey"`
+	StartAt                time.Time `json:"startAt" binding:"required"`
+	ExpectedScheduledAt    time.Time `json:"expectedScheduledAt" binding:"required"`
+	ExpectedScheduledEndAt time.Time `json:"expectedScheduledEndAt" binding:"required"`
+	PractitionerID         *uint     `json:"practitionerId"`
+	AppointmentTypeID      *uint     `json:"appointmentTypeId"`
+	DurationMinutes        *int      `json:"durationMinutes"`
+	Reason                 string    `json:"reason"`
+	IdempotencyKey         string    `json:"idempotencyKey"`
 }
 
 type CancelAppointmentRequest struct {
@@ -66,7 +66,9 @@ func (s *Service) canMarkNoShow(a Access) bool {
 	return a.Has("*") || a.Has("appointment.no_show.all") || a.Has("appointment.no_show.service")
 }
 
-// assertLifecycleServiceAccess: any listed all-scope perm (or *) bypasses perimeter; else assertCanAccessService.
+// assertLifecycleServiceAccess: listed .all perms (or *) bypass perimeter.
+// SERVICE actors are limited to staff assignments — queue.read.all / schedule.read.all
+// must NOT globalize appointment.*.service (LOT 23I RBAC-02).
 func (s *Service) assertLifecycleServiceAccess(serviceID uint, a Access, allPerms ...string) error {
 	if a.Has("*") {
 		return nil
@@ -76,10 +78,16 @@ func (s *Service) assertLifecycleServiceAccess(serviceID uint, a Access, allPerm
 			return nil
 		}
 	}
-	if err := s.assertCanAccessService(serviceID, a); err != nil {
+	ids, err := s.assignedStaffServiceIDs(a)
+	if err != nil {
 		return coreerrors.NotFound("Rendez-vous")
 	}
-	return nil
+	for _, id := range ids {
+		if id == serviceID {
+			return nil
+		}
+	}
+	return coreerrors.NotFound("Rendez-vous")
 }
 
 func (s *Service) advisoryLockLifecycle(tx *gorm.DB, op string, appointmentID, caller uint, key string) error {

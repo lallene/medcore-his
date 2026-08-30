@@ -7,7 +7,11 @@ import (
 
 func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g := r.Group("/queue")
-	g.POST("/appointments", rbac.Permission("queue.checkin"), h.CreateAppointment)
+	// Legacy booking path — same authority as POST /appointments (LOT 23I); prefer /api/appointments.
+	g.POST("/appointments", rbac.AnyPermission(
+		"appointment.create.service", "appointment.create.all",
+		"schedule.manage.service", "schedule.manage.all",
+	), h.CreateAppointment)
 	g.GET("/appointments/today", rbac.Permission("queue.reception.read"), h.ListAppointmentsToday)
 	g.POST("/appointments/:id/check-in", rbac.Permission("queue.checkin"), h.CheckInAppointment)
 	g.POST("/appointments/:id/no-show", rbac.AnyPermission("appointment.no_show.service", "appointment.no_show.all"), h.MarkNoShow)
@@ -48,8 +52,11 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	ag.GET("/first", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.GetFirstAvailability)
 	ag.GET("/mine", rbac.AnyPermission("schedule.read.own", "schedule.read.all", "schedule.manage.own"), h.GetMyAvailability)
 
-	// LOT 23D — transactional booking (authoritative; does not trust availability snapshots)
-	r.POST("/appointments", rbac.AnyPermission("queue.checkin", "schedule.manage.service", "schedule.manage.all"), h.BookAppointment)
+	// LOT 23D / 23I — transactional booking (appointment.create.* | schedule.manage.*; not queue.checkin)
+	r.POST("/appointments", rbac.AnyPermission(
+		"appointment.create.service", "appointment.create.all",
+		"schedule.manage.service", "schedule.manage.all",
+	), h.BookAppointment)
 	// LOT 23F.1 — agenda read APIs (schedule.read.*; not queue.checkin / consultations.read)
 	r.GET("/appointments", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.ListAppointments)
 	r.GET("/appointments/:id", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.GetAppointment)

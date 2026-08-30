@@ -18,6 +18,7 @@ import (
 //  1. idempotency (caller+key)
 //  2. patient
 //  3. practitioners ascending
+//
 // Without idempotency key: patient, then practitioners ascending.
 const (
 	bookingLockNSPatient      = 230401
@@ -27,14 +28,14 @@ const (
 
 // BookAppointmentRequest is the authoritative booking input (LOT 23D).
 type BookAppointmentRequest struct {
-	PatientID         uint       `json:"patientId" binding:"required"`
-	ServiceID         uint       `json:"serviceId" binding:"required"`
-	PractitionerID    *uint      `json:"practitionerId"`
-	AppointmentTypeID *uint      `json:"appointmentTypeId"`
-	StartAt           time.Time  `json:"startAt" binding:"required"`
-	DurationMinutes   *int       `json:"durationMinutes"`
-	Reason            string     `json:"reason"`
-	IdempotencyKey    string     `json:"idempotencyKey"`
+	PatientID         uint      `json:"patientId" binding:"required"`
+	ServiceID         uint      `json:"serviceId" binding:"required"`
+	PractitionerID    *uint     `json:"practitionerId"`
+	AppointmentTypeID *uint     `json:"appointmentTypeId"`
+	StartAt           time.Time `json:"startAt" binding:"required"`
+	DurationMinutes   *int      `json:"durationMinutes"`
+	Reason            string    `json:"reason"`
+	IdempotencyKey    string    `json:"idempotencyKey"`
 }
 
 type bookingResolved struct {
@@ -45,7 +46,33 @@ type bookingResolved struct {
 }
 
 func (s *Service) canBookAppointments(a Access) bool {
-	return a.Has("*") || a.Has("queue.checkin") || a.Has("schedule.manage.service") || a.Has("schedule.manage.all")
+	// LOT 23I: queue.checkin is NOT booking authority (check-in / walk-in / finance only).
+	return a.Has("*") ||
+		a.Has("appointment.create.service") || a.Has("appointment.create.all") ||
+		a.Has("schedule.manage.service") || a.Has("schedule.manage.all")
+}
+
+// canBookAppointmentsGlobally — only create.all / manage.all / * (not queue.read.all).
+func (s *Service) canBookAppointmentsGlobally(a Access) bool {
+	return a.Has("*") || a.Has("appointment.create.all") || a.Has("schedule.manage.all")
+}
+
+// assertBookingServiceAccess enforces SERVICE vs ALL for booking (LOT 23I RBAC-02).
+// Does not reuse Queue assertServiceInScope (queue.read.all must not expand create.service).
+func (s *Service) assertBookingServiceAccess(serviceID uint, a Access) error {
+	if s.canBookAppointmentsGlobally(a) {
+		return nil
+	}
+	ids, err := s.assignedStaffServiceIDs(a)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if id == serviceID {
+			return nil
+		}
+	}
+	return coreerrors.Forbidden("Service hors périmètre")
 }
 
 func (s *Service) assertPatientExists(patientID uint) error {
@@ -289,8 +316,8 @@ func bookingRequestFingerprint(r BookAppointmentRequest, resolved bookingResolve
 	payload := map[string]any{
 		"patientId": r.PatientID, "serviceId": r.ServiceID,
 		"practitionerId": practitionerID, "appointmentTypeId": resolved.AppointmentTypeID,
-		"startAt": resolved.Start.UTC().Format(time.RFC3339),
-		"endAt":   resolved.End.UTC().Format(time.RFC3339),
+		"startAt":         resolved.Start.UTC().Format(time.RFC3339),
+		"endAt":           resolved.End.UTC().Format(time.RFC3339),
 		"durationMinutes": resolved.DurationMinutes,
 		"autoAssigned":    auto,
 		"reason":          strings.TrimSpace(r.Reason),
@@ -368,7 +395,7 @@ func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointm
 	if err := s.assertServiceExists(r.ServiceID); err != nil {
 		return nil, false, err
 	}
-	if err := s.assertServiceInScope(r.ServiceID, a); err != nil {
+	if err := s.assertBookingServiceAccess(r.ServiceID, a); err != nil {
 		return nil, false, err
 	}
 	if err := s.assertPatientExists(r.PatientID); err != nil {

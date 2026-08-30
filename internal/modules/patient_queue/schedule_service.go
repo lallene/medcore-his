@@ -23,14 +23,14 @@ type CreateWorkingScheduleRequest struct {
 }
 
 type UpdateWorkingScheduleRequest struct {
-	ServiceID  *uint       `json:"serviceId"`
-	Weekday    *int        `json:"weekday"`
-	StartTime  *string     `json:"startTime"`
-	EndTime    *string     `json:"endTime"`
-	ValidFrom  *time.Time  `json:"validFrom"`
-	ValidUntil *time.Time  `json:"validUntil"`
-	ClearUntil bool        `json:"clearUntil"` // set ValidUntil to null
-	Active     *bool       `json:"active"`
+	ServiceID  *uint      `json:"serviceId"`
+	Weekday    *int       `json:"weekday"`
+	StartTime  *string    `json:"startTime"`
+	EndTime    *string    `json:"endTime"`
+	ValidFrom  *time.Time `json:"validFrom"`
+	ValidUntil *time.Time `json:"validUntil"`
+	ClearUntil bool       `json:"clearUntil"` // set ValidUntil to null
+	Active     *bool      `json:"active"`
 }
 
 type CreateScheduleExceptionRequest struct {
@@ -94,10 +94,9 @@ func (s *Service) canManageAllSchedules(a Access) bool {
 	return a.Has("*") || a.Has("schedule.manage.all")
 }
 
-func (s *Service) scheduleScopeServiceIDs(a Access) ([]uint, error) {
-	if s.canReadAllSchedules(a) || s.canManageAllSchedules(a) {
-		return nil, nil
-	}
+// assignedStaffServiceIDs returns staff_service_assignments (+ JWT ServiceID).
+// Never globalizes via schedule.read.all or queue.read.all (LOT 23I).
+func (s *Service) assignedStaffServiceIDs(a Access) ([]uint, error) {
 	ids := map[uint]bool{}
 	if a.ServiceID != nil {
 		ids[*a.ServiceID] = true
@@ -118,6 +117,23 @@ func (s *Service) scheduleScopeServiceIDs(a Access) ([]uint, error) {
 	return out, nil
 }
 
+// scheduleScopeServiceIDs — READ list scope. Global only for schedule.read.all / manage.all / *.
+func (s *Service) scheduleScopeServiceIDs(a Access) ([]uint, error) {
+	if s.canReadAllSchedules(a) || s.canManageAllSchedules(a) {
+		return nil, nil
+	}
+	return s.assignedStaffServiceIDs(a)
+}
+
+// scheduleManageScopeServiceIDs — MUTATION scope. Global only for schedule.manage.all / *.
+// schedule.read.all must NOT expand manage.service (LOT 23I RBAC-01).
+func (s *Service) scheduleManageScopeServiceIDs(a Access) ([]uint, error) {
+	if s.canManageAllSchedules(a) {
+		return nil, nil
+	}
+	return s.assignedStaffServiceIDs(a)
+}
+
 func (s *Service) assertCanReadSchedule(practitionerID, serviceID uint, a Access) error {
 	if s.canReadAllSchedules(a) {
 		return nil
@@ -126,7 +142,7 @@ func (s *Service) assertCanReadSchedule(practitionerID, serviceID uint, a Access
 		return nil
 	}
 	if a.Has("schedule.read.service") || a.Has("schedule.manage.service") || a.Has("schedule.manage.all") {
-		return s.assertScheduleServiceInScope(serviceID, a)
+		return s.assertScheduleServiceInReadScope(serviceID, a)
 	}
 	return coreerrors.Forbidden("Lecture planning non autorisée")
 }
@@ -140,16 +156,35 @@ func (s *Service) assertCanManageSchedule(practitionerID, serviceID uint, a Acce
 		return s.assertPractitionerAssignedToService(practitionerID, serviceID)
 	}
 	if a.Has("schedule.manage.service") {
-		return s.assertScheduleServiceInScope(serviceID, a)
+		return s.assertScheduleServiceInManageScope(serviceID, a)
 	}
 	return coreerrors.Forbidden("Gestion planning non autorisée")
 }
 
-func (s *Service) assertScheduleServiceInScope(serviceID uint, a Access) error {
+// assertScheduleServiceInReadScope — used for READ paths. read.all / manage.all bypass.
+func (s *Service) assertScheduleServiceInReadScope(serviceID uint, a Access) error {
 	if s.canReadAllSchedules(a) || s.canManageAllSchedules(a) {
 		return nil
 	}
-	ids, err := s.scheduleScopeServiceIDs(a)
+	ids, err := s.assignedStaffServiceIDs(a)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if id == serviceID {
+			return nil
+		}
+	}
+	return coreerrors.NotFound("Planning")
+}
+
+// assertScheduleServiceInManageScope — used for MUTATIONS. Only manage.all / * bypass.
+// schedule.read.all must not enlarge manage.service (LOT 23I RBAC-01).
+func (s *Service) assertScheduleServiceInManageScope(serviceID uint, a Access) error {
+	if s.canManageAllSchedules(a) {
+		return nil
+	}
+	ids, err := s.scheduleManageScopeServiceIDs(a)
 	if err != nil {
 		return err
 	}
@@ -162,6 +197,11 @@ func (s *Service) assertScheduleServiceInScope(serviceID uint, a Access) error {
 		}
 	}
 	return coreerrors.NotFound("Planning")
+}
+
+// assertScheduleServiceInScope keeps the historical name for READ callers (availability, agenda filters).
+func (s *Service) assertScheduleServiceInScope(serviceID uint, a Access) error {
+	return s.assertScheduleServiceInReadScope(serviceID, a)
 }
 
 func (s *Service) assertServiceExists(serviceID uint) error {

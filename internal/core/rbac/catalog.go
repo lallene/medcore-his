@@ -45,6 +45,8 @@ func init() {
 	add("schedule.manage.service", "Gérer les plannings du service", "Scheduling", "SERVICE")
 	add("schedule.manage.all", "Gérer tous les plannings", "Scheduling", "GLOBAL")
 	// Appointment lifecycle LOT 23E (not queue.checkin)
+	add("appointment.create.service", "Créer un rendez-vous (service)", "Appointments", "SERVICE")
+	add("appointment.create.all", "Créer un rendez-vous (global)", "Appointments", "GLOBAL")
 	add("appointment.reschedule.service", "Reprogrammer un rendez-vous (service)", "Appointments", "SERVICE")
 	add("appointment.reschedule.all", "Reprogrammer un rendez-vous (global)", "Appointments", "GLOBAL")
 	add("appointment.cancel.service", "Annuler un rendez-vous (service)", "Appointments", "SERVICE")

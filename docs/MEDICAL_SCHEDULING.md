@@ -147,18 +147,20 @@ Events: `SCHEDULE_CREATED`, `SCHEDULE_UPDATED`, `SCHEDULE_DISABLED`, `EXCEPTION_
 
 `actor_user_id` from JWT / `Access.UserID` only.
 
-### RBAC (LOT 21 catalog)
+### RBAC (LOT 21 catalog + LOT 23I)
 
 | Permission | Intent |
 |------------|--------|
-| `schedule.read.own` | Own schedules (JWT user) |
-| `schedule.read.service` | Assigned services |
-| `schedule.read.all` | Global read |
-| `schedule.manage.own` | Manage own (must still be assigned to service) |
-| `schedule.manage.service` | Manage within service scope |
+| `schedule.read.own` | Own schedules (JWT user) — **read only** |
+| `schedule.read.service` | Assigned services — **read only** |
+| `schedule.read.all` | Global read — **must not enlarge manage.service** |
+| `schedule.manage.own` | Manage own (must still be assigned to service); **not** granted by default packs (product decision deferred) |
+| `schedule.manage.service` | Manage **only** assigned services |
 | `schedule.manage.all` | Global manage |
 
 Staff packs (minimum): physicians → `schedule.read.own`; ACCUEIL → `schedule.read.service`; DIRECTEUR_MEDICAL → read.all + manage.service; DIRECTEUR_ADMINISTRATIF → read.all + manage.all.
+
+**LOT 23I:** `schedule.read.all` never bypasses mutation scope. Helpers split read-scope vs manage-scope (`assertScheduleServiceInReadScope` / `assertScheduleServiceInManageScope`).
 
 Enforcement on LIST/GET/CREATE/UPDATE/DELETE; load → authorize persisted scope → mutate. Retargeting `serviceId` requires source **and** target authorization.
 
@@ -390,22 +392,38 @@ Behavior:
 - Concurrent identical retries: advisory lock serializes; both succeed with the **same** appointment ID (never 409 for identical retry)
 - `created_by` is always JWT actor (non-null) on new bookings
 
-### RBAC
+### RBAC (LOT 23D + 23I)
 
-Reuses existing permissions (no parallel auth system):
+Canonical booking permissions:
 
-`queue.checkin` | `schedule.manage.service` | `schedule.manage.all` | `*`
+`appointment.create.service` | `appointment.create.all` | `schedule.manage.service` | `schedule.manage.all` | `*`
 
-Service scope via `assertServiceInScope`. Practitioner must be assigned to service. Patient must exist.
+**`queue.checkin` is NOT booking authority** (LOT 23I). It remains check-in / walk-in / finance only.
+
+Service scope for booking uses **staff assignments** (`assignedStaffServiceIDs`).
+`queue.read.all` and `schedule.read.all` **must not** expand `appointment.create.service` / `schedule.manage.service` to global.
+
+- `appointment.create.all` / `schedule.manage.all` / `*` → global create
+- `appointment.create.service` / `schedule.manage.service` → assigned services only
+
+Practitioner must be assigned to service. Patient must exist.
+
+Packs:
+
+- **ACCUEIL** (+ legacy role `accueil`): `appointment.create.service` (+ `schedule.read.service`, `queue.checkin`, cancel/no_show.service)
+- **DIRECTEUR_MEDICAL**: `appointment.create.service` (SERVICE mutations even with `schedule.read.all` / `queue.read.all`)
+- **DIRECTEUR_ADMINISTRATIF**: `appointment.create.all`
+- **Physician**: no automatic `appointment.create.*`
 
 ### API
 
 ```
 POST /api/appointments          → BookAppointment (authoritative)
 POST /api/queue/appointments    → CreateAppointment → delegates to BookAppointment
+                                  (legacy/deprecated path; **same** booking RBAC as above — LOT 23I)
 ```
 
-Both HTTP paths that **insert** scheduled appointments use the same transactional guarantees (locks, schedule, overlaps, non-null `scheduled_end_at`).
+Both HTTP paths that **insert** scheduled appointments use the same transactional guarantees (locks, schedule, overlaps, non-null `scheduled_end_at`) and the **same** permission set.
 
 Legacy body maps `expectedDoctorId` → `practitionerId`, `scheduledAt` → `startAt`. Requires `appointmentTypeId` and/or `scheduledEndAt` (no silent duration invent). Walk-in check-in is unchanged and does not create appointments via this path.
 
@@ -702,15 +720,17 @@ Same scoped key + same semantics → reuse without duplicate history. Same key +
 | Cancel | `appointment.cancel.service` \| `appointment.cancel.all` \| `*` |
 | No-show | `appointment.no_show.service` \| `appointment.no_show.all` \| `*` |
 
-**`queue.checkin` is NOT lifecycle authority** (check-in / booking arrival only).
+**`queue.checkin` is NOT lifecycle authority** (check-in only — not booking, not reschedule/cancel/no-show).
 
 Function grants:
 
-- **ACCUEIL:** `appointment.cancel.service`, `appointment.no_show.service` (no reschedule)
-- **DIRECTEUR_MEDICAL:** `appointment.reschedule.service`, `appointment.cancel.service`, `appointment.no_show.service` (+ existing `schedule.manage.service`)
-- **DIRECTEUR_ADMINISTRATIF:** `appointment.reschedule.all`, `appointment.cancel.all`, `appointment.no_show.all` (+ `schedule.manage.all`)
+- **ACCUEIL:** `appointment.create.service`, `appointment.cancel.service`, `appointment.no_show.service` (no reschedule)
+- **DIRECTEUR_MEDICAL:** `appointment.create.service`, `appointment.reschedule.service`, `appointment.cancel.service`, `appointment.no_show.service` (+ `schedule.manage.service`)
+- **DIRECTEUR_ADMINISTRATIF:** `appointment.create.all`, `appointment.reschedule.all`, `appointment.cancel.all`, `appointment.no_show.all` (+ `schedule.manage.all`)
 
-Service scope via `assertCanAccessService` (`.all` / `*` bypass). Out of scope → **404**.
+Service scope via **staff assignments** (not Queue `assertCanAccessService`).
+`.all` listed for the op / `schedule.manage.all` (reschedule) / `*` bypass.
+`queue.read.all` and `schedule.read.all` **do not** globalize `.service` lifecycle mutations (LOT 23I). Out of scope → **404**.
 
 ### API
 
@@ -724,3 +744,24 @@ POST  /api/queue/appointments/:id/no-show   → same MarkNoShow service
 ### Deferred
 
 Queue rollback, reopen cancelled/no-show, service change on reschedule, reminders, recurring series, frontend calendars.
+
+---
+
+## LOT 23I — RBAC hardening (Scheduling / Appointments)
+
+### Rules
+
+| Topic | Rule |
+|-------|------|
+| Read | `schedule.read.own` / `.service` / `.all` as before |
+| Manage | `schedule.manage.*` only; **`schedule.read.all` never expands manage.service** |
+| Booking | `appointment.create.service` \| `.all` \| `schedule.manage.service` \| `.all` \| `*` |
+| Check-in | `queue.checkin` only (unchanged) |
+| Lifecycle | `appointment.*.service` stays SERVICE even with `queue.read.all` / `schedule.read.all` |
+| Filters | `patientId` / `practitionerId` / `serviceId` AND with read scope (23H unchanged) |
+
+### Out of scope / debt
+
+- Complex SERVICE filtering of `GET /appointment-types` catalog (LOW)
+- Granting `schedule.manage.own` to physicians (product decision)
+- Removing legacy `POST /api/queue/appointments` (kept, same RBAC as canonical booking)
