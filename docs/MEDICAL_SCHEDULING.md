@@ -612,13 +612,14 @@ Response: `{ items: AppointmentType[] }`. Inactive types remain available for hi
 
 `GET /api/queue/appointments/today` unchanged (permission `queue.reception.read`, same envelope). Internals reuse batched `enrichAppointments`.
 
-## Future phases
+## Future phases / status
 
-| Phase | Focus |
-|-------|--------|
-| 23G | Reception / practitioner calendars (frontend) |
-| 23H | Patient 360 upcoming RDV |
-| 23J | QA / release gate |
+| Phase | Focus | Status |
+|-------|--------|--------|
+| 23G | Reception / practitioner calendars (frontend) | **Delivered** |
+| 23H | Patient 360 upcoming RDV | **Delivered** |
+| 23I | RBAC hardening Scheduling / Appointments | **Delivered** |
+| 23J | QA / release gate Scheduling | **This lot** |
 
 ---
 
@@ -765,3 +766,39 @@ Queue rollback, reopen cancelled/no-show, service change on reschedule, reminder
 - Complex SERVICE filtering of `GET /appointment-types` catalog (LOW)
 - Granting `schedule.manage.own` to physicians (product decision)
 - Removing legacy `POST /api/queue/appointments` (kept, same RBAC as canonical booking)
+
+---
+
+## LOT 23J — QA / Release Gate
+
+Closes the Scheduling **release gate** (no new domain features).
+
+### Architecture
+
+CI workflow: `frontend/.github/workflows/e2e-release-gate.yml`.
+
+1. **Backend unit gate** — `go test ./...` with `TEST_DATABASE_URL` cleared (skips Postgres integrations).
+2. **Ticketing PostgreSQL integration gate** — ephemeral schemas.
+3. **Scheduling PostgreSQL integration gate** — `go test ./internal/modules/patient_queue/ ./internal/core/rbac/ -count=1` with job `TEST_DATABASE_URL`
+   (`postgres://…@127.0.0.1:5432/medcore_full_demo?sslmode=disable`).
+   Tests create ephemeral `pq_<nano>` schemas and `DROP SCHEMA … CASCADE` on cleanup — **they do not mutate** the `public` schema used by migrate / `--demo-full` / Playwright.
+4. Seed `--demo-full` → API → frontend unit/static → Playwright `QA_SUITE=critical` (Agenda + Patient 360 appointments included).
+
+Local helper `npm run test:e2e:scheduling` is **not** the CI gate (Agenda-only, assumes a live API).
+
+### SCHEDULING RELEASE READY
+
+All must PASS:
+
+1. PostgreSQL Scheduling integration tests (`patient_queue` + `rbac`) PASS.
+2. RBAC 23I security tests PASS (same package — `rbac_hardening_23i_*`, booking routes).
+3. Frontend unit / check / lint / build PASS.
+4. Agenda critical E2E PASS (`e2e/agenda`).
+5. Patient 360 appointments critical E2E PASS (`e2e/patient-360`).
+6. `frontend/docs/QA_MATRIX.md` lists Scheduling scenarios as automated.
+7. Seed QA Scheduling deterministic (`--demo-scheduling` / `--demo-full`).
+8. No versioned QA artifacts (`bin/`, `test-results/`, `playwright-report/`).
+
+### Out of scope (23J)
+
+Patient 360 history, Agenda deep-link, schedule/exception admin UI, reminders, recurring series, waitlists, reporting, `schedule.manage.own` packs, appointment-types SERVICE catalog filter, removing legacy booking path.
