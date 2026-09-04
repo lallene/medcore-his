@@ -619,7 +619,8 @@ Response: `{ items: AppointmentType[] }`. Inactive types remain available for hi
 | 23G | Reception / practitioner calendars (frontend) | **Delivered** |
 | 23H | Patient 360 upcoming RDV | **Delivered** |
 | 23I | RBAC hardening Scheduling / Appointments | **Delivered** |
-| 23J | QA / release gate Scheduling | **This lot** |
+| 23J | QA / release gate Scheduling | **Delivered** |
+| 23K | Patient 360 history + Agenda patient deep-link (frontend) | **This lot** |
 
 ---
 
@@ -801,4 +802,34 @@ All must PASS:
 
 ### Out of scope (23J)
 
-Patient 360 history, Agenda deep-link, schedule/exception admin UI, reminders, recurring series, waitlists, reporting, `schedule.manage.own` packs, appointment-types SERVICE catalog filter, removing legacy booking path.
+Schedule/exception admin UI, reminders, recurring series, waitlists, reporting, `schedule.manage.own` packs, appointment-types SERVICE catalog filter, removing legacy booking path. (Patient 360 history + Agenda deep-link delivered in **LOT 23K**.)
+
+---
+
+## LOT 23K — Patient 360 history + Agenda deep-link (frontend)
+
+**Frontend-only** delivery. No backend migration, no new RBAC permission, no seed change, no backend business-code change for P0.
+
+### Patient 360 — recent appointment history
+
+- Extends the existing Patient 360 appointments area (sections **À venir** / **Historique**), not a new top-level tab.
+- Uses existing `GET /api/appointments` with `patientId` and half-open ranges `[from, to)`.
+- P0 history window: **last 31 days** only (Paris day boundary via existing Scheduling helpers).
+- Classification (client-side):
+  - **Upcoming:** `SCHEDULED` | `ARRIVED` | `CHECKED_IN` | `IN_PROGRESS` in the upcoming window.
+  - **History:** terminal (`CANCELLED` | `NO_SHOW` | `COMPLETED`) **or** `scheduledAt < startOfToday` (stale past actives).
+- History sorted **DESC** on the client. No backend `order=desc` in P0.
+- Same `schedule.read.*` gating as upcoming; backend remains authoritative for visibility.
+
+### Agenda deep-link
+
+Contract: `/agenda?patientId=<id>` only (no clinical data in the URL).
+
+- Valid `patientId` + booking permission → patient loaded via existing patient API and passed as `initialPatient` (preselect/lock) when the booking modal is opened by the user.
+- **No** automatic booking modal open in P0 (`book=1` deferred).
+- Read-only users (`schedule.read.*` without create/manage) keep Agenda readable; deep-link does **not** unlock booking.
+- Invalid / inaccessible patient → non-blocking notice; Agenda remains usable; patient is not locked.
+
+### Out of scope (23K P1+)
+
+History >31 days, load more / infinite history, backend `order=desc`, `book=1` auto-open modal, history status filter UI, schedule/exception admin UI, reminders, recurrence, waitlist, reporting, `schedule.manage.own` packs, appointment-types SERVICE catalog filter, legacy booking endpoint removal.
