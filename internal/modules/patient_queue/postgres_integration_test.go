@@ -125,6 +125,28 @@ func seedAllDaySchedules(t *testing.T, db *gorm.DB, practitionerID, serviceID ui
 	}
 }
 
+// seedAvailabilityAroundNow adds a concrete availability window for tests whose
+// appointment times are relative to time.Now(). Unlike recurring wall-clock
+// schedules, this interval remains continuous when a fixture crosses midnight.
+func seedAvailabilityAroundNow(t *testing.T, db *gorm.DB, practitionerID, serviceID uint) {
+        t.Helper()
+        now := time.Now().UTC()
+        if err := db.Create(&ScheduleException{
+                PractitionerID: practitionerID,
+                ServiceID:      serviceID,
+                Type:           ExExtraAvailability,
+                StartAt:        now.Add(-4 * time.Hour),
+                EndAt:          now.Add(6 * time.Hour),
+                Reason:         "test fixture: availability around now",
+                Active:         true,
+                CreatedBy:      100,
+                CreatedAt:      now,
+                UpdatedAt:      now,
+        }).Error; err != nil {
+                t.Fatalf("seed availability around now: %v", err)
+        }
+}
+
 func adminAccess(uid uint) Access {
 	return Access{UserID: uid, Permissions: map[string]bool{"*": true}}
 }
@@ -260,6 +282,7 @@ func TestPostgresAppointmentCheckInAndFinance(t *testing.T) {
 	svc := NewService(db)
 	seedPractitionerForService(t, db, 3, 102, 10)
 	seedAllDaySchedules(t, db, 102, 10)
+	seedAvailabilityAroundNow(t, db, 102, 10)
 	now := time.Now().UTC()
 	start := now.Add(-20 * time.Minute)
 	end := start.Add(30 * time.Minute)
@@ -407,6 +430,7 @@ func TestPostgresKPIServiceIsolation(t *testing.T) {
 	admin := adminAccess(100)
 	seedPractitionerForService(t, db, 3, 102, 10)
 	seedAllDaySchedules(t, db, 102, 10)
+	seedAvailabilityAroundNow(t, db, 102, 10)
 	now := time.Now().UTC()
 	startA := now.Add(-40 * time.Minute)
 	endA := startA.Add(30 * time.Minute)
@@ -961,6 +985,8 @@ func TestPostgresAppointmentDomainFoundation23A(t *testing.T) {
 	seedPractitionerForService(t, db, 4, 102, 11)
 	seedAllDaySchedules(t, db, 102, 10)
 	seedAllDaySchedules(t, db, 102, 11)
+	seedAvailabilityAroundNow(t, db, 102, 10)
+	seedAvailabilityAroundNow(t, db, 102, 11)
 
 	// A — missing type/end rejected (23D: no silent weaken via legacy CreateAppointment)
 	if _, e := svc.CreateAppointment(CreateAppointmentRequest{

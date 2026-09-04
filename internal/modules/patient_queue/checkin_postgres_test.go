@@ -31,6 +31,7 @@ func checkinSetup(t *testing.T) (*gorm.DB, *Service, Access, uint, *AppointmentT
 	admin := adminAccess(801)
 	seedPractitionerForService(t, db, 80, 800, 10)
 	seedAllDaySchedules(t, db, 800, 10)
+	seedAvailabilityAroundNow(t, db, 800, 10)
 	at, err := svc.CreateAppointmentType(CreateAppointmentTypeRequest{
 		Code: "CI-30", Name: "CheckIn 30", DefaultDurationMinutes: 30,
 	}, admin)
