@@ -154,6 +154,11 @@ func TestPostgresAppointmentTypeAdmin23M(t *testing.T) {
 		t.Fatal("active type missing from list")
 	}
 
+	manageOnly := Access{UserID: 811, Permissions: map[string]bool{"appointment_type.manage": true}}
+	if _, err := svc.ListAppointmentTypes(nil, &tru, manageOnly); err != nil {
+		t.Fatalf("appointment_type.manage must list types: %v", err)
+	}
+
 	// RBAC negatives (domain)
 	denials := []Access{
 		{UserID: 1, Permissions: map[string]bool{"schedule.read.all": true}},

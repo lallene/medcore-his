@@ -214,8 +214,9 @@ func (s *Service) GetAppointment(id uint, a Access) (*AppointmentDTO, error) {
 }
 
 // ListAppointmentTypes — GET /api/appointment-types
+// Allowed for schedule.read.* (agenda consumers) OR appointment_type.manage (catalog admin).
 func (s *Service) ListAppointmentTypes(serviceID *uint, active *bool, a Access) ([]AppointmentType, error) {
-	if !s.canReadAppointments(a) {
+	if !s.canReadAppointments(a) && !s.canManageAppointmentType(a) {
 		return nil, coreerrors.Forbidden("Lecture types de rendez-vous non autorisée")
 	}
 	q := s.db.Model(&AppointmentType{})
