@@ -52,7 +52,7 @@ func queuePostgres(t *testing.T) *gorm.DB {
 		sexe TEXT, date_naissance DATE, telephone TEXT
 	)`)
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS organization_services (
-		id BIGSERIAL PRIMARY KEY, name TEXT, code TEXT
+		id BIGSERIAL PRIMARY KEY, name TEXT, code TEXT, active BOOLEAN NOT NULL DEFAULT true
 	)`)
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS users (
 		id BIGSERIAL PRIMARY KEY, name TEXT
@@ -91,7 +91,7 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	_ = db.Exec(`INSERT INTO patients(id, code_patient, nom, prenoms, sexe, telephone) VALUES
 		(1,'P-Q-1','Dupont','Alice','F','0600000001'),
 		(2,'P-Q-2','Martin','Bob','M','0600000002') ON CONFLICT DO NOTHING`)
-	_ = db.Exec(`INSERT INTO organization_services(id, name, code) VALUES (10,'Urgences','URG'),(11,'Médecine','MED') ON CONFLICT DO NOTHING`)
+	_ = db.Exec(`INSERT INTO organization_services(id, name, code, active) VALUES (10,'Urgences','URG',true),(11,'Médecine','MED',true) ON CONFLICT DO NOTHING`)
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (100,'Accueil'),(101,'Infirmier'),(102,'Médecin') ON CONFLICT DO NOTHING`)
 	return db
 }
@@ -129,22 +129,22 @@ func seedAllDaySchedules(t *testing.T, db *gorm.DB, practitionerID, serviceID ui
 // appointment times are relative to time.Now(). Unlike recurring wall-clock
 // schedules, this interval remains continuous when a fixture crosses midnight.
 func seedAvailabilityAroundNow(t *testing.T, db *gorm.DB, practitionerID, serviceID uint) {
-        t.Helper()
-        now := time.Now().UTC()
-        if err := db.Create(&ScheduleException{
-                PractitionerID: practitionerID,
-                ServiceID:      serviceID,
-                Type:           ExExtraAvailability,
-                StartAt:        now.Add(-4 * time.Hour),
-                EndAt:          now.Add(6 * time.Hour),
-                Reason:         "test fixture: availability around now",
-                Active:         true,
-                CreatedBy:      100,
-                CreatedAt:      now,
-                UpdatedAt:      now,
-        }).Error; err != nil {
-                t.Fatalf("seed availability around now: %v", err)
-        }
+	t.Helper()
+	now := time.Now().UTC()
+	if err := db.Create(&ScheduleException{
+		PractitionerID: practitionerID,
+		ServiceID:      serviceID,
+		Type:           ExExtraAvailability,
+		StartAt:        now.Add(-4 * time.Hour),
+		EndAt:          now.Add(6 * time.Hour),
+		Reason:         "test fixture: availability around now",
+		Active:         true,
+		CreatedBy:      100,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed availability around now: %v", err)
+	}
 }
 
 func adminAccess(uid uint) Access {

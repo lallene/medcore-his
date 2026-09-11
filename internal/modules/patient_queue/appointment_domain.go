@@ -1,7 +1,6 @@
 package patient_queue
 
 import (
-	"strings"
 	"time"
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
@@ -42,48 +41,6 @@ func (s *Service) writeAppointmentHistory(tx *gorm.DB, appointmentID, actor uint
 		CreatedAt:     time.Now().UTC(),
 	}
 	return tx.Create(&h).Error
-}
-
-// CreateAppointmentType creates a scheduling catalog entry (not a clinical reason).
-func (s *Service) CreateAppointmentType(r CreateAppointmentTypeRequest, a Access) (*AppointmentType, error) {
-	if !s.has(a, "queue.checkin") && !s.has(a, "organization.manage") && !s.has(a, "*") {
-		return nil, coreerrors.Forbidden("Permission création type de rendez-vous refusée")
-	}
-	code := strings.ToUpper(strings.TrimSpace(r.Code))
-	name := strings.TrimSpace(r.Name)
-	if code == "" || name == "" {
-		return nil, coreerrors.BadRequest("code et nom requis")
-	}
-	if r.DefaultDurationMinutes <= 0 {
-		return nil, coreerrors.BadRequest("durée par défaut doit être > 0")
-	}
-	if r.ServiceID != nil {
-		if err := s.assertServiceInScope(*r.ServiceID, a); err != nil {
-			return nil, err
-		}
-	}
-	active := true
-	if r.Active != nil {
-		active = *r.Active
-	}
-	now := time.Now().UTC()
-	t := AppointmentType{
-		Code:                   code,
-		Name:                   name,
-		DefaultDurationMinutes: r.DefaultDurationMinutes,
-		ServiceID:              r.ServiceID,
-		Active:                 active,
-		CreatedAt:              now,
-		UpdatedAt:              now,
-	}
-	if err := s.db.Create(&t).Error; err != nil {
-		msg := strings.ToLower(err.Error())
-		if strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate") {
-			return nil, coreerrors.Conflict("Code de type de rendez-vous déjà utilisé")
-		}
-		return nil, coreerrors.Internal(err.Error())
-	}
-	return &t, nil
 }
 
 func (s *Service) resolveAppointmentInterval(r CreateAppointmentRequest) (time.Time, *time.Time, *uint, error) {

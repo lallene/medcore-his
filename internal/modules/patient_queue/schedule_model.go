@@ -9,7 +9,7 @@ type StaffWorkingSchedule struct {
 	ID             uint       `gorm:"primaryKey" json:"id"`
 	PractitionerID uint       `gorm:"not null;index" json:"practitionerId"` // users.id
 	ServiceID      uint       `gorm:"not null;index" json:"serviceId"`
-	Weekday        int        `gorm:"not null;index" json:"weekday"`     // 0–6 = time.Weekday
+	Weekday        int        `gorm:"not null;index" json:"weekday"`                         // 0–6 = time.Weekday
 	StartTime      string     `gorm:"type:time without time zone;not null" json:"startTime"` // HH:MM:SS local wall-clock
 	EndTime        string     `gorm:"type:time without time zone;not null" json:"endTime"`   // HH:MM:SS local, exclusive [start,end)
 	ValidFrom      time.Time  `gorm:"type:date;not null;index" json:"validFrom"`             // date inclusive
@@ -66,7 +66,7 @@ type ScheduleAuditEvent struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
 	ActorUserID    uint      `gorm:"not null;index" json:"actorUserId"`
 	EventType      string    `gorm:"size:40;not null;index" json:"eventType"`
-	EntityType     string    `gorm:"size:40;not null;index" json:"entityType"` // SCHEDULE | EXCEPTION
+	EntityType     string    `gorm:"size:40;not null;index" json:"entityType"` // SCHEDULE | EXCEPTION | APPOINTMENT_TYPE
 	EntityID       uint      `gorm:"not null;index" json:"entityId"`
 	PractitionerID uint      `gorm:"index" json:"practitionerId"`
 	ServiceID      uint      `gorm:"index" json:"serviceId"`
@@ -78,12 +78,16 @@ type ScheduleAuditEvent struct {
 func (ScheduleAuditEvent) TableName() string { return "patient_queue_schedule_audit" }
 
 const (
-	SchedAuditCreated          = "SCHEDULE_CREATED"
-	SchedAuditUpdated          = "SCHEDULE_UPDATED"
-	SchedAuditDisabled         = "SCHEDULE_DISABLED"
-	ExAuditCreated             = "EXCEPTION_CREATED"
-	ExAuditUpdated             = "EXCEPTION_UPDATED"
-	ExAuditCancelled           = "EXCEPTION_CANCELLED"
-	EntitySchedule             = "SCHEDULE"
-	EntityException            = "EXCEPTION"
+	SchedAuditCreated     = "SCHEDULE_CREATED"
+	SchedAuditUpdated     = "SCHEDULE_UPDATED"
+	SchedAuditDisabled    = "SCHEDULE_DISABLED"
+	ExAuditCreated        = "EXCEPTION_CREATED"
+	ExAuditUpdated        = "EXCEPTION_UPDATED"
+	ExAuditCancelled      = "EXCEPTION_CANCELLED"
+	EntitySchedule        = "SCHEDULE"
+	EntityException       = "EXCEPTION"
+	EntityAppointmentType = "APPOINTMENT_TYPE"
+	ApptTypeAuditCreated  = "APPOINTMENT_TYPE_CREATED"
+	ApptTypeAuditUpdated  = "APPOINTMENT_TYPE_UPDATED"
+	ApptTypeAuditDisabled = "APPOINTMENT_TYPE_DISABLED"
 )

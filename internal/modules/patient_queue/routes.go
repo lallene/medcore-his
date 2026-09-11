@@ -61,6 +61,10 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	r.GET("/appointments", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.ListAppointments)
 	r.GET("/appointments/:id", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.GetAppointment)
 	r.GET("/appointment-types", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.ListAppointmentTypes)
+	// LOT 23M-A — appointment type administration (appointment_type.manage | *; not schedule.*/queue.checkin/appointment.create.*)
+	r.POST("/appointment-types", rbac.AnyPermission("appointment_type.manage"), h.CreateAppointmentTypeAdmin)
+	r.PATCH("/appointment-types/:id", rbac.AnyPermission("appointment_type.manage"), h.UpdateAppointmentTypeAdmin)
+	r.DELETE("/appointment-types/:id", rbac.AnyPermission("appointment_type.manage"), h.DisableAppointmentTypeAdmin)
 	// LOT 23E — lifecycle (reschedule / cancel / no-show); queue.checkin is NOT lifecycle authority
 	r.PATCH("/appointments/:id/reschedule", rbac.AnyPermission(
 		"appointment.reschedule.service", "appointment.reschedule.all",

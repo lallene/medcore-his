@@ -453,7 +453,27 @@ Reschedule, cancel API changes, reminders, holds, waitlists, recurring series, f
 
 ## AppointmentType
 
-Table `patient_queue_appointment_types`: unique `code`, `default_duration_minutes` > 0.
+Table `patient_queue_appointment_types`: unique `code`, `default_duration_minutes` in `[MinDurationMinutes, MaxDurationMinutes]` (5–480), optional `service_id`, soft `active`.
+
+### Administration (LOT 23M-A)
+
+| Method | Path | Permission |
+|--------|------|------------|
+| `GET` | `/api/appointment-types` | `schedule.read.own` \| `.service` \| `.all` (unchanged) |
+| `POST` | `/api/appointment-types` | `appointment_type.manage` \| `*` |
+| `PATCH` | `/api/appointment-types/:id` | `appointment_type.manage` \| `*` |
+| `DELETE` | `/api/appointment-types/:id` | soft-deactivate (`active=false`); same manage permission |
+
+- **Not** authorized by `queue.checkin`, `schedule.read.*`, `schedule.manage.*`, or `appointment.create.*`.
+- Pack grant: `DIRECTEUR_ADMINISTRATIF` (not `DIRECTEUR_MEDICAL`).
+- `code` is immutable on update; duration bounds match booking limits.
+- Optional `service_id` must reference an **active** `organization_services` row (`clearServiceId` clears it).
+- Soft-deactivate only — no hard delete; historical appointments remain readable and enrichable.
+- Audit: `patient_queue_schedule_audit` with `entityType=APPOINTMENT_TYPE`.
+
+### Organization service activity (LOT 23M-A)
+
+New scheduling **writes** and **availability** require `organization_services.active=true` (central `assertServiceExists`). Covers booking, reschedule, working schedules, schedule exceptions, and availability queries. Existing appointments for a later-deactivated service remain **readable**. Practitioner eligibility still requires active `staff_profiles` + active `staff_service_assignments`.
 
 ## Practitioner identity
 
@@ -620,7 +640,9 @@ Response: `{ items: AppointmentType[] }`. Inactive types remain available for hi
 | 23H | Patient 360 upcoming RDV | **Delivered** |
 | 23I | RBAC hardening Scheduling / Appointments | **Delivered** |
 | 23J | QA / release gate Scheduling | **Delivered** |
-| 23K | Patient 360 history + Agenda patient deep-link (frontend) | **This lot** |
+| 23K | Patient 360 history + Agenda patient deep-link (frontend) | **Delivered** |
+| 23L | Schedule Administration (frontend) | **Delivered** |
+| 23M-A | Inactive org-service hardening + Appointment Type admin API | **This lot** |
 
 ---
 
@@ -767,6 +789,8 @@ Queue rollback, reopen cancelled/no-show, service change on reschedule, reminder
 - Complex SERVICE filtering of `GET /appointment-types` catalog (LOW)
 - Granting `schedule.manage.own` to physicians (product decision)
 - Removing legacy `POST /api/queue/appointments` (kept, same RBAC as canonical booking)
+- Service-scoped `appointment_type.manage` (23M-A remains GLOBAL)
+- Frontend Appointment Type admin UI (LOT 23M-B)
 
 ---
 

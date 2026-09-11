@@ -30,6 +30,15 @@ type CreateAppointmentTypeRequest struct {
 	Active                 *bool  `json:"active"`
 }
 
+// UpdateAppointmentTypeRequest — code is immutable; omit fields to leave unchanged.
+type UpdateAppointmentTypeRequest struct {
+	Name                   *string `json:"name"`
+	DefaultDurationMinutes *int    `json:"defaultDurationMinutes"`
+	ServiceID              *uint   `json:"serviceId"`
+	ClearServiceID         bool    `json:"clearServiceId"`
+	Active                 *bool   `json:"active"`
+}
+
 type WalkInCheckInRequest struct {
 	PatientID           uint   `json:"patientId" binding:"required"`
 	ServiceID           uint   `json:"serviceId" binding:"required"`

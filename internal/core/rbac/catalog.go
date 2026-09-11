@@ -53,6 +53,8 @@ func init() {
 	add("appointment.cancel.all", "Annuler un rendez-vous (global)", "Appointments", "GLOBAL")
 	add("appointment.no_show.service", "Marquer un rendez-vous no-show (service)", "Appointments", "SERVICE")
 	add("appointment.no_show.all", "Marquer un rendez-vous no-show (global)", "Appointments", "GLOBAL")
+	// LOT 23M-A — appointment type catalog administration (GLOBAL; not schedule.manage / queue.checkin)
+	add("appointment_type.manage", "Gérer le catalogue des types de rendez-vous", "Appointments", "GLOBAL")
 	// Consultations / hosp
 	add("consultations.read", "Lire les consultations", "Consultations", "SERVICE")
 	add("consultations.create", "Créer une consultation", "Consultations", "SERVICE")

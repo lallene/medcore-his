@@ -204,13 +204,16 @@ func (s *Service) assertScheduleServiceInScope(serviceID uint, a Access) error {
 	return s.assertScheduleServiceInReadScope(serviceID, a)
 }
 
+// assertServiceExists requires an ACTIVE organization service for new scheduling activity
+// (availability, booking, reschedule, schedule/exception mutation). Historical reads must
+// not call this helper — inactive services remain visible on existing appointments.
 func (s *Service) assertServiceExists(serviceID uint) error {
 	var n int64
-	if err := s.db.Raw(`SELECT COUNT(1) FROM organization_services WHERE id=?`, serviceID).Scan(&n).Error; err != nil {
-		return coreerrors.Internal(err.Error())
+	if err := s.db.Raw(`SELECT COUNT(1) FROM organization_services WHERE id=? AND active`, serviceID).Scan(&n).Error; err != nil {
+		return coreerrors.Internal("échec vérification service")
 	}
 	if n == 0 {
-		return coreerrors.BadRequest("Service inexistant")
+		return coreerrors.BadRequest("Service inexistant ou inactif")
 	}
 	return nil
 }

@@ -72,4 +72,13 @@ func TestSchedulingReadLeastPrivilegePacks(t *testing.T) {
 	if !has(dirAdmin, "appointment.create.all") {
 		t.Fatalf("DirAdmin missing create.all: %v", dirAdmin)
 	}
+	if !has(dirAdmin, "appointment_type.manage") {
+		t.Fatalf("DirAdmin missing appointment_type.manage: %v", dirAdmin)
+	}
+	if has(dirMed, "appointment_type.manage") {
+		t.Fatalf("DirMed must not gain appointment_type.manage: %v", dirMed)
+	}
+	if has(accueil, "appointment_type.manage") {
+		t.Fatalf("ACCUEIL must not gain appointment_type.manage: %v", accueil)
+	}
 }
