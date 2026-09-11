@@ -60,7 +60,12 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	// LOT 23F.1 — agenda read APIs (schedule.read.*; not queue.checkin / consultations.read)
 	r.GET("/appointments", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.ListAppointments)
 	r.GET("/appointments/:id", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.GetAppointment)
-	r.GET("/appointment-types", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.ListAppointmentTypes)
+	// LOT 23F.1 / 23M-B — appointment type catalog list:
+	// schedule.read.own|service|all OR appointment_type.manage; mutations remain appointment_type.manage only.
+	r.GET("/appointment-types", rbac.AnyPermission(
+		"schedule.read.own", "schedule.read.service", "schedule.read.all",
+		"appointment_type.manage",
+	), h.ListAppointmentTypes)
 	// LOT 23M-A — appointment type administration (appointment_type.manage | *; not schedule.*/queue.checkin/appointment.create.*)
 	r.POST("/appointment-types", rbac.AnyPermission("appointment_type.manage"), h.CreateAppointmentTypeAdmin)
 	r.PATCH("/appointment-types/:id", rbac.AnyPermission("appointment_type.manage"), h.UpdateAppointmentTypeAdmin)

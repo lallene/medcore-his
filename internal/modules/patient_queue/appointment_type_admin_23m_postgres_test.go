@@ -252,43 +252,52 @@ func TestAppointmentTypeAdminRoutesRBAC23M(t *testing.T) {
 			t.Fatalf("DELETE deny %v want 403 got %d", perms, got)
 		}
 	}
-	// List remains schedule.read; queue.checkin alone is insufficient.
+	// organization.manage alone must not unlock mutations (covered above) nor list.
+	if got := request(http.MethodGet, "/api/appointment-types", "", []string{"organization.manage"}); got != http.StatusForbidden {
+		t.Fatalf("GET list organization.manage want 403 got %d", got)
+	}
+	// queue.checkin alone is insufficient for list.
 	if got := request(http.MethodGet, "/api/appointment-types", "", []string{"queue.checkin"}); got != http.StatusForbidden {
 		t.Fatalf("GET list checkin-only want 403 got %d", got)
 	}
 
-	// Positive middleware allow: use a dedicated router that records Next() without DB.
-	allow := gin.New()
-	allow.Use(func(c *gin.Context) {
-		c.Set(rbac.ContextPermissions, []string{"appointment_type.manage"})
-		c.Set(rbac.ContextUserID, uint(1))
-		c.Next()
-	})
-	allow.POST("/api/appointment-types", rbac.AnyPermission("appointment_type.manage"), func(c *gin.Context) {
-		c.Status(http.StatusNoContent)
-	})
-	allow.POST("/api/appointment-types-star", rbac.AnyPermission("appointment_type.manage"), func(c *gin.Context) {
-		c.Status(http.StatusNoContent)
-	})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/appointment-types", strings.NewReader(body))
-	allow.ServeHTTP(w, req)
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("manage middleware want 204 got %d", w.Code)
+	listGate := rbac.AnyPermission(
+		"schedule.read.own", "schedule.read.service", "schedule.read.all",
+		"appointment_type.manage",
+	)
+	mutateGate := rbac.AnyPermission("appointment_type.manage")
+
+	// Middleware-only positives (no DB): list for manage / schedule.read / *; mutate for manage / *.
+	assertAllow := func(t *testing.T, perms []string, method, path string, gate gin.HandlerFunc) {
+		t.Helper()
+		allow := gin.New()
+		allow.Use(func(c *gin.Context) {
+			c.Set(rbac.ContextPermissions, perms)
+			c.Set(rbac.ContextUserID, uint(1))
+			c.Next()
+		})
+		allow.Handle(method, path, gate, func(c *gin.Context) {
+			c.Status(http.StatusNoContent)
+		})
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		allow.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("%s %v want 204 got %d", method, perms, w.Code)
+		}
 	}
-	allow2 := gin.New()
-	allow2.Use(func(c *gin.Context) {
-		c.Set(rbac.ContextPermissions, []string{"*"})
-		c.Set(rbac.ContextUserID, uint(1))
-		c.Next()
-	})
-	allow2.POST("/api/appointment-types", rbac.AnyPermission("appointment_type.manage"), func(c *gin.Context) {
-		c.Status(http.StatusNoContent)
-	})
-	w2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodPost, "/api/appointment-types", strings.NewReader(body))
-	allow2.ServeHTTP(w2, req2)
-	if w2.Code != http.StatusNoContent {
-		t.Fatalf("* middleware want 204 got %d", w2.Code)
-	}
+
+	assertAllow(t, []string{"appointment_type.manage"}, http.MethodGet, "/api/appointment-types", listGate)
+	assertAllow(t, []string{"schedule.read.own"}, http.MethodGet, "/api/appointment-types", listGate)
+	assertAllow(t, []string{"schedule.read.service"}, http.MethodGet, "/api/appointment-types", listGate)
+	assertAllow(t, []string{"schedule.read.all"}, http.MethodGet, "/api/appointment-types", listGate)
+	assertAllow(t, []string{"*"}, http.MethodGet, "/api/appointment-types", listGate)
+
+	assertAllow(t, []string{"appointment_type.manage"}, http.MethodPost, "/api/appointment-types", mutateGate)
+	assertAllow(t, []string{"*"}, http.MethodPost, "/api/appointment-types", mutateGate)
+	assertAllow(t, []string{"appointment_type.manage"}, http.MethodPatch, "/api/appointment-types/1", mutateGate)
+	assertAllow(t, []string{"*"}, http.MethodPatch, "/api/appointment-types/1", mutateGate)
+	assertAllow(t, []string{"appointment_type.manage"}, http.MethodDelete, "/api/appointment-types/1", mutateGate)
+	assertAllow(t, []string{"*"}, http.MethodDelete, "/api/appointment-types/1", mutateGate)
 }
