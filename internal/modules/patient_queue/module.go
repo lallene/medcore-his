@@ -11,7 +11,8 @@ type Module struct{}
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "patient_queue")
 	app.MustMigrate(&AppointmentType{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
-		&StaffWorkingSchedule{}, &ScheduleException{}, &ScheduleAuditEvent{})
+		&StaffWorkingSchedule{}, &ScheduleException{}, &ScheduleAuditEvent{},
+		&AppointmentNotificationIntent{}, &AppointmentNotificationAttempt{})
 	if err := EnsureAppointmentIndexes(app.DB); err != nil {
 		logger.Error("Index patient_queue appointments", "error", err)
 	}
@@ -21,6 +22,11 @@ func (Module) Register(app *application.Application) {
 	// LOT 23F: one lifetime ticket per appointment — hard invariant; must abort startup.
 	if err := EnsureTicketIndexes(app.DB); err != nil {
 		logger.Error("Index patient_queue tickets", "error", err)
+		panic(err)
+	}
+	// LOT 23N-A: unique index + attempt→intent FK underwrite idempotency/integrity — hard fail.
+	if err := EnsureNotificationIndexes(app.DB); err != nil {
+		logger.Error("Index appointment notifications", "error", err)
 		panic(err)
 	}
 	s := NewService(app.DB)

@@ -857,3 +857,56 @@ Contract: `/agenda?patientId=<id>` only (no clinical data in the URL).
 ### Out of scope (23K P1+)
 
 History >31 days, load more / infinite history, backend `order=desc`, `book=1` auto-open modal, history status filter UI, schedule/exception admin UI, reminders, recurrence, waitlist, reporting, `schedule.manage.own` packs, appointment-types SERVICE catalog filter, legacy booking endpoint removal.
+
+---
+
+## LOT 23N-A — Appointment notification intents (durable queue foundation)
+
+**Backend-only** foundation for appointment reminders/notifications. **Does not deliver** SMS/email yet and **does not** hook book/reschedule/cancel (see **23N-B**).
+
+### Domain
+
+| Table | Role |
+|-------|------|
+| `appointment_notification_intents` | Durable queue row (side effect only; never mutates appointments) |
+| `appointment_notification_attempts` | Delivery attempt metadata (no message body / no phone / no email) |
+
+Distinct from Service Desk `ticketing_notifications`. In-process `MemoryBus` is **not** the reminder queue.
+
+### Status lifecycle
+
+`PENDING` → `PROCESSING` → `SENT` | `FAILED` (retry may reclaim `PROCESSING` → `PENDING`).
+`PENDING` → `CANCELLED` | `SKIPPED`.
+Terminal `SENT` / `CANCELLED` / `FAILED` / `SKIPPED` do not reopen to `PROCESSING`.
+
+### Idempotency
+
+Unique `(appointment_id, kind, channel, occurrence_key)`.
+`occurrence_key` = UTC nanoseconds of target `scheduled_at` (deterministic; reschedule changes key).
+`EnqueueNotificationIntent` is idempotent (`ON CONFLICT DO NOTHING` + read existing).
+
+### T−24h
+
+`ReminderSendAfterT24H(scheduledAt)` = `scheduledAt.UTC().Add(-24h)` — exactly 24 absolute hours before the canonical appointment instant. Scheduling wall-clock `Location` does not participate.
+
+### Attempts FK
+
+`appointment_notification_attempts.intent_id` → `appointment_notification_intents(id)` with **ON UPDATE CASCADE** and **ON DELETE RESTRICT** (preserve delivery audit; no orphan attempts; no cascade wipe).
+
+Startup/migrate verifies the exact contract via PostgreSQL catalogs (`pg_constraint` / `pg_class` / `pg_attribute`): source column, referenced table/column, update action `CASCADE` (`confupdtype='c'`), and delete action either `RESTRICT` (`'r'`) or non-deferrable `NO ACTION` (`confdeltype='a'` and `condeferrable=false`). Deferrable `NO ACTION` is not equivalent (checks can be postponed). Constraint name may be GORM-generated or `fk_appt_notif_attempt_intent`.
+
+### Channels
+
+Domain values: `LOG`, `EMAIL`, `SMS`. Adapters in 23N-A: **Noop** / **Log** only (no network I/O, no PHI in logs).
+
+### Payload PHI policy
+
+Typed `NotificationPayload` requires `appointmentId` (must match the intent) and `scheduledAt` (RFC3339/RFC3339Nano, UTC-canonical). Optional type/service/clinic labels. **Forbidden:** `Appointment.Reason`, diagnosis, telephone, email, unknown keys. Empty / `{}` payloads are rejected.
+
+### Deferred
+
+- Lifecycle enqueue (book / reschedule / cancel) → **23N-B**
+- Worker / retry loop → **23N-B**
+- Real SMTP/SMS providers → later
+- Patient preferences / consent / email column → out of scope
+- Admin HTTP / frontend → **23N-C**

@@ -150,6 +150,8 @@ func main() {
 		&patient_queue.StaffWorkingSchedule{},
 		&patient_queue.ScheduleException{},
 		&patient_queue.ScheduleAuditEvent{},
+		&patient_queue.AppointmentNotificationIntent{},
+		&patient_queue.AppointmentNotificationAttempt{},
 	)
 
 	if err != nil {
@@ -163,6 +165,9 @@ func main() {
 	}
 	if err := patient_queue.EnsureTicketIndexes(db); err != nil {
 		log.Fatal("Erreur index patient_queue tickets:", err)
+	}
+	if err := patient_queue.EnsureNotificationIndexes(db); err != nil {
+		log.Fatal("Erreur index appointment notifications:", err)
 	}
 	if err := pharmacy.BackfillVouchers(db); err != nil {
 		log.Fatal("Erreur matérialisation bons pharmacie:", err)
