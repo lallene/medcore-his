@@ -38,6 +38,8 @@ func TestNotificationTransitionMatrix(t *testing.T) {
 		{NotifStatusProcessing, NotifStatusSent},
 		{NotifStatusProcessing, NotifStatusFailed},
 		{NotifStatusProcessing, NotifStatusPending},
+		{NotifStatusProcessing, NotifStatusSkipped},
+		{NotifStatusProcessing, NotifStatusCancelled},
 	}
 	for _, p := range allowed {
 		if !CanTransitionNotificationStatus(p[0], p[1]) {
@@ -82,6 +84,31 @@ func TestOccurrenceKeyDeterministicAndUTCEquivalent(t *testing.T) {
 	rescheduled := base.Add(30 * time.Minute)
 	if OccurrenceKeyFromScheduledAt(rescheduled) == k1 {
 		t.Fatal("changed scheduled_at must change occurrence key")
+	}
+}
+
+func TestReminderT24HEligible(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	far := now.Add(48 * time.Hour)
+	if !ReminderT24HEligible(far, now) {
+		t.Fatal("48h ahead should be eligible")
+	}
+	near := now.Add(12 * time.Hour)
+	if ReminderT24HEligible(near, now) {
+		t.Fatal("<24h should not enqueue reminder")
+	}
+	past := now.Add(-time.Hour)
+	if ReminderT24HEligible(past, now) {
+		t.Fatal("past should not enqueue reminder")
+	}
+}
+
+func TestNotificationRetryBackoff(t *testing.T) {
+	if d, ok := NotificationRetryBackoff(1); !ok || d != time.Minute {
+		t.Fatalf("1: %v %v", d, ok)
+	}
+	if _, ok := NotificationRetryBackoff(5); ok {
+		t.Fatal("attempt 5 must be terminal")
 	}
 }
 

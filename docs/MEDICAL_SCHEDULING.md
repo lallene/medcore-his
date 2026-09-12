@@ -905,8 +905,51 @@ Typed `NotificationPayload` requires `appointmentId` (must match the intent) and
 
 ### Deferred
 
-- Lifecycle enqueue (book / reschedule / cancel) → **23N-B**
-- Worker / retry loop → **23N-B**
 - Real SMTP/SMS providers → later
 - Patient preferences / consent / email column → out of scope
 - Admin HTTP / frontend → **23N-C**
+
+---
+
+## LOT 23N-B — Lifecycle integration + durable worker
+
+### Lifecycle hooks (same TX)
+
+Notification side effects run **inside** the appointment mutation transaction:
+
+| Mutation | Notification effects (channel **LOG** only) |
+|----------|---------------------------------------------|
+| `BookAppointment` | `BOOKED` + `REMINDER_T24H` if eligible (**only while appointment status is `SCHEDULED`**). Idempotent replay of `CANCELLED` / `NO_SHOW` / other non-`SCHEDULED` rows reuses the appointment but does **not** repair/rearm notifications. |
+| `RescheduleAppointment` | suppress old-occurrence active reminder; `RESCHEDULED`; new reminder if eligible |
+| `CancelAppointment` | suppress active reminders (`PENDING`/`PROCESSING`); `CANCELLED` |
+| `MarkNoShow` | suppress active reminders only (no fake `CANCELLED` intent) |
+
+Legacy `CreateAppointment` delegates to `BookAppointment` (no duplicate hooks).
+
+Atomicity: appointment row + intent changes commit or roll back together. Not via `MemoryBus`.
+
+### Reminder eligibility
+
+`REMINDER_T24H` only when `scheduled_at` is strictly in the future **and** `ReminderSendAfterT24H(scheduled_at) >= now`.
+
+### Same-occurrence re-arm
+
+Unique key remains `(appointment_id, kind, channel, occurrence_key)` (not partial).
+
+If a `REMINDER_T24H`/`LOG` row for that key is `CANCELLED` and the reminder must be active again, **`rearmCancelledReminderTx`** explicitly transitions `CANCELLED → PENDING` (clears `cancelled_at`, refreshes `send_after` / payload). `SENT` / `FAILED` / `SKIPPED` are not silently reopened.
+
+### Worker
+
+Dedicated process: `cmd/notification-worker` (not started inside the API).
+
+- Claims due `PENDING` + `channel=LOG` + `send_after <= now` via `SELECT … FOR UPDATE SKIP LOCKED`, then sets `PROCESSING` + `processing_started_at` in the same short TX.
+- Adapter I/O is **outside** the claim TX.
+- After adapter return, delivery finalization is **one short DB transaction**: lock intent (`FOR UPDATE`, must still be `PROCESSING`) → insert attempt → `SENT` / `SKIPPED` / retry `PENDING` / `FAILED` → commit. Partial attempt+status is rolled back together. Finalization errors are logged; intent stays `PROCESSING` for stale recovery.
+- Production adapter: **Log** only. Noop for tests.
+- Pre-send guard for `REMINDER_T24H`: skip (`PROCESSING → SKIPPED`) if appointment missing/cancelled/no-show or occurrence key stale.
+- Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
+- **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for future external providers. A provider may accept a message and the process may crash before finalization commits. Future EMAIL/SMS adapters must use provider idempotency/message keys where available. For 23N-B **LOG-only** execution this residual ambiguity is acceptable.
+
+### PHI
+
+Lifecycle payloads use `BuildNotificationPayload` only — no reason, diagnosis, telephone, email, or full Patient/Appointment objects. Adapters receive typed `NotificationPayload`; workers do not log `payload_json`.

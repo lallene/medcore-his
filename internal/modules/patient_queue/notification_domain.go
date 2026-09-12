@@ -56,7 +56,9 @@ var notifStatuses = map[string]struct{}{
 	NotifStatusSkipped:    {},
 }
 
-// Allowed status transitions (23N-A). Worker retry may return PROCESSING → PENDING.
+// Allowed status transitions (23N-A + 23N-B worker).
+// PROCESSING → SKIPPED: claimed intent becomes invalid before adapter I/O.
+// PROCESSING → CANCELLED: lifecycle suppress of in-flight reminder.
 var notifAllowedTransitions = map[string]map[string]struct{}{
 	NotifStatusPending: {
 		NotifStatusProcessing: {},
@@ -64,9 +66,11 @@ var notifAllowedTransitions = map[string]map[string]struct{}{
 		NotifStatusSkipped:    {},
 	},
 	NotifStatusProcessing: {
-		NotifStatusSent:    {},
-		NotifStatusFailed:  {},
-		NotifStatusPending: {}, // retry reclaim
+		NotifStatusSent:      {},
+		NotifStatusFailed:    {},
+		NotifStatusPending:   {}, // retry reclaim
+		NotifStatusSkipped:   {},
+		NotifStatusCancelled: {},
 	},
 }
 
@@ -125,6 +129,44 @@ func OccurrenceKeyFromScheduledAt(scheduledAt time.Time) string {
 // Browser/scheduling wall-clock Location does not participate — persistence is the UTC instant.
 func ReminderSendAfterT24H(scheduledAt time.Time) time.Time {
 	return scheduledAt.UTC().Add(-24 * time.Hour)
+}
+
+// ReminderT24HEligible reports whether a T−24h reminder should be enqueued.
+// Requires a future appointment and sendAfter >= now (not already due in the past).
+func ReminderT24HEligible(scheduledAt, now time.Time) bool {
+	start := scheduledAt.UTC()
+	n := now.UTC()
+	if !start.After(n) {
+		return false // past or exactly now
+	}
+	sendAfter := ReminderSendAfterT24H(start)
+	return !sendAfter.Before(n) // sendAfter >= now
+}
+
+// LOT 23N-B worker defaults (bounded retry / claim lease).
+const (
+	NotificationMaxAttempts       = 5
+	NotificationStaleProcessing   = 15 * time.Minute
+	NotificationClaimBatchDefault = 25
+	NotificationClaimBatchMax     = 100
+	NotificationWorkerPollDefault = 2 * time.Second
+)
+
+// NotificationRetryBackoff returns delay before next attempt after failedAttemptNo (1-based).
+// Attempt 5 is terminal (no backoff); callers must FAILED instead.
+func NotificationRetryBackoff(failedAttemptNo int) (time.Duration, bool) {
+	switch failedAttemptNo {
+	case 1:
+		return time.Minute, true
+	case 2:
+		return 5 * time.Minute, true
+	case 3:
+		return 15 * time.Minute, true
+	case 4:
+		return time.Hour, true
+	default:
+		return 0, false
+	}
 }
 
 // NotificationPayload is the only allowed persisted template data for intents.

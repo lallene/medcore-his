@@ -281,6 +281,10 @@ func (s *Service) RescheduleAppointment(appointmentID uint, r RescheduleAppointm
 				if !sameRescheduleSemantics(*prior, r, resolved, *targetPrac) {
 					return coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
 				}
+				// Repair intents if needed (same-instant suppress+ensure is idempotent).
+				if e := s.applyRescheduleNotificationIntentsTx(tx, appt.ScheduledAt, appt, time.Now().UTC()); e != nil {
+					return e
+				}
 				out = &appt
 				return nil
 			}
@@ -357,6 +361,7 @@ func (s *Service) RescheduleAppointment(appointmentID uint, r RescheduleAppointm
 		}
 
 		oldSnap := snapshotAppointment(appt)
+		oldScheduledAt := appt.ScheduledAt
 		now := time.Now().UTC()
 		end := resolved.End
 		prac := *targetPrac
@@ -377,6 +382,9 @@ func (s *Service) RescheduleAppointment(appointmentID uint, r RescheduleAppointm
 		reason := strings.TrimSpace(r.Reason)
 		if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistRescheduled, ApptScheduled, ApptScheduled, reason, payload); e != nil {
 			return coreerrors.Internal(e.Error())
+		}
+		if e := s.applyRescheduleNotificationIntentsTx(tx, oldScheduledAt, appt, now); e != nil {
+			return e
 		}
 		out = &appt
 		return nil
@@ -426,12 +434,18 @@ func (s *Service) CancelAppointment(appointmentID uint, r CancelAppointmentReque
 					if strings.TrimSpace(prior.Reason) != reason {
 						return coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
 					}
+					if e := s.applyCancelNotificationIntentsTx(tx, appt, time.Now().UTC()); e != nil {
+						return e
+					}
 					out = &appt
 					return nil
 				}
 				// Already cancelled under a different/absent key: terminal no-op (no new history).
 			}
 			// Terminal-state idempotence without key: 200/no-op, no duplicate history.
+			if e := s.applyCancelNotificationIntentsTx(tx, appt, time.Now().UTC()); e != nil {
+				return e
+			}
 			out = &appt
 			return nil
 		}
@@ -476,6 +490,9 @@ func (s *Service) CancelAppointment(appointmentID uint, r CancelAppointmentReque
 		payload := marshalLifecyclePayload(lifecycleHistoryPayload{IdempotencyKey: idemKey})
 		if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCancelled, from, ApptCancelled, reason, payload); e != nil {
 			return coreerrors.Internal(e.Error())
+		}
+		if e := s.applyCancelNotificationIntentsTx(tx, appt, now); e != nil {
+			return e
 		}
 		out = &appt
 		return nil
@@ -528,6 +545,9 @@ func (s *Service) MarkNoShow(appointmentID uint, r NoShowAppointmentRequest, a A
 				}
 			}
 			// Terminal-state idempotence: 200/no-op, no duplicate history.
+			if e := s.applyNoShowNotificationSuppressTx(tx, appt.ID); e != nil {
+				return e
+			}
 			out = &appt
 			return nil
 		}
@@ -575,6 +595,9 @@ func (s *Service) MarkNoShow(appointmentID uint, r NoShowAppointmentRequest, a A
 		payload := marshalLifecyclePayload(lifecycleHistoryPayload{IdempotencyKey: idemKey})
 		if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistNoShow, from, ApptNoShow, reason, payload); e != nil {
 			return coreerrors.Internal(e.Error())
+		}
+		if e := s.applyNoShowNotificationSuppressTx(tx, appt.ID); e != nil {
+			return e
 		}
 		out = &appt
 		return nil

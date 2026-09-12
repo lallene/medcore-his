@@ -22,6 +22,8 @@ type AppointmentNotificationIntent struct {
 	UpdatedAt     time.Time  `gorm:"not null" json:"updatedAt"`
 	CancelledAt   *time.Time `json:"cancelledAt,omitempty"`
 	SentAt        *time.Time `json:"sentAt,omitempty"`
+	// ProcessingStartedAt is the claim lease clock (LOT 23N-B). Nil when not PROCESSING.
+	ProcessingStartedAt *time.Time `json:"processingStartedAt,omitempty"`
 }
 
 func (AppointmentNotificationIntent) TableName() string {

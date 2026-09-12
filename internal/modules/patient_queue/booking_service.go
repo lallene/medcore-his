@@ -438,6 +438,9 @@ func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointm
 				if !sameBookingSemantics(*prior, r, resolved) {
 					return coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
 				}
+				if e := s.applyBookNotificationIntentsTx(tx, *prior, time.Now().UTC()); e != nil {
+					return e
+				}
 				created = prior
 				reused = true
 				return nil
@@ -522,6 +525,9 @@ func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointm
 					return e2
 				}
 				if prior != nil && sameBookingSemantics(*prior, r, resolved) {
+					if e3 := s.applyBookNotificationIntentsTx(tx, *prior, time.Now().UTC()); e3 != nil {
+						return e3
+					}
 					created = prior
 					reused = true
 					return nil
@@ -533,6 +539,9 @@ func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointm
 		payload := bookingRequestFingerprint(r, resolved, &prac)
 		if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCreated, "", ApptScheduled, r.Reason, payload); e != nil {
 			return coreerrors.Internal(e.Error())
+		}
+		if e := s.applyBookNotificationIntentsTx(tx, appt, now); e != nil {
+			return e
 		}
 		created = &appt
 		return nil
