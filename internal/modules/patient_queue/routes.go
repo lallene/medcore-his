@@ -81,4 +81,10 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	r.POST("/appointments/:id/no-show", rbac.AnyPermission(
 		"appointment.no_show.service", "appointment.no_show.all",
 	), h.MarkNoShowAuthoritative)
+
+	// LOT 23N-C1 — read-only appointment notification admin (schedule.manage.* only; not schedule.read.*).
+	notifAdmin := rbac.AnyPermission("schedule.manage.service", "schedule.manage.all")
+	r.GET("/appointment-notification-intents", notifAdmin, h.ListNotificationIntentsAdmin)
+	r.GET("/appointment-notification-intents/:id", notifAdmin, h.GetNotificationIntentAdmin)
+	r.GET("/appointment-notification-intents/:id/attempts", notifAdmin, h.ListNotificationAttemptsAdmin)
 }

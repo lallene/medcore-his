@@ -907,7 +907,7 @@ Typed `NotificationPayload` requires `appointmentId` (must match the intent) and
 
 - Real SMTP/SMS providers → later
 - Patient preferences / consent / email column → out of scope
-- Admin HTTP / frontend → **23N-C**
+- Frontend administration UI → **23N-C2+** (depends on 23N-C1 read API)
 
 ---
 
@@ -953,3 +953,60 @@ Dedicated process: `cmd/notification-worker` (not started inside the API).
 ### PHI
 
 Lifecycle payloads use `BuildNotificationPayload` only — no reason, diagnosis, telephone, email, or full Patient/Appointment objects. Adapters receive typed `NotificationPayload`; workers do not log `payload_json`.
+
+---
+
+## LOT 23N-C1 — Appointment notification admin read API
+
+**Read-only** HTTP surface for scheduling administrators to inspect durable notification intents and delivery attempts. Does **not** mutate queue state, control the worker, or deliver EMAIL/SMS.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/appointment-notification-intents` | Filtered, paginated list |
+| GET | `/api/appointment-notification-intents/:id` | Intent detail + `attemptCount` |
+| GET | `/api/appointment-notification-intents/:id/attempts` | Attempts ordered by `attempt_no` ASC |
+
+**No** POST/PATCH/DELETE. **No** retry / requeue / cancel-intent / manual-send / worker health endpoints.
+
+### RBAC
+
+Allowed: `schedule.manage.service` \| `schedule.manage.all` \| `*` (middleware + service).
+
+**Not** sufficient: `schedule.read.*` alone, `appointment_type.manage`, `queue.checkin`.
+
+No dedicated `appointment_notification.read` permission in this lot.
+
+### Service isolation
+
+- `schedule.manage.all` / `*`: all intents joined to existing appointments.
+- `schedule.manage.service`: only intents whose appointment `service_id` is in the actor’s assigned staff services (+ primary).
+- Out-of-scope detail/attempts → **404** `Notification` (IDOR-safe; same pattern as schedule manage reads).
+
+### List filters & pagination
+
+Query: `status`, `kind`, `channel`, `appointmentId`, `sendAfterFrom`/`sendAfterTo`, `createdAtFrom`/`createdAtTo`, `page`, `limit`.
+
+Defaults: `page=1`, `limit=50` when omitted. Explicit malformed or out-of-range `page`/`limit` → **400** (no silent clamp). Unsupported enum values and inverted ranges → **400**.
+
+Order: `created_at DESC`, `id DESC`.
+
+Response: `{ items, total, page, limit }`.
+
+### PHI-safe response contract
+
+Responses use explicit DTOs. **Never** serialize raw `payload_json`.
+
+Payload object allow-list only: `appointmentId`, `scheduledAt`, optional `appointmentTypeName` / `serviceName` / `clinicLabel`.
+
+**Never exposed:** appointment reason, diagnosis, telephone, email, clinical free text, unknown payload keys, raw model JSON dumps.
+
+`patientId` is the intent’s numeric patient id (identifier only). Attempt `error` / `provider` / `providerMessageId` are operational fields only.
+
+### Deferred
+
+- Frontend admin UI
+- Retry / requeue / cancel / manual send
+- Worker observability / controls
+- Real EMAIL/SMS providers and patient preferences/consent
