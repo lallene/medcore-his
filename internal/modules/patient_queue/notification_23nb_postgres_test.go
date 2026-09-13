@@ -651,7 +651,7 @@ func TestPostgresNotificationStaleRecoveryConcurrency23NB(t *testing.T) {
 	if err := EnsureNotificationIndexes(db); err != nil {
 		t.Fatal(err)
 	}
-	asOf := time.Now().UTC()
+	asOf := time.Now().UTC().Truncate(time.Microsecond)
 	start := time.Date(2026, 12, 15, 9, 0, 0, 0, time.UTC)
 
 	// Fresh PROCESSING must not be acquired.
