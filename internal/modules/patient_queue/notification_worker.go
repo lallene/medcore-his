@@ -142,6 +142,9 @@ func (w *NotificationWorker) preSendShouldSkip(intent *AppointmentNotificationIn
 	if appt.Status == ApptNoShow {
 		return true, "appointment no-show"
 	}
+	if appt.Status == ApptCompleted {
+		return true, "appointment completed"
+	}
 	wantKey := OccurrenceKeyFromScheduledAt(appt.ScheduledAt)
 	if intent.OccurrenceKey != wantKey {
 		return true, "occurrence obsolete"

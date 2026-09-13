@@ -946,7 +946,7 @@ Dedicated process: `cmd/notification-worker` (not started inside the API).
 - Adapter I/O is **outside** the claim TX.
 - After adapter return, delivery finalization is **one short DB transaction**: lock intent (`FOR UPDATE`, must still be `PROCESSING`) → insert attempt → `SENT` / `SKIPPED` / retry `PENDING` / `FAILED` → commit. Partial attempt+status is rolled back together. Finalization errors are logged; intent stays `PROCESSING` for stale recovery.
 - Production adapter: **Log** only. Noop for tests.
-- Pre-send guard for `REMINDER_T24H`: skip (`PROCESSING → SKIPPED`) if appointment missing/cancelled/no-show or occurrence key stale.
+- Pre-send guard for `REMINDER_T24H`: skip (`PROCESSING → SKIPPED`) if appointment missing/cancelled/no-show/**completed** or occurrence key stale.
 - Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
 - **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for future external providers. A provider may accept a message and the process may crash before finalization commits. Future EMAIL/SMS adapters must use provider idempotency/message keys where available. For 23N-B **LOG-only** execution this residual ambiguity is acceptable.
 

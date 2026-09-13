@@ -340,12 +340,84 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 	}
 }
 
+func TestPostgresNotificationCompletedReminderSkipped23NB(t *testing.T) {
+	db, svc := notificationTestDB(t)
+	start := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
+	_ = db.Exec(`INSERT INTO patients(id) VALUES (910) ON CONFLICT DO NOTHING`)
+	appt := Appointment{
+		PatientID: 910, ServiceID: 10, ScheduledAt: start, Status: ApptCompleted,
+		CreatedBy: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&appt).Error; err != nil {
+		t.Fatal(err)
+	}
+	rem, err := svc.EnqueueNotificationIntent(EnqueueNotificationIntentInput{
+		AppointmentID: appt.ID, PatientID: 910, Kind: NotifKindReminderT24H, Channel: NotifChannelLog,
+		OccurrenceKey: OccurrenceKeyFromScheduledAt(start), SendAfter: time.Now().UTC().Add(-time.Minute),
+		PayloadJSON: mustPayload(t, appt.ID, start),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := svc.ClaimDueNotificationIntents(time.Now().UTC(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *AppointmentNotificationIntent
+	for i := range claimed {
+		if claimed[i].ID == rem.ID {
+			found = &claimed[i]
+			break
+		}
+	}
+	if found == nil || found.Status != NotifStatusProcessing {
+		t.Fatalf("want claimed PROCESSING for reminder id=%d got %+v", rem.ID, found)
+	}
+
+	spy := &countingAdapter{}
+	w := NewNotificationWorker(svc, NotificationWorkerConfig{Adapter: spy})
+	w.processClaimed(context.Background(), found, time.Now().UTC())
+
+	got, err := svc.FindNotificationIntent(rem.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != NotifStatusSkipped {
+		t.Fatalf("completed appt reminder want SKIPPED got %s", got.Status)
+	}
+	if spy.sends != 0 {
+		t.Fatalf("adapter Send must not be called, sends=%d", spy.sends)
+	}
+	var attempts []AppointmentNotificationAttempt
+	if err := db.Where("intent_id=?", rem.ID).Order("attempt_no ASC").Find(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("want exactly 1 attempt, got %d", len(attempts))
+	}
+	if attempts[0].Error == nil || !strings.Contains(*attempts[0].Error, "appointment completed") {
+		t.Fatalf("attempt error want contains appointment completed, got %+v", attempts[0].Error)
+	}
+}
+
 type failAdapter struct{}
 
 func (f *failAdapter) Channel() string      { return NotifChannelLog }
 func (f *failAdapter) ProviderName() string { return "fail" }
 func (f *failAdapter) Send(context.Context, *AppointmentNotificationIntent, NotificationPayload) (DeliveryResult, error) {
 	return DeliveryResult{}, errors.New("adapter boom")
+}
+
+// countingAdapter records Send calls so pre-send skips can assert non-delivery.
+type countingAdapter struct {
+	sends int
+}
+
+func (c *countingAdapter) Channel() string      { return NotifChannelLog }
+func (c *countingAdapter) ProviderName() string { return "count" }
+func (c *countingAdapter) Send(context.Context, *AppointmentNotificationIntent, NotificationPayload) (DeliveryResult, error) {
+	c.sends++
+	return DeliveryResult{ProviderMessageID: "count"}, nil
 }
 
 func mustPayload(t *testing.T, id uint, start time.Time) string {
