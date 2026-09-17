@@ -1022,7 +1022,7 @@ Parent **`patient_queue_appointment_series`** + **materialized** `patient_queue_
 - One atomic PostgreSQL transaction creates: series row, every occurrence, appointment histories, and existing **23N** notification intents (`BOOKED` + eligible `REMINDER_T24H`).
 - Any occurrence failure rolls back the **entire** series (no partial visibility).
 - Public `BookAppointment` unchanged: still opens its own transaction; series materialization calls internal `bookAppointmentTx` inside the outer series TX (**no nested GORM transactions**).
-- Waitlist, series cancel/reschedule-rule edit, EMAIL/SMS, MemoryBus, and treating 23N intents as generic jobs are **out of scope** (see 23O-B / later lots).
+- Waitlist, EMAIL/SMS, MemoryBus, and treating 23N intents as generic jobs are **out of scope** (see 23O-B / 23O-C / later lots).
 
 ### P0 recurrence limits
 
@@ -1069,9 +1069,9 @@ Create/get DTOs expose series metadata + occurrence summaries (`id`, `index`, `s
 
 Each successful occurrence runs the same book hooks as single booking (`BOOKED` + optional `REMINDER_T24H`) inside the series transaction. Distinct appointment IDs / scheduled instants → distinct notification keys.
 
-### Deferred (post 23O-B)
+### Deferred (post 23O-C)
 
-Recurrence-rule editing, waitlist, frontend series UI, EMAIL/SMS, automatic workers beyond existing 23N LOG worker.
+Waitlist, frontend series UI, EMAIL/SMS, automatic workers beyond existing 23N LOG worker.
 
 ---
 
@@ -1124,3 +1124,103 @@ Authority: **`appointment.cancel.service|all`** only (not `schedule.manage.*`, n
 ### 23N
 
 Each cancelled occurrence runs `applyCancelNotificationIntentsTx` in the same TX (suppress active reminders + `CANCELLED` LOG intent).
+
+---
+
+## LOT 23O-C — Appointment series update / reschedule (future)
+
+Update an **ACTIVE** series from a cutoff so **future `SCHEDULED`** occurrences adopt new series metadata and/or a regenerated timing segment. Historical and operational rows stay untouched. Single-occurrence cancel/reschedule remains **23E**.
+
+### Mutable vs immutable
+
+| Mutable (from cutoff) | Immutable |
+|----------------------|-----------|
+| `practitionerId`, `appointmentTypeId` (duration follows type) | `patientId`, `serviceId`, `freq` |
+| `intervalWeeks`, `byWeekdays`, `timezone` | `status`, `createdBy`, create `idempotencyKey` |
+| `count` **XOR** `until`, `anchorStartAt` (required when regenerating timing/recurrence) | identity / audit timestamps |
+
+There is **no location** field on the 23O-A series model — not introduced here.
+
+### Effective cutoff
+
+Exactly one of:
+
+- `fromOccurrenceIndex` (≥ 1, inclusive), or
+- `fromAppointmentId` (must belong to the series; cutoff = that occurrence’s index)
+
+Only `SCHEDULED` occurrences with `index >= cutoff` that still **match the pre-update series rule** (time / practitioner / type / duration) are updated. Excluded:
+
+- any non-`SCHEDULED` status (`ARRIVED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `NO_SHOW`, …)
+- indexes `< cutoff` (past relative to the selected boundary)
+- **23E exceptions**: `SCHEDULED` rows individually rescheduled/cancelled so they diverge from the rule expansion
+
+### Regeneration semantics
+
+- **Meta-only** (practitioner and/or appointment type): in-place update of updatable rows; series metadata updated; `anchorStartAt` unchanged.
+- **Timing / recurrence** (`anchorStartAt`, interval, weekdays, timezone, count/until): require `anchorStartAt` as the first start of the **updated segment**. Reuses `ExpandWeeklyOccurrences` (same generator as 23O-A). Prefer **in-place** reschedule of updatable rows (unique `(series_id, series_occurrence_index)` still held by cancelled rows). Surplus updatable rows are cancelled via `cancelAppointmentTx`; extra slots use `bookAppointmentTx`. On success, series `anchorStartAt` / end condition reflect the regenerated segment; `Version++` **once**.
+
+### OCC / CANCELLED
+
+- Request **must** include `expectedVersion`.
+- Stale version → **409**, zero mutation.
+- Series `CANCELLED` → **409** (no reactivation).
+- Advisory lifecycle namespace **`230406`** when `idempotencyKey` is present (same pattern as 23O-B).
+
+### Conflicts
+
+Availability / patient overlap reuse existing booking primitives. Any conflicting regenerated occurrence → **full TX rollback** and the existing scheduling **409** conflict contract.
+
+### Transaction
+
+```
+BEGIN
+  [series lifecycle advisory 230406 if key]
+  SELECT series FOR UPDATE + expectedVersion OCC
+  assert appointment.reschedule.* | schedule.manage.* service scope
+  resolve cutoff; build plan; lock all series appointments
+  lock patient → practitioners ASC
+  update/cancel/create future SCHEDULED (23E/23N hooks in-TX)
+  UPDATE series metadata + version
+COMMIT
+```
+
+No nested GORM transactions.
+
+### API / RBAC
+
+```
+PATCH /api/appointment-series/:id
+```
+
+Example request (timing regen from index 2):
+
+```json
+{
+  "expectedVersion": 1,
+  "fromOccurrenceIndex": 2,
+  "practitionerId": 42,
+  "anchorStartAt": "2026-12-15T10:00:00Z",
+  "reason": "clinic room change",
+  "idempotencyKey": "series-up-1"
+}
+```
+
+Example meta-only:
+
+```json
+{
+  "expectedVersion": 2,
+  "fromAppointmentId": 1001,
+  "appointmentTypeId": 7
+}
+```
+
+Response: same series DTO as create/get (`AppointmentSeriesDTO`).
+
+Authority (same as occurrence reschedule): **`appointment.reschedule.service|all`** **or** **`schedule.manage.service|all`** **or** `*`.
+
+Not sufficient alone: `schedule.read.*`, `appointment.cancel.*`, `queue.checkin`. Out-of-scope service → **404**.
+
+### 23N
+
+Each occurrence whose schedule changes runs `applyRescheduleNotificationIntentsTx` or cancel/book hooks inside the same TX. Intent enqueue remains idempotent; rollback leaves no partial outbox rows.

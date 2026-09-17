@@ -526,7 +526,7 @@ func (s *Service) CancelAppointmentSeries(id uint, r CancelAppointmentSeriesRequ
 				return e
 			}
 		}
-		series, e := s.lockSeriesForMutationTx(tx, id, a, r.ExpectedVersion)
+		series, e := s.lockSeriesForMutationTx(tx, id, a, r.ExpectedVersion, "appointment.cancel.all")
 		if e != nil {
 			return e
 		}
@@ -591,7 +591,7 @@ func (s *Service) CancelAppointmentSeriesFuture(id uint, r CancelAppointmentSeri
 				return e
 			}
 		}
-		series, e := s.lockSeriesForMutationTx(tx, id, a, r.ExpectedVersion)
+		series, e := s.lockSeriesForMutationTx(tx, id, a, r.ExpectedVersion, "appointment.cancel.all")
 		if e != nil {
 			return e
 		}
@@ -651,7 +651,7 @@ func (s *Service) CancelAppointmentSeriesFuture(id uint, r CancelAppointmentSeri
 	return out, nil
 }
 
-func (s *Service) lockSeriesForMutationTx(tx *gorm.DB, id uint, a Access, expectedVersion int) (*AppointmentSeries, error) {
+func (s *Service) lockSeriesForMutationTx(tx *gorm.DB, id uint, a Access, expectedVersion int, allPerms ...string) (*AppointmentSeries, error) {
 	var series AppointmentSeries
 	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&series, id).Error; e != nil {
 		if e == gorm.ErrRecordNotFound {
@@ -659,7 +659,7 @@ func (s *Service) lockSeriesForMutationTx(tx *gorm.DB, id uint, a Access, expect
 		}
 		return nil, coreerrors.Internal(e.Error())
 	}
-	if e := s.assertLifecycleServiceAccess(series.ServiceID, a, "appointment.cancel.all"); e != nil {
+	if e := s.assertLifecycleServiceAccess(series.ServiceID, a, allPerms...); e != nil {
 		var ae *coreerrors.AppError
 		if errors.As(e, &ae) && ae.Status == 404 {
 			return nil, coreerrors.NotFound("Série")

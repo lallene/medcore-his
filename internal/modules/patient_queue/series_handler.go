@@ -110,3 +110,31 @@ func (h *Handler) CancelAppointmentSeriesFuture(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+
+// UpdateAppointmentSeries — PATCH /api/appointment-series/:id (LOT 23O-C).
+func (h *Handler) UpdateAppointmentSeries(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		fail(c, coreerrors.BadRequest("id invalide"))
+		return
+	}
+	var r UpdateAppointmentSeriesRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Modification de série invalide"))
+		return
+	}
+	if strings.TrimSpace(r.IdempotencyKey) == "" {
+		r.IdempotencyKey = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	x, e := h.service.UpdateAppointmentSeries(uint(id), r, a)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}

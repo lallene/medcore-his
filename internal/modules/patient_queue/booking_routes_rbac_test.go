@@ -55,6 +55,17 @@ func TestBookingRoutesRejectQueueCheckinOnly23I(t *testing.T) {
 	if got := request(http.MethodPost, "/api/appointment-series", seriesBody, []string{"queue.checkin"}); got != http.StatusForbidden {
 		t.Fatalf("POST /api/appointment-series checkin-only want 403 got %d", got)
 	}
+
+	updateBody := `{"expectedVersion":1,"fromOccurrenceIndex":1,"practitionerId":1}`
+	if got := request(http.MethodPatch, "/api/appointment-series/1", updateBody, []string{"schedule.read.service"}); got != http.StatusForbidden {
+		t.Fatalf("PATCH /api/appointment-series read-only want 403 got %d", got)
+	}
+	if got := request(http.MethodPatch, "/api/appointment-series/1", updateBody, []string{"appointment.cancel.service"}); got != http.StatusForbidden {
+		t.Fatalf("PATCH /api/appointment-series cancel-only want 403 got %d", got)
+	}
+	if got := request(http.MethodPatch, "/api/appointment-series/1", updateBody, []string{"queue.checkin"}); got != http.StatusForbidden {
+		t.Fatalf("PATCH /api/appointment-series checkin-only want 403 got %d", got)
+	}
 }
 
 func TestCanBookAppointmentsExcludesQueueCheckin23I(t *testing.T) {
