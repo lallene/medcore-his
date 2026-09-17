@@ -43,6 +43,14 @@ type CreateAppointmentSeriesRequest struct {
 	IdempotencyKey    string     `json:"idempotencyKey"`
 }
 
+// Series occurrence classification for read APIs (LOT 23O-D) — derived, not persisted.
+const (
+	SeriesOccKindRule                 = "RULE"                  // matches current series rule
+	SeriesOccKindExceptionRescheduled = "EXCEPTION_RESCHEDULED" // 23E single-occurrence reschedule
+	SeriesOccKindExceptionCancelled   = "EXCEPTION_CANCELLED"   // cancelled occurrence (23E or series cancel)
+	SeriesOccKindOperational          = "OPERATIONAL"           // ARRIVED / IN_PROGRESS / COMPLETED / NO_SHOW / …
+)
+
 // SeriesOccurrenceDTO — safe occurrence summary (no patient/PHI).
 type SeriesOccurrenceDTO struct {
 	ID             uint      `json:"id"`
@@ -51,6 +59,16 @@ type SeriesOccurrenceDTO struct {
 	ScheduledEndAt time.Time `json:"scheduledEndAt"`
 	Status         string    `json:"status"`
 	PractitionerID uint      `json:"practitionerId"`
+	// Kind distinguishes rule-aligned vs 23E exceptions vs operational/history (LOT 23O-D).
+	Kind string `json:"kind"`
+}
+
+// SeriesOccurrencesResponse — GET /api/appointment-series/:id/occurrences (LOT 23O-D).
+type SeriesOccurrencesResponse struct {
+	SeriesID uint                  `json:"seriesId"`
+	Status   string                `json:"status"`
+	Version  int                   `json:"version"`
+	Items    []SeriesOccurrenceDTO `json:"items"`
 }
 
 // AppointmentSeriesDTO — PHI-safe series response.
@@ -389,6 +407,11 @@ func toSeriesDTO(series AppointmentSeries, appts []Appointment) (*AppointmentSer
 	if err != nil {
 		return nil, coreerrors.Internal("byWeekdays série invalide")
 	}
+	expected, err := buildSeriesExpectedStartsByIndex(&series, appts)
+	if err != nil {
+		// CANCELLED / truncated rules may fail expansion; still return occurrences without rule alignment.
+		expected = map[int]time.Time{}
+	}
 	dto := &AppointmentSeriesDTO{
 		ID:                series.ID,
 		PatientID:         series.PatientID,
@@ -420,9 +443,38 @@ func toSeriesDTO(series AppointmentSeries, appts []Appointment) (*AppointmentSer
 			ScheduledEndAt: *ap.ScheduledEndAt,
 			Status:         ap.Status,
 			PractitionerID: *ap.ExpectedDoctorID,
+			Kind:           classifySeriesOccurrence(ap, &series, expected),
 		})
 	}
 	return dto, nil
+}
+
+func classifySeriesOccurrence(ap Appointment, series *AppointmentSeries, expected map[int]time.Time) string {
+	switch ap.Status {
+	case ApptCancelled:
+		return SeriesOccKindExceptionCancelled
+	case ApptScheduled:
+		if seriesOccurrenceDiverged(ap, series, expected) {
+			return SeriesOccKindExceptionRescheduled
+		}
+		return SeriesOccKindRule
+	default:
+		return SeriesOccKindOperational
+	}
+}
+
+// ListAppointmentSeriesOccurrences — GET /api/appointment-series/:id/occurrences (LOT 23O-D).
+func (s *Service) ListAppointmentSeriesOccurrences(id uint, a Access) (*SeriesOccurrencesResponse, error) {
+	dto, err := s.GetAppointmentSeries(id, a)
+	if err != nil {
+		return nil, err
+	}
+	return &SeriesOccurrencesResponse{
+		SeriesID: dto.ID,
+		Status:   dto.Status,
+		Version:  dto.Version,
+		Items:    dto.Occurrences,
+	}, nil
 }
 
 // GetAppointmentSeries — GET /api/appointment-series/:id with schedule.read scope (anti-enumeration).

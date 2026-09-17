@@ -65,6 +65,10 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	r.GET("/appointment-series/:id", rbac.AnyPermission(
 		"schedule.read.own", "schedule.read.service", "schedule.read.all",
 	), h.GetAppointmentSeries)
+	// LOT 23O-D — series occurrences listing (same read authority as GET series)
+	r.GET("/appointment-series/:id/occurrences", rbac.AnyPermission(
+		"schedule.read.own", "schedule.read.service", "schedule.read.all",
+	), h.ListAppointmentSeriesOccurrences)
 	// LOT 23O-B — series cancel (appointment.cancel.* only; not schedule.manage / schedule.read)
 	r.POST("/appointment-series/:id/cancel", rbac.AnyPermission(
 		"appointment.cancel.service", "appointment.cancel.all",

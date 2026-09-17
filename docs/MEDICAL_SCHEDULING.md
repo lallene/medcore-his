@@ -1224,3 +1224,55 @@ Not sufficient alone: `schedule.read.*`, `appointment.cancel.*`, `queue.checkin`
 ### 23N
 
 Each occurrence whose schedule changes runs `applyRescheduleNotificationIntentsTx` or cancel/book hooks inside the same TX. Intent enqueue remains idempotent; rollback leaves no partial outbox rows.
+
+---
+
+## LOT 23O-D — Appointment series read (detail + occurrences)
+
+Read APIs expose the full series state for agenda UI (no PHI beyond existing series DTO fields).
+
+### Endpoints
+
+| Method | Path | Authority |
+|--------|------|-----------|
+| `GET` | `/api/appointment-series/:id` | `schedule.read.own\|service\|all` (same as 23O-A); out-of-scope → **404** |
+| `GET` | `/api/appointment-series/:id/occurrences` | same read authority |
+
+Detail response remains `AppointmentSeriesDTO` (metadata, rule, status, version, occurrences).
+
+Occurrences response:
+
+```json
+{
+  "seriesId": 12,
+  "status": "ACTIVE",
+  "version": 2,
+  "items": [ /* SeriesOccurrenceDTO[] */ ]
+}
+```
+
+### Occurrence `kind` (derived)
+
+| Kind | Meaning |
+|------|---------|
+| `RULE` | `SCHEDULED` and still matches the current series rule |
+| `EXCEPTION_RESCHEDULED` | `SCHEDULED` but diverged via 23E single-occurrence reschedule |
+| `EXCEPTION_CANCELLED` | status `CANCELLED` (23E or series cancel) |
+| `OPERATIONAL` | `ARRIVED` / `CHECKED_IN` / `IN_PROGRESS` / `COMPLETED` / `NO_SHOW` / … |
+
+Not persisted — computed on read from status + rule alignment (same divergence helper as 23O-C).
+
+Cancelled series remain readable (status `CANCELLED`); no reactivation.
+
+---
+
+## LOT 23O-E — Agenda UI (recurring series)
+
+Frontend agenda integrates 23O-A/B/C/D without a second recurrence engine.
+
+- **Create:** booking modal mode « Série récurrente » → `POST /api/appointment-series` (fixed practitioner, weekdays, interval, count XOR until, IANA timezone = agenda site).
+- **Identify:** appointment cards/details show series badge when `seriesId` is present; inline recurrence summary from GET series.
+- **Edit:** « Reporter ce RDV » (23E) vs « Modifier ce RDV et suivants » (23O-C + `expectedVersion`); OCC 409 refreshes series data.
+- **Cancel:** « ce RDV » / « ce RDV et suivants » / « toute la série » with confirmations for bulk ops.
+- **Detail:** series modal lists occurrences and derived `kind` values from 23O-D.
+- RBAC mirrors backend helpers (`appointment.create.*`, `appointment.reschedule.*`, `appointment.cancel.*`, `schedule.read.*`).
