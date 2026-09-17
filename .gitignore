@@ -7,6 +7,8 @@ tmp/
 dist/
 build/
 coverage/
+bin/
+test-results/
 data/ticket-attachments/
 data/ticket-attachments*/
 .DS_Store

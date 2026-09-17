@@ -2,18 +2,30 @@ package patient_queue
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
+	"sort"
 	"strings"
 	"time"
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// Advisory lock namespace for series-level idempotency (LOT 23O-A).
-// Lock order: series idempotency → patient → practitioner (fixed).
-const bookingLockNSSeriesIdempotency = 230404
+// Advisory lock namespaces for appointment series (LOT 23O-A / 23O-B).
+//
+//	230405 — series create idempotency (caller + key)
+//	230406 — series lifecycle (cancel entire / cancel-future) idempotency + series-id serialize
+//
+// Must NOT reuse 230404 (occurrence lifecycle idempotency in lifecycle_service.go).
+// Lock order for series create: create-idempotency → patient → practitioner.
+// Lock order for series cancel: lifecycle-idempotency → series row FOR UPDATE → patient → practitioners ASC → appointments FOR UPDATE.
+const (
+	bookingLockNSSeriesCreateIdempotency = 230405
+	bookingLockNSSeriesLifecycle         = 230406
+)
 
 // CreateAppointmentSeriesRequest — POST /api/appointment-series (PHI-safe; no reason/diagnosis/phone).
 type CreateAppointmentSeriesRequest struct {
@@ -145,8 +157,18 @@ func (s *Service) advisoryLockSeriesIdempotency(tx *gorm.DB, caller uint, key st
 	h := fnv.New32a()
 	_, _ = fmt.Fprintf(h, "series:%d:%s", caller, key)
 	key2 := int32(h.Sum32())
-	if err := tx.Exec(`SELECT pg_advisory_xact_lock(?, ?)`, bookingLockNSSeriesIdempotency, key2).Error; err != nil {
+	if err := tx.Exec(`SELECT pg_advisory_xact_lock(?, ?)`, bookingLockNSSeriesCreateIdempotency, key2).Error; err != nil {
 		return coreerrors.Internal("verrou idempotence série: " + err.Error())
+	}
+	return nil
+}
+
+func (s *Service) advisoryLockSeriesLifecycle(tx *gorm.DB, seriesID, caller uint, op, key string) error {
+	h := fnv.New32a()
+	_, _ = fmt.Fprintf(h, "%s:%d:%d:%s", op, seriesID, caller, key)
+	key2 := int32(h.Sum32())
+	if err := tx.Exec(`SELECT pg_advisory_xact_lock(?, ?)`, bookingLockNSSeriesLifecycle, key2).Error; err != nil {
+		return coreerrors.Internal("verrou cycle de vie série: " + err.Error())
 	}
 	return nil
 }
@@ -455,4 +477,304 @@ func (s *Service) assertCanReadSeries(series AppointmentSeries, a Access) error 
 		return nil
 	}
 	return coreerrors.NotFound("Série")
+}
+
+// CancelAppointmentSeriesRequest — POST /api/appointment-series/:id/cancel (LOT 23O-B).
+type CancelAppointmentSeriesRequest struct {
+	ExpectedVersion int    `json:"expectedVersion" binding:"required"`
+	Reason          string `json:"reason"`
+	IdempotencyKey  string `json:"idempotencyKey"`
+}
+
+// CancelAppointmentSeriesFutureRequest — POST /api/appointment-series/:id/cancel-future.
+// fromOccurrenceIndex is 1-based and inclusive. Optionally resolve fromAppointmentId instead.
+type CancelAppointmentSeriesFutureRequest struct {
+	ExpectedVersion     int    `json:"expectedVersion" binding:"required"`
+	FromOccurrenceIndex *int   `json:"fromOccurrenceIndex"`
+	FromAppointmentID   *uint  `json:"fromAppointmentId"`
+	Reason              string `json:"reason"`
+	IdempotencyKey      string `json:"idempotencyKey"`
+}
+
+const (
+	seriesLifecycleOpCancelEntire = "SERIES_CANCEL"
+	seriesLifecycleOpCancelFuture = "SERIES_CANCEL_FUTURE"
+)
+
+// CancelAppointmentSeries cancels every SCHEDULED occurrence and marks the series CANCELLED.
+func (s *Service) CancelAppointmentSeries(id uint, r CancelAppointmentSeriesRequest, a Access) (*AppointmentSeriesDTO, error) {
+	if !s.canCancelAppointments(a) {
+		return nil, coreerrors.Forbidden("Annulation de série non autorisée")
+	}
+	if a.UserID == 0 {
+		return nil, coreerrors.Unauthorized("Utilisateur non authentifié")
+	}
+	if id == 0 {
+		return nil, coreerrors.BadRequest("id requis")
+	}
+	if r.ExpectedVersion < 1 {
+		return nil, coreerrors.BadRequest("expectedVersion requis")
+	}
+
+	idemKey := strings.TrimSpace(r.IdempotencyKey)
+	reason := strings.TrimSpace(r.Reason)
+	var out *AppointmentSeriesDTO
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if idemKey != "" {
+			if e := s.advisoryLockSeriesLifecycle(tx, id, a.UserID, seriesLifecycleOpCancelEntire, idemKey); e != nil {
+				return e
+			}
+		}
+		series, e := s.lockSeriesForMutationTx(tx, id, a, r.ExpectedVersion)
+		if e != nil {
+			return e
+		}
+		if series.Status == SeriesStatusCancelled {
+			dto, e2 := s.loadSeriesDTOTx(tx, series.ID)
+			if e2 != nil {
+				return e2
+			}
+			out = dto
+			return nil
+		}
+		if series.Status != SeriesStatusActive {
+			return coreerrors.Conflict("Statut de série non annulable")
+		}
+
+		targets, e := s.loadSeriesScheduledAppointmentsTx(tx, series.ID, nil)
+		if e != nil {
+			return e
+		}
+		if e := s.cancelSeriesOccurrencesTx(tx, series, targets, reason, a); e != nil {
+			return e
+		}
+		if e := s.markSeriesCancelledTx(tx, series); e != nil {
+			return e
+		}
+		dto, e := s.loadSeriesDTOTx(tx, series.ID)
+		if e != nil {
+			return e
+		}
+		out = dto
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CancelAppointmentSeriesFuture cancels SCHEDULED occurrences with index >= cutoff.
+// Series becomes CANCELLED only when no SCHEDULED occurrences remain.
+func (s *Service) CancelAppointmentSeriesFuture(id uint, r CancelAppointmentSeriesFutureRequest, a Access) (*AppointmentSeriesDTO, error) {
+	if !s.canCancelAppointments(a) {
+		return nil, coreerrors.Forbidden("Annulation de série non autorisée")
+	}
+	if a.UserID == 0 {
+		return nil, coreerrors.Unauthorized("Utilisateur non authentifié")
+	}
+	if id == 0 {
+		return nil, coreerrors.BadRequest("id requis")
+	}
+	if r.ExpectedVersion < 1 {
+		return nil, coreerrors.BadRequest("expectedVersion requis")
+	}
+
+	idemKey := strings.TrimSpace(r.IdempotencyKey)
+	reason := strings.TrimSpace(r.Reason)
+	var out *AppointmentSeriesDTO
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if idemKey != "" {
+			if e := s.advisoryLockSeriesLifecycle(tx, id, a.UserID, seriesLifecycleOpCancelFuture, idemKey); e != nil {
+				return e
+			}
+		}
+		series, e := s.lockSeriesForMutationTx(tx, id, a, r.ExpectedVersion)
+		if e != nil {
+			return e
+		}
+		if series.Status == SeriesStatusCancelled {
+			return coreerrors.Conflict("Série déjà annulée")
+		}
+		if series.Status != SeriesStatusActive {
+			return coreerrors.Conflict("Statut de série non annulable")
+		}
+
+		fromIdx, e := s.resolveCancelFutureCutoffTx(tx, series.ID, r)
+		if e != nil {
+			return e
+		}
+		targets, e := s.loadSeriesScheduledAppointmentsTx(tx, series.ID, &fromIdx)
+		if e != nil {
+			return e
+		}
+		if e := s.cancelSeriesOccurrencesTx(tx, series, targets, reason, a); e != nil {
+			return e
+		}
+
+		var remaining int64
+		if e := tx.Model(&Appointment{}).
+			Where("series_id = ? AND status = ?", series.ID, ApptScheduled).
+			Count(&remaining).Error; e != nil {
+			return coreerrors.Internal(e.Error())
+		}
+		now := time.Now().UTC()
+		updates := map[string]any{
+			"version":    gorm.Expr("version + 1"),
+			"updated_at": now,
+		}
+		if remaining == 0 {
+			updates["status"] = SeriesStatusCancelled
+		}
+		res := tx.Model(&AppointmentSeries{}).
+			Where("id = ? AND version = ? AND status = ?", series.ID, series.Version, SeriesStatusActive).
+			Updates(updates)
+		if res.Error != nil {
+			return coreerrors.Internal(res.Error.Error())
+		}
+		if res.RowsAffected == 0 {
+			return coreerrors.Conflict("État de la série obsolète")
+		}
+
+		dto, e := s.loadSeriesDTOTx(tx, series.ID)
+		if e != nil {
+			return e
+		}
+		out = dto
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Service) lockSeriesForMutationTx(tx *gorm.DB, id uint, a Access, expectedVersion int) (*AppointmentSeries, error) {
+	var series AppointmentSeries
+	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&series, id).Error; e != nil {
+		if e == gorm.ErrRecordNotFound {
+			return nil, coreerrors.NotFound("Série")
+		}
+		return nil, coreerrors.Internal(e.Error())
+	}
+	if e := s.assertLifecycleServiceAccess(series.ServiceID, a, "appointment.cancel.all"); e != nil {
+		var ae *coreerrors.AppError
+		if errors.As(e, &ae) && ae.Status == 404 {
+			return nil, coreerrors.NotFound("Série")
+		}
+		return nil, e
+	}
+	if series.Version != expectedVersion {
+		return nil, coreerrors.Conflict("État de la série obsolète")
+	}
+	return &series, nil
+}
+
+func (s *Service) resolveCancelFutureCutoffTx(tx *gorm.DB, seriesID uint, r CancelAppointmentSeriesFutureRequest) (int, error) {
+	hasIdx := r.FromOccurrenceIndex != nil
+	hasAppt := r.FromAppointmentID != nil && *r.FromAppointmentID != 0
+	if hasIdx == hasAppt {
+		return 0, coreerrors.BadRequest("fromOccurrenceIndex XOR fromAppointmentId requis")
+	}
+	if hasIdx {
+		if *r.FromOccurrenceIndex < 1 {
+			return 0, coreerrors.BadRequest("fromOccurrenceIndex doit être >= 1")
+		}
+		return *r.FromOccurrenceIndex, nil
+	}
+	var appt Appointment
+	if e := tx.Where("id = ? AND series_id = ?", *r.FromAppointmentID, seriesID).First(&appt).Error; e != nil {
+		if e == gorm.ErrRecordNotFound {
+			return 0, coreerrors.BadRequest("fromAppointmentId n'appartient pas à cette série")
+		}
+		return 0, coreerrors.Internal(e.Error())
+	}
+	if appt.SeriesOccurrenceIndex == nil || *appt.SeriesOccurrenceIndex < 1 {
+		return 0, coreerrors.Internal("occurrence série sans index")
+	}
+	return *appt.SeriesOccurrenceIndex, nil
+}
+
+func (s *Service) loadSeriesScheduledAppointmentsTx(tx *gorm.DB, seriesID uint, fromIndex *int) ([]Appointment, error) {
+	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("series_id = ? AND status = ?", seriesID, ApptScheduled)
+	if fromIndex != nil {
+		q = q.Where("series_occurrence_index >= ?", *fromIndex)
+	}
+	var appts []Appointment
+	if e := q.Order("id ASC").Find(&appts).Error; e != nil {
+		return nil, coreerrors.Internal(e.Error())
+	}
+	return appts, nil
+}
+
+func (s *Service) cancelSeriesOccurrencesTx(tx *gorm.DB, series *AppointmentSeries, targets []Appointment, reason string, a Access) error {
+	if e := s.advisoryLockPatient(tx, series.PatientID); e != nil {
+		return e
+	}
+	pracSet := map[uint]struct{}{series.PractitionerID: {}}
+	for _, ap := range targets {
+		if ap.ExpectedDoctorID != nil {
+			pracSet[*ap.ExpectedDoctorID] = struct{}{}
+		}
+	}
+	pracIDs := make([]uint, 0, len(pracSet))
+	for id := range pracSet {
+		pracIDs = append(pracIDs, id)
+	}
+	sort.Slice(pracIDs, func(i, j int) bool { return pracIDs[i] < pracIDs[j] })
+	for _, pid := range pracIDs {
+		if e := s.advisoryLockPractitioner(tx, pid); e != nil {
+			return e
+		}
+	}
+
+	cancelReq := CancelAppointmentRequest{Reason: reason}
+	for i := range targets {
+		ap := targets[i]
+		_, e := s.cancelAppointmentTx(tx, ap.ID, cancelReq, a, cancelAppointmentTxOpts{
+			LocksHeld:       true,
+			SkipAccessCheck: true,
+			Appointment:     &ap,
+		})
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+func (s *Service) markSeriesCancelledTx(tx *gorm.DB, series *AppointmentSeries) error {
+	now := time.Now().UTC()
+	res := tx.Model(&AppointmentSeries{}).
+		Where("id = ? AND version = ? AND status = ?", series.ID, series.Version, SeriesStatusActive).
+		Updates(map[string]any{
+			"status":     SeriesStatusCancelled,
+			"version":    gorm.Expr("version + 1"),
+			"updated_at": now,
+		})
+	if res.Error != nil {
+		return coreerrors.Internal(res.Error.Error())
+	}
+	if res.RowsAffected == 0 {
+		return coreerrors.Conflict("État de la série obsolète")
+	}
+	return nil
+}
+
+// assertSeriesAllowsOccurrenceReschedule rejects reschedule when parent series is CANCELLED.
+func (s *Service) assertSeriesAllowsOccurrenceReschedule(tx *gorm.DB, appt Appointment) error {
+	if appt.SeriesID == nil {
+		return nil
+	}
+	var st string
+	if e := tx.Model(&AppointmentSeries{}).Select("status").Where("id = ?", *appt.SeriesID).Scan(&st).Error; e != nil {
+		return coreerrors.Internal(e.Error())
+	}
+	if st == SeriesStatusCancelled {
+		return coreerrors.Conflict("Reschedule interdit: série annulée")
+	}
+	return nil
 }

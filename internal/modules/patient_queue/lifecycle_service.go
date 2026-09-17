@@ -13,8 +13,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Lifecycle advisory-lock namespace (LOT 23E). Distinct from booking idempotency (230403).
+// Lifecycle advisory-lock namespace (LOT 23E). Distinct from booking idempotency (230403)
+// and from series create idempotency (230405) / series lifecycle (230406).
 const bookingLockNSLifecycle = 230404
+
+// cancelAppointmentTxOpts controls lock ownership for bulk series cancellation (LOT 23O-B).
+type cancelAppointmentTxOpts struct {
+	// LocksHeld means the outer TX already holds patient (+ practitioner) advisory locks.
+	LocksHeld bool
+	// SkipAccessCheck when the caller already enforced appointment.cancel.* + service scope.
+	SkipAccessCheck bool
+	// Appointment already loaded under FOR UPDATE by the caller.
+	Appointment *Appointment
+}
 
 // RescheduleAppointmentRequest — omitted practitionerId keeps current practitioner.
 // expectedScheduledAt / expectedScheduledEndAt are required concurrency preconditions (stale → 409).
@@ -257,6 +268,9 @@ func (s *Service) RescheduleAppointment(appointmentID uint, r RescheduleAppointm
 		if e := canTransitionAppointment(appt.Status, LifecycleOpReschedule); e != nil {
 			return e
 		}
+		if e := s.assertSeriesAllowsOccurrenceReschedule(tx, appt); e != nil {
+			return e
+		}
 		if e := assertReschedulePrecondition(appt, r); e != nil {
 			return e
 		}
@@ -341,6 +355,9 @@ func (s *Service) RescheduleAppointment(appointmentID uint, r RescheduleAppointm
 		if e := assertNoActiveQueueLink(appt); e != nil {
 			return e
 		}
+		if e := s.assertSeriesAllowsOccurrenceReschedule(tx, appt); e != nil {
+			return e
+		}
 		if e := assertReschedulePrecondition(appt, r); e != nil {
 			return e
 		}
@@ -404,7 +421,6 @@ func (s *Service) CancelAppointment(appointmentID uint, r CancelAppointmentReque
 		return nil, coreerrors.Unauthorized("Utilisateur non authentifié")
 	}
 	idemKey := strings.TrimSpace(r.IdempotencyKey)
-	reason := strings.TrimSpace(r.Reason)
 
 	var out *Appointment
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -413,94 +429,119 @@ func (s *Service) CancelAppointment(appointmentID uint, r CancelAppointmentReque
 				return e
 			}
 		}
-		var appt Appointment
-		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&appt, appointmentID).Error; e != nil {
-			if e == gorm.ErrRecordNotFound {
-				return coreerrors.NotFound("Rendez-vous")
-			}
-			return coreerrors.Internal(e.Error())
-		}
-		if e := s.assertLifecycleServiceAccess(appt.ServiceID, a, "appointment.cancel.all"); e != nil {
+		appt, e := s.cancelAppointmentTx(tx, appointmentID, r, a, cancelAppointmentTxOpts{})
+		if e != nil {
 			return e
 		}
-
-		if appt.Status == ApptCancelled {
-			if idemKey != "" {
-				prior, e := s.findLifecycleIdempotentHistory(tx, appointmentID, a.UserID, ApptHistCancelled, idemKey)
-				if e != nil {
-					return e
-				}
-				if prior != nil {
-					if strings.TrimSpace(prior.Reason) != reason {
-						return coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
-					}
-					if e := s.applyCancelNotificationIntentsTx(tx, appt, time.Now().UTC()); e != nil {
-						return e
-					}
-					out = &appt
-					return nil
-				}
-				// Already cancelled under a different/absent key: terminal no-op (no new history).
-			}
-			// Terminal-state idempotence without key: 200/no-op, no duplicate history.
-			if e := s.applyCancelNotificationIntentsTx(tx, appt, time.Now().UTC()); e != nil {
-				return e
-			}
-			out = &appt
-			return nil
-		}
-
-		if e := assertNoActiveQueueLink(appt); e != nil {
-			return e
-		}
-		if e := canTransitionAppointment(appt.Status, LifecycleOpCancel); e != nil {
-			return e
-		}
-
-		if idemKey != "" {
-			prior, e := s.findLifecycleIdempotentHistory(tx, appointmentID, a.UserID, ApptHistCancelled, idemKey)
-			if e != nil {
-				return e
-			}
-			if prior != nil {
-				if strings.TrimSpace(prior.Reason) != reason {
-					return coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
-				}
-				out = &appt
-				return nil
-			}
-		}
-
-		if e := s.advisoryLockPatient(tx, appt.PatientID); e != nil {
-			return e
-		}
-		if appt.ExpectedDoctorID != nil {
-			if e := s.advisoryLockPractitioner(tx, *appt.ExpectedDoctorID); e != nil {
-				return e
-			}
-		}
-
-		from := appt.Status
-		now := time.Now().UTC()
-		appt.Status = ApptCancelled
-		appt.UpdatedAt = now
-		if e := tx.Save(&appt).Error; e != nil {
-			return coreerrors.Internal(e.Error())
-		}
-		payload := marshalLifecyclePayload(lifecycleHistoryPayload{IdempotencyKey: idemKey})
-		if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCancelled, from, ApptCancelled, reason, payload); e != nil {
-			return coreerrors.Internal(e.Error())
-		}
-		if e := s.applyCancelNotificationIntentsTx(tx, appt, now); e != nil {
-			return e
-		}
-		out = &appt
+		out = appt
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// cancelAppointmentTx cancels one appointment inside an open transaction (LOT 23O-B).
+// Callers that already hold patient/practitioner locks must set LocksHeld.
+// Never opens a nested GORM transaction.
+func (s *Service) cancelAppointmentTx(
+	tx *gorm.DB,
+	appointmentID uint,
+	r CancelAppointmentRequest,
+	a Access,
+	opts cancelAppointmentTxOpts,
+) (*Appointment, error) {
+	idemKey := strings.TrimSpace(r.IdempotencyKey)
+	reason := strings.TrimSpace(r.Reason)
+
+	var appt Appointment
+	if opts.Appointment != nil {
+		appt = *opts.Appointment
+	} else {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&appt, appointmentID).Error; e != nil {
+			if e == gorm.ErrRecordNotFound {
+				return nil, coreerrors.NotFound("Rendez-vous")
+			}
+			return nil, coreerrors.Internal(e.Error())
+		}
+	}
+	if !opts.SkipAccessCheck {
+		if e := s.assertLifecycleServiceAccess(appt.ServiceID, a, "appointment.cancel.all"); e != nil {
+			return nil, e
+		}
+	}
+
+	if appt.Status == ApptCancelled {
+		if idemKey != "" {
+			prior, e := s.findLifecycleIdempotentHistory(tx, appt.ID, a.UserID, ApptHistCancelled, idemKey)
+			if e != nil {
+				return nil, e
+			}
+			if prior != nil {
+				if strings.TrimSpace(prior.Reason) != reason {
+					return nil, coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
+				}
+				if e := s.applyCancelNotificationIntentsTx(tx, appt, time.Now().UTC()); e != nil {
+					return nil, e
+				}
+				return &appt, nil
+			}
+			// Already cancelled under a different/absent key: terminal no-op (no new history).
+		}
+		// Terminal-state idempotence without key: 200/no-op, no duplicate history.
+		if e := s.applyCancelNotificationIntentsTx(tx, appt, time.Now().UTC()); e != nil {
+			return nil, e
+		}
+		return &appt, nil
+	}
+
+	if e := assertNoActiveQueueLink(appt); e != nil {
+		return nil, e
+	}
+	if e := canTransitionAppointment(appt.Status, LifecycleOpCancel); e != nil {
+		return nil, e
+	}
+
+	if idemKey != "" {
+		prior, e := s.findLifecycleIdempotentHistory(tx, appt.ID, a.UserID, ApptHistCancelled, idemKey)
+		if e != nil {
+			return nil, e
+		}
+		if prior != nil {
+			if strings.TrimSpace(prior.Reason) != reason {
+				return nil, coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
+			}
+			return &appt, nil
+		}
+	}
+
+	if !opts.LocksHeld {
+		if e := s.advisoryLockPatient(tx, appt.PatientID); e != nil {
+			return nil, e
+		}
+		if appt.ExpectedDoctorID != nil {
+			if e := s.advisoryLockPractitioner(tx, *appt.ExpectedDoctorID); e != nil {
+				return nil, e
+			}
+		}
+	}
+
+	from := appt.Status
+	now := time.Now().UTC()
+	appt.Status = ApptCancelled
+	appt.UpdatedAt = now
+	if e := tx.Save(&appt).Error; e != nil {
+		return nil, coreerrors.Internal(e.Error())
+	}
+	payload := marshalLifecyclePayload(lifecycleHistoryPayload{IdempotencyKey: idemKey})
+	if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCancelled, from, ApptCancelled, reason, payload); e != nil {
+		return nil, coreerrors.Internal(e.Error())
+	}
+	if e := s.applyCancelNotificationIntentsTx(tx, appt, now); e != nil {
+		return nil, e
+	}
+	return &appt, nil
 }
 
 // MarkNoShow marks NO_SHOW. Requires scheduled_at <= now (not future). Does not mutate queue.

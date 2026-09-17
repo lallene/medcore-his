@@ -7,9 +7,10 @@ const (
 	SeriesFreqWeekly = "WEEKLY"
 )
 
-// Appointment series status (LOT 23O-A P0).
+// Appointment series status (LOT 23O-A / 23O-B).
 const (
-	SeriesStatusActive = "ACTIVE"
+	SeriesStatusActive    = "ACTIVE"
+	SeriesStatusCancelled = "CANCELLED"
 )
 
 // AppointmentSeries is the parent recurrence row; occurrences are materialized Appointment rows.

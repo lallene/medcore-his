@@ -1069,6 +1069,58 @@ Create/get DTOs expose series metadata + occurrence summaries (`id`, `index`, `s
 
 Each successful occurrence runs the same book hooks as single booking (`BOOKED` + optional `REMINDER_T24H`) inside the series transaction. Distinct appointment IDs / scheduled instants → distinct notification keys.
 
-### Deferred (23O-B+)
+### Deferred (post 23O-B)
 
-Series cancellation, occurrence-level reschedule policy, recurrence-rule editing, waitlist, frontend series UI, automatic workers beyond existing 23N LOG worker.
+Recurrence-rule editing, waitlist, frontend series UI, EMAIL/SMS, automatic workers beyond existing 23N LOG worker.
+
+---
+
+## LOT 23O-B — Appointment series lifecycle (cancel)
+
+### Status machine
+
+Persisted: **`ACTIVE` | `CANCELLED`** only. No PAUSED / COMPLETED. No reactivation.
+
+| Op | Effect |
+|----|--------|
+| Cancel entire | All `SCHEDULED` occurrences → `CANCELLED` via 23E semantics; series → `CANCELLED`; `Version++` |
+| Cancel future from index N (inclusive) | `SCHEDULED` with `series_occurrence_index >= N` cancelled; series → `CANCELLED` iff none remain `SCHEDULED`, else stays `ACTIVE`; always `Version++` on success |
+| Already `CANCELLED` + cancel entire | **200** no-op (no version bump) |
+| Already `CANCELLED` + cancel future | **409** |
+| Stale `expectedVersion` | **409** |
+
+Single-occurrence cancel/reschedule still use **23E** endpoints. Reschedule of an occurrence whose parent series is `CANCELLED` → **409**.
+
+### Transaction / locks
+
+```
+BEGIN
+  [series lifecycle idempotency advisory 230406 if key]
+  SELECT series FOR UPDATE + expectedVersion OCC
+  assert appointment.cancel.* service scope
+  lock patient → practitioners ASC
+  SELECT target appointments FOR UPDATE (id ASC)
+  cancelAppointmentTx × N (LocksHeld; same TX; 23N cancel hooks)
+  UPDATE series status/version
+COMMIT
+```
+
+Namespaces: create idempotency **`230405`**; series lifecycle **`230406`**; occurrence lifecycle remains **`230404`**.
+
+`cancelAppointmentTx` never opens a nested GORM transaction.
+
+### API / RBAC
+
+```
+POST /api/appointment-series/:id/cancel
+POST /api/appointment-series/:id/cancel-future
+```
+
+Body (cancel): `{ expectedVersion, reason?, idempotencyKey? }`
+Body (cancel-future): `{ expectedVersion, fromOccurrenceIndex | fromAppointmentId, reason?, idempotencyKey? }`
+
+Authority: **`appointment.cancel.service|all`** only (not `schedule.manage.*`, not `schedule.read.*`).
+
+### 23N
+
+Each cancelled occurrence runs `applyCancelNotificationIntentsTx` in the same TX (suppress active reminders + `CANCELLED` LOG intent).
