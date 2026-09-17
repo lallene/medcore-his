@@ -1069,9 +1069,9 @@ Create/get DTOs expose series metadata + occurrence summaries (`id`, `index`, `s
 
 Each successful occurrence runs the same book hooks as single booking (`BOOKED` + optional `REMINDER_T24H`) inside the series transaction. Distinct appointment IDs / scheduled instants → distinct notification keys.
 
-### Deferred (post 23O-C)
+### Deferred (out of scope for 23O)
 
-Waitlist, frontend series UI, EMAIL/SMS, automatic workers beyond existing 23N LOG worker.
+Waitlist, EMAIL/SMS providers, automatic workers beyond the existing 23N LOG worker.
 
 ---
 
@@ -1272,7 +1272,35 @@ Frontend agenda integrates 23O-A/B/C/D without a second recurrence engine.
 
 - **Create:** booking modal mode « Série récurrente » → `POST /api/appointment-series` (fixed practitioner, weekdays, interval, count XOR until, IANA timezone = agenda site).
 - **Identify:** appointment cards/details show series badge when `seriesId` is present; inline recurrence summary from GET series.
-- **Edit:** « Reporter ce RDV » (23E) vs « Modifier ce RDV et suivants » (23O-C + `expectedVersion`); OCC 409 refreshes series data.
+- **Edit:** « Reporter ce RDV » (23E) vs « Modifier ce RDV et suivants » (23O-C + `expectedVersion`); OCC 409 refreshes series data (no silent overwrite).
 - **Cancel:** « ce RDV » / « ce RDV et suivants » / « toute la série » with confirmations for bulk ops.
 - **Detail:** series modal lists occurrences and derived `kind` values from 23O-D.
 - RBAC mirrors backend helpers (`appointment.create.*`, `appointment.reschedule.*`, `appointment.cancel.*`, `schedule.read.*`).
+
+### Patient 360
+
+`PatientAppointments` reuses the same Agenda series helpers (`series.ts` / `series-actions.ts`) and Series* modals — view / edit-this / edit-future / cancel-this / cancel-future / cancel-entire. No duplicated series business logic. After successful mutations (and on OCC 409), Patient 360 refreshes appointment lists + series state without a full-page reload.
+
+---
+
+## LOT 23O-F/G — Final QA, E2E, documentation (close-out)
+
+23O is **complete**. No further product surface for recurring series in this lot.
+
+### Invariants (architecture)
+
+| Invariant | Guarantee |
+|-----------|-----------|
+| One recurrence engine | `ExpandWeeklyOccurrences` only (create + edit-future) |
+| 23E vs 23O | Single-occurrence lifecycle = 23E; series lifecycle = 23O |
+| 23N consistency | Book/cancel/reschedule hooks + outbox intents stay in the same TX as series mutations |
+| No nested GORM TX | Series TX calls `bookAppointmentTx` / `cancelAppointmentTx` with locks already held |
+| Advisory namespaces | occurrence lifecycle **230404**; series create **230405**; series lifecycle **230406** |
+| OCC | `expectedVersion` on cancel-future / cancel-entire / PATCH; stale → **409**, zero mutation |
+| CANCELLED | Terminal — no reactivation; updates against CANCELLED → **409** |
+| History / exceptions | Operational + past rows preserved; 23E exceptions excluded from edit-future regeneration |
+| RBAC | Backend authoritative; out-of-scope → **404**; FE helpers only hide unauthorized actions |
+
+### E2E
+
+Playwright `e2e/agenda/series.spec.ts` (critical): UI create + detail, edit-future OCC conflict feedback, cancel entire, Patient 360 cancel-future, read-only RBAC gating. Reuses `e2e/agenda/fixtures.ts`.
