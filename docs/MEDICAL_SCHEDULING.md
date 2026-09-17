@@ -1010,3 +1010,65 @@ Payload object allow-list only: `appointmentId`, `scheduledAt`, optional `appoin
 - Retry / requeue / cancel / manual send
 - Worker observability / controls
 - Real EMAIL/SMS providers and patient preferences/consent
+
+---
+
+## LOT 23O-A — Appointment series foundation (backend)
+
+### Architecture
+
+Parent **`patient_queue_appointment_series`** + **materialized** `patient_queue_appointments` occurrences.
+
+- One atomic PostgreSQL transaction creates: series row, every occurrence, appointment histories, and existing **23N** notification intents (`BOOKED` + eligible `REMINDER_T24H`).
+- Any occurrence failure rolls back the **entire** series (no partial visibility).
+- Public `BookAppointment` unchanged: still opens its own transaction; series materialization calls internal `bookAppointmentTx` inside the outer series TX (**no nested GORM transactions**).
+- Waitlist, series cancel/reschedule-rule edit, EMAIL/SMS, MemoryBus, and treating 23N intents as generic jobs are **out of scope** (see 23O-B / later lots).
+
+### P0 recurrence limits
+
+| Rule | Constraint |
+|------|------------|
+| `freq` | `WEEKLY` only |
+| `byWeekdays` | non-empty, unique, Go `time.Weekday` **0=Sunday … 6=Saturday** (same as StaffWorkingSchedule) |
+| `intervalWeeks` | `>= 1` |
+| end condition | **`count` XOR `until`** (exactly one) |
+| `count` | 1…**52** |
+| horizon | hard **12 months** from anchor — rules that would exceed → **400** (never silently truncate) |
+| infinite | forbidden |
+
+### Practitioner
+
+`practitionerId` is **required** and **fixed** for the entire series (no auto-assign across occurrences).
+
+### Timezone / DST
+
+- Series `timezone` must be a valid **IANA** name.
+- Expansion preserves anchor **local wall-clock** time; output is ascending UTC.
+- **Spring gap:** non-existent local civil times are **rejected** (no silent Go normalization).
+- **Fall-back ambiguity:** deterministic via Go `time.Date` (earlier of the two instants).
+
+### PHI boundary
+
+Create/get DTOs expose series metadata + occurrence summaries (`id`, `index`, `scheduledAt`, `scheduledEndAt`, `status`, `practitionerId`).
+
+**Not stored on the series / not returned:** diagnosis, clinical notes, phone/email copies, `Appointment.Reason` by default.
+
+### Idempotency
+
+- Series: unique `(created_by, idempotency_key)` when key present; same semantics → reuse; different semantics → **409**.
+- Occurrences: deterministic key `series:{id}:occ:{index}` plus unique `(series_id, series_occurrence_index)`.
+
+### API / RBAC
+
+| Method | Path | Authority |
+|--------|------|-----------|
+| `POST` | `/api/appointment-series` | `appointment.create.service\|all` **or** `schedule.manage.service\|all` **or** `*` (same as booking). `schedule.read.*` / queue alone **cannot** create. |
+| `GET` | `/api/appointment-series/:id` | `schedule.read.own\|service\|all` with backend service/own isolation; out-of-scope → **404** (anti-enumeration). |
+
+### 23N interaction
+
+Each successful occurrence runs the same book hooks as single booking (`BOOKED` + optional `REMINDER_T24H`) inside the series transaction. Distinct appointment IDs / scheduled instants → distinct notification keys.
+
+### Deferred (23O-B+)
+
+Series cancellation, occurrence-level reschedule policy, recurrence-rule editing, waitlist, frontend series UI, automatic workers beyond existing 23N LOG worker.

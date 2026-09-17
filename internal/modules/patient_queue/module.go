@@ -10,7 +10,7 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "patient_queue")
-	app.MustMigrate(&AppointmentType{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
+	app.MustMigrate(&AppointmentType{}, &AppointmentSeries{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
 		&StaffWorkingSchedule{}, &ScheduleException{}, &ScheduleAuditEvent{},
 		&AppointmentNotificationIntent{}, &AppointmentNotificationAttempt{})
 	if err := EnsureAppointmentIndexes(app.DB); err != nil {
@@ -18,6 +18,11 @@ func (Module) Register(app *application.Application) {
 	}
 	if err := EnsureScheduleIndexes(app.DB); err != nil {
 		logger.Error("Index patient_queue schedules", "error", err)
+	}
+	// LOT 23O-A: series integrity (unique, CHECK pair, FK) — hard fail.
+	if err := EnsureAppointmentSeriesIndexes(app.DB); err != nil {
+		logger.Error("Index appointment series", "error", err)
+		panic(err)
 	}
 	// LOT 23F: one lifetime ticket per appointment — hard invariant; must abort startup.
 	if err := EnsureTicketIndexes(app.DB); err != nil {

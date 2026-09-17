@@ -22,22 +22,24 @@ func (AppointmentType) TableName() string { return "patient_queue_appointment_ty
 // Timing: ScheduledAt = start (inclusive); ScheduledEndAt = end (exclusive) half-open [start, end).
 // ScheduledEndAt may be nil on legacy rows; new creates should set it when duration/type is known.
 type Appointment struct {
-	ID                uint       `gorm:"primaryKey" json:"id"`
-	PatientID         uint       `gorm:"not null;index" json:"patientId"`
-	ServiceID         uint       `gorm:"not null;index" json:"serviceId"`
-	ExpectedDoctorID  *uint      `gorm:"index" json:"expectedDoctorId"` // scheduled practitioner = users.id
-	AppointmentTypeID *uint      `gorm:"index" json:"appointmentTypeId,omitempty"`
-	ScheduledAt       time.Time  `gorm:"not null;index" json:"scheduledAt"`     // start inclusive
-	ScheduledEndAt    *time.Time `gorm:"index" json:"scheduledEndAt,omitempty"` // end exclusive; nil = legacy
-	Reason            string     `gorm:"size:200" json:"reason"`
-	Status            string     `gorm:"size:24;not null;index" json:"status"`
-	ArrivedAt         *time.Time `json:"arrivedAt"`
-	CheckedInAt       *time.Time `json:"checkedInAt"`
-	QueueTicketID     *uint      `gorm:"index" json:"queueTicketId"`
-	IdempotencyKey    *string    `gorm:"size:150" json:"idempotencyKey,omitempty"` // LOT 23D optional client retry key
-	CreatedBy         uint       `gorm:"not null" json:"createdBy"`
-	CreatedAt         time.Time  `gorm:"not null" json:"createdAt"`
-	UpdatedAt         time.Time  `gorm:"not null" json:"updatedAt"`
+	ID                    uint       `gorm:"primaryKey" json:"id"`
+	PatientID             uint       `gorm:"not null;index" json:"patientId"`
+	ServiceID             uint       `gorm:"not null;index" json:"serviceId"`
+	ExpectedDoctorID      *uint      `gorm:"index" json:"expectedDoctorId"` // scheduled practitioner = users.id
+	AppointmentTypeID     *uint      `gorm:"index" json:"appointmentTypeId,omitempty"`
+	ScheduledAt           time.Time  `gorm:"not null;index" json:"scheduledAt"`     // start inclusive
+	ScheduledEndAt        *time.Time `gorm:"index" json:"scheduledEndAt,omitempty"` // end exclusive; nil = legacy
+	Reason                string     `gorm:"size:200" json:"reason"`
+	Status                string     `gorm:"size:24;not null;index" json:"status"`
+	ArrivedAt             *time.Time `json:"arrivedAt"`
+	CheckedInAt           *time.Time `json:"checkedInAt"`
+	QueueTicketID         *uint      `gorm:"index" json:"queueTicketId"`
+	IdempotencyKey        *string    `gorm:"size:150" json:"idempotencyKey,omitempty"` // LOT 23D optional client retry key
+	SeriesID              *uint      `gorm:"index" json:"seriesId,omitempty"`          // LOT 23O-A nullable FK → appointment series
+	SeriesOccurrenceIndex *int       `json:"seriesOccurrenceIndex,omitempty"`          // 1-based when SeriesID set
+	CreatedBy             uint       `gorm:"not null" json:"createdBy"`
+	CreatedAt             time.Time  `gorm:"not null" json:"createdAt"`
+	UpdatedAt             time.Time  `gorm:"not null" json:"updatedAt"`
 }
 
 func (Appointment) TableName() string { return "patient_queue_appointments" }

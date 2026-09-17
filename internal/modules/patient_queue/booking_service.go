@@ -377,6 +377,17 @@ func (s *Service) findIdempotentAppointmentTx(tx *gorm.DB, key string, actor uin
 	return &row, nil
 }
 
+// bookAppointmentTxOpts controls lock ownership and series materialization (LOT 23O-A).
+type bookAppointmentTxOpts struct {
+	PreResolvedCandidates []uint
+	CandidateResolveErr   error
+	// LocksHeld means the outer TX already holds patient + practitioner advisory locks
+	// in the canonical order. When true, PractitionerID on the request must be set.
+	LocksHeld             bool
+	SeriesID              *uint
+	SeriesOccurrenceIndex *int
+}
+
 // BookAppointment creates a SCHEDULED appointment with transactional double-booking protection.
 // Returns (appointment, reusedIdempotent, error). reusedIdempotent true → same prior row (HTTP 200/201 OK).
 func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointment, bool, error) {
@@ -426,130 +437,172 @@ func (s *Service) BookAppointment(r BookAppointmentRequest, a Access) (*Appointm
 	candidateResolveErr := err
 
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		if idemKey != "" {
-			if e := s.advisoryLockIdempotency(tx, a.UserID, idemKey); e != nil {
-				return e
-			}
-			prior, e := s.findIdempotentAppointmentTx(tx, idemKey, a.UserID)
-			if e != nil {
-				return e
-			}
-			if prior != nil {
-				if !sameBookingSemantics(*prior, r, resolved) {
-					return coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
-				}
-				if e := s.applyBookNotificationIntentsTx(tx, *prior, time.Now().UTC()); e != nil {
-					return e
-				}
-				created = prior
-				reused = true
-				return nil
-			}
-		}
-
-		// Fresh create path — need candidates under booking locks
-		cands := candidates
-		if len(cands) == 0 {
-			if candidateResolveErr != nil {
-				return candidateResolveErr
-			}
-			var e error
-			cands, e = s.resolveBookingCandidates(r.ServiceID, r.PractitionerID, resolved.Start, resolved.End)
-			if e != nil {
-				return e
-			}
-		}
-		lockList := append([]uint(nil), cands...)
-		sort.Slice(lockList, func(i, j int) bool { return lockList[i] < lockList[j] })
-
-		if e := s.advisoryLockPatient(tx, r.PatientID); e != nil {
-			return e
-		}
-		for _, pid := range lockList {
-			if e := s.advisoryLockPractitioner(tx, pid); e != nil {
-				return e
-			}
-		}
-
-		overlap, e := s.patientHasOverlapTx(tx, r.PatientID, resolved.Start, resolved.End, 0)
+		appt, wasReused, e := s.bookAppointmentTx(tx, r, a, resolved, bookAppointmentTxOpts{
+			PreResolvedCandidates: candidates,
+			CandidateResolveErr:   candidateResolveErr,
+		})
 		if e != nil {
-			return coreerrors.Internal(e.Error())
-		}
-		if overlap {
-			return coreerrors.Conflict("Le patient a déjà un rendez-vous sur ce créneau")
-		}
-
-		var chosen uint
-		found := false
-		for _, pid := range cands {
-			ok, e := s.isIntervalFullyAvailableTx(tx, pid, r.ServiceID, resolved.Start, resolved.End, 0)
-			if e != nil {
-				return coreerrors.Internal(e.Error())
-			}
-			if ok {
-				chosen = pid
-				found = true
-				break
-			}
-		}
-		if !found {
-			return coreerrors.Conflict("Créneau indisponible (conflit concurrent)")
-		}
-
-		now := time.Now().UTC()
-		end := resolved.End
-		prac := chosen
-		appt := Appointment{
-			PatientID:         r.PatientID,
-			ServiceID:         r.ServiceID,
-			ExpectedDoctorID:  &prac,
-			AppointmentTypeID: resolved.AppointmentTypeID,
-			ScheduledAt:       resolved.Start,
-			ScheduledEndAt:    &end,
-			Reason:            strings.TrimSpace(r.Reason),
-			Status:            ApptScheduled,
-			CreatedBy:         a.UserID,
-			CreatedAt:         now,
-			UpdatedAt:         now,
-		}
-		if idemKey != "" {
-			k := idemKey
-			appt.IdempotencyKey = &k
-		}
-		if e := tx.Create(&appt).Error; e != nil {
-			msg := strings.ToLower(e.Error())
-			if strings.Contains(msg, "ux_pq_appt_idempotency") || strings.Contains(msg, "idempotency") {
-				// Race lost unique: re-read under same idempotency lock and return if same semantics
-				prior, e2 := s.findIdempotentAppointmentTx(tx, idemKey, a.UserID)
-				if e2 != nil {
-					return e2
-				}
-				if prior != nil && sameBookingSemantics(*prior, r, resolved) {
-					if e3 := s.applyBookNotificationIntentsTx(tx, *prior, time.Now().UTC()); e3 != nil {
-						return e3
-					}
-					created = prior
-					reused = true
-					return nil
-				}
-				return coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
-			}
-			return coreerrors.Internal(e.Error())
-		}
-		payload := bookingRequestFingerprint(r, resolved, &prac)
-		if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCreated, "", ApptScheduled, r.Reason, payload); e != nil {
-			return coreerrors.Internal(e.Error())
-		}
-		if e := s.applyBookNotificationIntentsTx(tx, appt, now); e != nil {
 			return e
 		}
-		created = &appt
+		created = appt
+		reused = wasReused
 		return nil
 	})
 	if txErr != nil {
 		return nil, false, txErr
 	}
 	return created, reused, nil
+}
+
+// bookAppointmentTx materializes one SCHEDULED appointment inside an open transaction.
+// Callers that already hold patient/practitioner locks must set LocksHeld and a fixed PractitionerID.
+func (s *Service) bookAppointmentTx(
+	tx *gorm.DB,
+	r BookAppointmentRequest,
+	a Access,
+	resolved bookingResolved,
+	opts bookAppointmentTxOpts,
+) (*Appointment, bool, error) {
+	idemKey := strings.TrimSpace(r.IdempotencyKey)
+
+	if !opts.LocksHeld {
+		if idemKey != "" {
+			if e := s.advisoryLockIdempotency(tx, a.UserID, idemKey); e != nil {
+				return nil, false, e
+			}
+			prior, e := s.findIdempotentAppointmentTx(tx, idemKey, a.UserID)
+			if e != nil {
+				return nil, false, e
+			}
+			if prior != nil {
+				if !sameBookingSemantics(*prior, r, resolved) {
+					return nil, false, coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
+				}
+				if e := s.applyBookNotificationIntentsTx(tx, *prior, time.Now().UTC()); e != nil {
+					return nil, false, e
+				}
+				return prior, true, nil
+			}
+		}
+	} else if idemKey != "" {
+		// Series path: uniqueness still enforced by DB; soft reuse if same row already present.
+		prior, e := s.findIdempotentAppointmentTx(tx, idemKey, a.UserID)
+		if e != nil {
+			return nil, false, e
+		}
+		if prior != nil {
+			if !sameBookingSemantics(*prior, r, resolved) {
+				return nil, false, coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
+			}
+			return prior, true, nil
+		}
+	}
+
+	var cands []uint
+	if opts.LocksHeld {
+		if r.PractitionerID == nil || *r.PractitionerID == 0 {
+			return nil, false, coreerrors.BadRequest("practitionerId requis lorsque les verrous sont déjà acquis")
+		}
+		cands = []uint{*r.PractitionerID}
+	} else {
+		cands = opts.PreResolvedCandidates
+		if len(cands) == 0 {
+			if opts.CandidateResolveErr != nil {
+				return nil, false, opts.CandidateResolveErr
+			}
+			var e error
+			cands, e = s.resolveBookingCandidates(r.ServiceID, r.PractitionerID, resolved.Start, resolved.End)
+			if e != nil {
+				return nil, false, e
+			}
+		}
+		lockList := append([]uint(nil), cands...)
+		sort.Slice(lockList, func(i, j int) bool { return lockList[i] < lockList[j] })
+
+		if e := s.advisoryLockPatient(tx, r.PatientID); e != nil {
+			return nil, false, e
+		}
+		for _, pid := range lockList {
+			if e := s.advisoryLockPractitioner(tx, pid); e != nil {
+				return nil, false, e
+			}
+		}
+	}
+
+	overlap, e := s.patientHasOverlapTx(tx, r.PatientID, resolved.Start, resolved.End, 0)
+	if e != nil {
+		return nil, false, coreerrors.Internal(e.Error())
+	}
+	if overlap {
+		return nil, false, coreerrors.Conflict("Le patient a déjà un rendez-vous sur ce créneau")
+	}
+
+	var chosen uint
+	found := false
+	for _, pid := range cands {
+		ok, e := s.isIntervalFullyAvailableTx(tx, pid, r.ServiceID, resolved.Start, resolved.End, 0)
+		if e != nil {
+			return nil, false, coreerrors.Internal(e.Error())
+		}
+		if ok {
+			chosen = pid
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, false, coreerrors.Conflict("Créneau indisponible (conflit concurrent)")
+	}
+
+	now := time.Now().UTC()
+	end := resolved.End
+	prac := chosen
+	appt := Appointment{
+		PatientID:             r.PatientID,
+		ServiceID:             r.ServiceID,
+		ExpectedDoctorID:      &prac,
+		AppointmentTypeID:     resolved.AppointmentTypeID,
+		ScheduledAt:           resolved.Start,
+		ScheduledEndAt:        &end,
+		Reason:                strings.TrimSpace(r.Reason),
+		Status:                ApptScheduled,
+		SeriesID:              opts.SeriesID,
+		SeriesOccurrenceIndex: opts.SeriesOccurrenceIndex,
+		CreatedBy:             a.UserID,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if idemKey != "" {
+		k := idemKey
+		appt.IdempotencyKey = &k
+	}
+	if e := tx.Create(&appt).Error; e != nil {
+		msg := strings.ToLower(e.Error())
+		if strings.Contains(msg, "ux_pq_appt_idempotency") || strings.Contains(msg, "idempotency") {
+			prior, e2 := s.findIdempotentAppointmentTx(tx, idemKey, a.UserID)
+			if e2 != nil {
+				return nil, false, e2
+			}
+			if prior != nil && sameBookingSemantics(*prior, r, resolved) {
+				if !opts.LocksHeld {
+					if e3 := s.applyBookNotificationIntentsTx(tx, *prior, time.Now().UTC()); e3 != nil {
+						return nil, false, e3
+					}
+				}
+				return prior, true, nil
+			}
+			return nil, false, coreerrors.Conflict("Clé d'idempotence déjà utilisée avec une autre requête")
+		}
+		return nil, false, coreerrors.Internal(e.Error())
+	}
+	payload := bookingRequestFingerprint(r, resolved, &prac)
+	if e := s.writeAppointmentHistory(tx, appt.ID, a.UserID, ApptHistCreated, "", ApptScheduled, r.Reason, payload); e != nil {
+		return nil, false, coreerrors.Internal(e.Error())
+	}
+	if e := s.applyBookNotificationIntentsTx(tx, appt, now); e != nil {
+		return nil, false, e
+	}
+	return &appt, false, nil
 }
 
 // mapLegacyCreateToBook maps CreateAppointmentRequest onto BookAppointmentRequest.

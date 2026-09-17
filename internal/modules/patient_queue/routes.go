@@ -57,6 +57,14 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 		"appointment.create.service", "appointment.create.all",
 		"schedule.manage.service", "schedule.manage.all",
 	), h.BookAppointment)
+	// LOT 23O-A — appointment series create/get (same create authority as booking; read = schedule.read.*)
+	r.POST("/appointment-series", rbac.AnyPermission(
+		"appointment.create.service", "appointment.create.all",
+		"schedule.manage.service", "schedule.manage.all",
+	), h.CreateAppointmentSeries)
+	r.GET("/appointment-series/:id", rbac.AnyPermission(
+		"schedule.read.own", "schedule.read.service", "schedule.read.all",
+	), h.GetAppointmentSeries)
 	// LOT 23F.1 — agenda read APIs (schedule.read.*; not queue.checkin / consultations.read)
 	r.GET("/appointments", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.ListAppointments)
 	r.GET("/appointments/:id", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all"), h.GetAppointment)

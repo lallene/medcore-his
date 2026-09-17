@@ -39,7 +39,7 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	}
 	sqlDB, _ := db.DB()
 	t.Cleanup(func() { sqlDB.Close(); admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`) })
-	if e = db.AutoMigrate(&AppointmentType{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
+	if e = db.AutoMigrate(&AppointmentType{}, &AppointmentSeries{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
 		&StaffWorkingSchedule{}, &ScheduleException{}, &ScheduleAuditEvent{},
 		&AppointmentNotificationIntent{}, &AppointmentNotificationAttempt{}); e != nil {
 		t.Fatal(e)
@@ -48,6 +48,9 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	_ = EnsureScheduleIndexes(db)
 	_ = EnsureTicketIndexes(db)
 	if err := EnsureNotificationIndexes(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureAppointmentSeriesIndexes(db); err != nil {
 		t.Fatal(err)
 	}
 	// Minimal patients / services / users for FK-less raw lookups
