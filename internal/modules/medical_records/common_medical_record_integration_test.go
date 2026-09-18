@@ -365,6 +365,55 @@ func TestVitalSignUpdatePreservesMeasuredByAndAttributesModifier(t *testing.T) {
 	}
 }
 
+// LOT 25E-2 — AUTH-01b: User A uploads; User B edits metadata; UploadedBy stays A; timeline attributes B.
+func TestMedicalDocumentUpdatePreservesUploadedByAndAttributesModifier(t *testing.T) {
+	db := integrationDB(t)
+	f := seedCommonFixture(t, db, 114)
+	repo := NewRepository(db)
+	service := NewService(repo)
+	const uploaderA uint = 52
+	const modifierB uint = 88
+	if f.document.UploadedBy != uploaderA {
+		t.Fatalf("fixture UploadedBy=%d want %d", f.document.UploadedBy, uploaderA)
+	}
+	beforeID, beforeCreated := f.document.ID, f.document.CreatedAt
+	updatedAt := f.record.UpdatedAt
+	_, err := service.UpdateCommonMedicalRecord(f.record.PatientID, UpdateCommonMedicalRecordRequest{
+		ExpectedUpdatedAt: &updatedAt,
+		Documents: PatchCollection[MedicalDocumentRequest]{
+			Present: true,
+			Upsert:  []MedicalDocumentRequest{{ID: f.document.ID, Description: str("corrigé par B")}},
+		},
+	}, modifierB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document MedicalDocument
+	if err := db.First(&document, beforeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if document.ID != beforeID || !document.CreatedAt.Equal(beforeCreated) {
+		t.Fatalf("identité altérée: %#v", document)
+	}
+	if document.UploadedBy != uploaderA {
+		t.Fatalf("UploadedBy overwritten: got %d want %d", document.UploadedBy, uploaderA)
+	}
+	if document.Description != "corrigé par B" {
+		t.Fatalf("description non mise à jour: %q", document.Description)
+	}
+	if document.FileName != f.document.FileName || document.FileURL != f.document.FileURL {
+		t.Fatalf("métadonnées binaires altérées: %#v", document)
+	}
+	var event MedicalTimelineEvent
+	if err := db.Where("event_type = ? AND medical_record_id = ?", "common_medical_record_updated", f.record.ID).
+		Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("timeline modificateur absente: %v", err)
+	}
+	if event.CreatedBy != modifierB {
+		t.Fatalf("timeline CreatedBy=%d want %d", event.CreatedBy, modifierB)
+	}
+}
+
 func TestCommonMedicalRecordCreateAndExplicitDelete(t *testing.T) {
 	db := integrationDB(t)
 	f := seedCommonFixture(t, db, 104)

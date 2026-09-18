@@ -360,8 +360,8 @@ func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedical
 		putString(updates, "mime_type", item.MimeType)
 		putString(updates, "file_url", item.FileURL)
 		putString(updates, "description", item.Description)
-		updates["uploaded_by"] = req.authorID
 		if item.ID > 0 {
+			// AUTH-01b: preserve original UploadedBy; modifier is attributable via dossier timeline.
 			return updateChild(tx, &MedicalDocument{}, record.ID, item.ID, updates)
 		}
 		if item.Label == nil || *item.Label == "" || item.Type == nil || *item.Type == "" {
