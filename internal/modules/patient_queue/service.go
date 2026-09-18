@@ -744,7 +744,7 @@ func (s *Service) CompleteTriage(id uint, r CompleteTriageRequest, a Access) (*T
 			return coreerrors.Conflict("Ticket non en triage")
 		}
 		if t.TriageTakenBy == nil || *t.TriageTakenBy != a.UserID {
-			if !a.Has("*") && !a.Has("queue.read.all") {
+			if !a.Has("*") {
 				return coreerrors.Forbidden("Seul l'agent qui a pris en charge peut valider")
 			}
 		}
@@ -917,7 +917,7 @@ func (s *Service) completeConsultationTx(tx *gorm.DB, consultationID uint, dispo
 }
 
 func (s *Service) assertDoctorCanComplete(t Ticket, a Access) error {
-	if a.Has("*") || a.Has("queue.read.all") {
+	if a.Has("*") {
 		return nil
 	}
 	if t.DoctorTakenBy == nil {
