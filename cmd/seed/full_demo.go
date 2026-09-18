@@ -526,7 +526,7 @@ func seedDemoAuthorizations(db *gorm.DB, user uint) {
 func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consultations.Consultation) {
 	billingService := billing.NewService(db)
 	active := true
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	prices := []int64{10000, 15000, 8000, 6000, 40000, 35000, 120000, 5000}
 	for i, typ := range []string{"CONSULTATION", "CONSULTATION", "LABORATORY", "LABORATORY", "IMAGING", "IMAGING", "HOSPITALIZATION", "MEDICATION"} {
 		code := fmt.Sprintf("DEMO-TAR-%02d", i+1)
@@ -655,7 +655,7 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 
 func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service, cashService *cash.Service, sessionID uint) {
 	active := true
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	ensureTariff := func(code string, amount int64) billing.Tariff {
 		var tariff billing.Tariff
 		if err := db.Where("code=?", code).First(&tariff).Error; err == nil {
