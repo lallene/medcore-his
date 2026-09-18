@@ -1,6 +1,7 @@
 package patient_queue
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -797,25 +798,63 @@ func validateClinicalDisposition(d string) error {
 
 func (s *Service) activateConsultationTx(tx *gorm.DB, consultationID uint, doctorUserID uint) error {
 	now := time.Now().UTC()
-	var status string
-	if err := tx.Raw(`SELECT status FROM consultations WHERE id=?`, consultationID).Scan(&status).Error; err != nil {
+	var row struct {
+		Status       string
+		DoctorUserID *uint
+		DoctorName   string
+	}
+	err := tx.Table("consultations").
+		Select("status, doctor_user_id, COALESCE(doctor_name,'') AS doctor_name").
+		Where("id=?", consultationID).
+		Take(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return coreerrors.NotFound("Consultation")
+		}
 		return coreerrors.Internal(err.Error())
 	}
-	switch status {
+
+	bindDoctor := func(updates map[string]any) {
+		updates["doctor_user_id"] = doctorUserID
+		if strings.TrimSpace(row.DoctorName) == "" {
+			var name string
+			_ = tx.Raw(`SELECT COALESCE(name,'') FROM users WHERE id=?`, doctorUserID).Scan(&name)
+			if name != "" {
+				updates["doctor_name"] = name
+			}
+		}
+	}
+
+	switch row.Status {
 	case consultations.ConsultationStatusCompleted:
 		return coreerrors.Conflict("La consultation liée est déjà terminée")
 	case consultations.ConsultationStatusCancelled:
 		return coreerrors.Conflict("La consultation liée est annulée")
 	case consultations.ConsultationStatusInProgress:
-		return nil
-	case consultations.ConsultationStatusDraft, "":
-		return tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(map[string]any{
+		if row.DoctorUserID == nil {
+			updates := map[string]any{"updated_at": now}
+			bindDoctor(updates)
+			return tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(updates).Error
+		}
+		if *row.DoctorUserID == doctorUserID {
+			return nil
+		}
+		return coreerrors.Conflict("La consultation liée est déjà assignée à un autre médecin")
+	case consultations.ConsultationStatusDraft:
+		if row.DoctorUserID != nil && *row.DoctorUserID != doctorUserID {
+			return coreerrors.Conflict("La consultation liée est déjà assignée à un autre médecin")
+		}
+		updates := map[string]any{
 			"status":     consultations.ConsultationStatusInProgress,
 			"started_at": now,
 			"updated_at": now,
-		}).Error
+		}
+		if row.DoctorUserID == nil {
+			bindDoctor(updates)
+		}
+		return tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(updates).Error
 	default:
-		return nil
+		return coreerrors.Conflict("Statut de consultation lié incompatible")
 	}
 }
 
@@ -948,14 +987,16 @@ func (s *Service) TakeDoctor(id uint, r TakeDoctorRequest, a Access) (*Ticket, e
 					return err
 				}
 			} else {
+				doctorUID := a.UserID
 				c := consultations.Consultation{
-					PatientID:  out.PatientID,
-					DoctorName: doctorName,
-					Service:    serviceName,
-					ServiceID:  &sid,
-					Status:     consultations.ConsultationStatusInProgress,
-					StartedAt:  &now,
-					Diagnosis:  "Parcours file " + out.Reference,
+					PatientID:    out.PatientID,
+					DoctorName:   doctorName,
+					DoctorUserID: &doctorUID,
+					Service:      serviceName,
+					ServiceID:    &sid,
+					Status:       consultations.ConsultationStatusInProgress,
+					StartedAt:    &now,
+					Diagnosis:    "Parcours file " + out.Reference,
 				}
 				if err := tx.Create(&c).Error; err != nil {
 					return coreerrors.Internal(err.Error())

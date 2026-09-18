@@ -853,7 +853,7 @@ func TestPostgresDoctorWorklistOnlyAfterTriage(t *testing.T) {
 func migrateClinicalFlowTables(db *gorm.DB) {
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS consultations (
 		id BIGSERIAL PRIMARY KEY, patient_id BIGINT NOT NULL, doctor_name TEXT, service TEXT,
-		service_id BIGINT, status TEXT DEFAULT 'draft', version INT NOT NULL DEFAULT 1,
+		service_id BIGINT, doctor_user_id BIGINT NULL, status TEXT DEFAULT 'draft', version INT NOT NULL DEFAULT 1,
 		started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
 		cancelled_at TIMESTAMPTZ, cancellation_reason TEXT, diagnosis TEXT, observations TEXT,
 		treatment TEXT, sick_leave_required BOOLEAN DEFAULT false, sick_leave_days INT DEFAULT 0,
@@ -896,6 +896,32 @@ func clinicalFlowReadyTicket(t *testing.T, db *gorm.DB, svc *Service) *Ticket {
 		t.Fatal("consultation expected")
 	}
 	return taken
+}
+
+// Characterization F24-02: TakeDoctor(CreateConsultation) must persist structural
+// doctor identity (doctor_user_id), not only DoctorName.
+func TestPostgresClinicalFlowTakeDoctorPersistsConsultationDoctorUserID(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	taken := clinicalFlowReadyTicket(t, db, svc)
+	if taken.ConsultationID == nil {
+		t.Fatal("ConsultationID expected after TakeDoctor CreateConsultation")
+	}
+
+	var doctorUserID *uint
+	if err := db.Raw(
+		`SELECT doctor_user_id FROM consultations WHERE id=?`,
+		*taken.ConsultationID,
+	).Scan(&doctorUserID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if doctorUserID == nil {
+		t.Fatal("consultations.doctor_user_id is NULL; TakeDoctor must persist structural doctor identity")
+	}
+	if *doctorUserID != 102 {
+		t.Fatalf("consultations.doctor_user_id=%d want 102", *doctorUserID)
+	}
 }
 
 func TestPostgresClinicalFlowConsultationSyncOnComplete(t *testing.T) {
@@ -1061,6 +1087,180 @@ func TestPostgresClinicalFlowReuseExistingConsultation(t *testing.T) {
 	_ = db.Raw(`SELECT status FROM consultations WHERE id=9001`).Scan(&status)
 	if status != "in_progress" {
 		t.Fatalf("existing consultation not activated: %s", status)
+	}
+	var doctorUserID *uint
+	if err := db.Raw(`SELECT doctor_user_id FROM consultations WHERE id=9001`).Scan(&doctorUserID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if doctorUserID == nil || *doctorUserID != 102 {
+		t.Fatalf("NULL doctor_user_id must bind to taking doctor 102, got %v", doctorUserID)
+	}
+}
+
+// waitingDoctorTicketWithConsultation prepares a WAITING_DOCTOR ticket linked to consultationID.
+func waitingDoctorTicketWithConsultation(t *testing.T, db *gorm.DB, svc *Service, consultationID uint) uint {
+	t.Helper()
+	migrateClinicalFlowTables(db)
+	admin := adminAccess(100)
+	tk, e := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 1, ServiceID: 10, IdentityConfirmed: true, Reason: "doctor-user-bind",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.TakeTriage(tk.ID, admin); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.CompleteTriage(tk.ID, CompleteTriageRequest{}, admin); e != nil {
+		t.Fatal(e)
+	}
+	if err := db.Model(&Ticket{}).Where("id=?", tk.ID).Update("consultation_id", consultationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	waiting, ge := svc.Get(tk.ID, admin)
+	if ge != nil {
+		t.Fatal(ge)
+	}
+	if waiting.Ticket.Stage != StageWaitingDoctor {
+		t.Fatalf("precondition stage want WAITING_DOCTOR got %s", waiting.Ticket.Stage)
+	}
+	return waiting.Ticket.ID
+}
+
+// F24-02: DRAFT already assigned to the same doctor may be activated.
+func TestPostgresClinicalFlowTakeDoctorAcceptsSameDoctorAssignment(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+	docUID := uint(102)
+	_ = db.Exec(`INSERT INTO consultations(id, patient_id, doctor_name, doctor_user_id, service, service_id, status, diagnosis)
+		VALUES (9201, 1, 'Médecin', ?, 'Urgences', 10, 'draft', 'même médecin')`, docUID)
+
+	ticketID := waitingDoctorTicketWithConsultation(t, db, svc, 9201)
+	taken, e := svc.TakeDoctor(ticketID, TakeDoctorRequest{CreateConsultation: true}, doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if taken.ConsultationID == nil || *taken.ConsultationID != 9201 {
+		t.Fatalf("consultation=%v want 9201", taken.ConsultationID)
+	}
+	var status string
+	var doctorUserID *uint
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=9201`).Scan(&status).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw(`SELECT doctor_user_id FROM consultations WHERE id=9201`).Scan(&doctorUserID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if status != "in_progress" {
+		t.Fatalf("status=%s want in_progress", status)
+	}
+	if doctorUserID == nil || *doctorUserID != 102 {
+		t.Fatalf("doctor_user_id=%v want 102", doctorUserID)
+	}
+}
+
+// F24-02: DRAFT assigned to a different doctor must Conflict and roll back TakeDoctor.
+func TestPostgresClinicalFlowTakeDoctorRejectsDifferentDoctorAssignment(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	_ = db.Exec(`INSERT INTO users(id, name) VALUES (103,'Médecin B') ON CONFLICT DO NOTHING`)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+	otherUID := uint(103)
+	_ = db.Exec(`INSERT INTO consultations(id, patient_id, doctor_name, doctor_user_id, service, service_id, status, diagnosis)
+		VALUES (9202, 1, 'Médecin B', ?, 'Urgences', 10, 'draft', 'autre médecin')`, otherUID)
+
+	ticketID := waitingDoctorTicketWithConsultation(t, db, svc, 9202)
+	_, takeErr := svc.TakeDoctor(ticketID, TakeDoctorRequest{CreateConsultation: true}, doc)
+	if statusOf(takeErr) != 409 {
+		t.Fatalf("different doctor assignment want 409 got %d (%v)", statusOf(takeErr), takeErr)
+	}
+
+	after, ge := svc.Get(ticketID, adminAccess(100))
+	if ge != nil {
+		t.Fatal(ge)
+	}
+	if after.Ticket.Stage != StageWaitingDoctor {
+		t.Fatalf("ticket stage after rollback=%s want WAITING_DOCTOR", after.Ticket.Stage)
+	}
+	if after.Ticket.DoctorTakenBy != nil {
+		t.Fatalf("doctor_taken_by must stay unset after rollback, got %v", *after.Ticket.DoctorTakenBy)
+	}
+	var status string
+	var doctorUserID *uint
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=9202`).Scan(&status).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw(`SELECT doctor_user_id FROM consultations WHERE id=9202`).Scan(&doctorUserID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if status != "draft" {
+		t.Fatalf("consultation status after rollback=%s want draft", status)
+	}
+	if doctorUserID == nil || *doctorUserID != 103 {
+		t.Fatalf("doctor ownership must stay 103, got %v", doctorUserID)
+	}
+}
+
+// F24-02 harden: missing linked consultation must NotFound and roll back TakeDoctor.
+func TestPostgresClinicalFlowTakeDoctorRejectsMissingLinkedConsultation(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+
+	const missingConsultationID uint = 999001
+	ticketID := waitingDoctorTicketWithConsultation(t, db, svc, missingConsultationID)
+	_, takeErr := svc.TakeDoctor(ticketID, TakeDoctorRequest{CreateConsultation: true}, doc)
+	if statusOf(takeErr) != 404 {
+		t.Fatalf("missing linked consultation want 404 got %d (%v)", statusOf(takeErr), takeErr)
+	}
+
+	after, ge := svc.Get(ticketID, adminAccess(100))
+	if ge != nil {
+		t.Fatal(ge)
+	}
+	if after.Ticket.Stage != StageWaitingDoctor {
+		t.Fatalf("ticket stage after rollback=%s want WAITING_DOCTOR", after.Ticket.Stage)
+	}
+	if after.Ticket.DoctorTakenBy != nil {
+		t.Fatalf("doctor_taken_by must stay unset after rollback, got %v", *after.Ticket.DoctorTakenBy)
+	}
+}
+
+// F24-02 harden: unsupported linked consultation status must Conflict and roll back TakeDoctor.
+func TestPostgresClinicalFlowTakeDoctorRejectsUnsupportedConsultationStatus(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+	_ = db.Exec(`INSERT INTO consultations(id, patient_id, doctor_name, service, service_id, status, diagnosis)
+		VALUES (9203, 1, 'Médecin', 'Urgences', 10, 'paused', 'statut incompatible')`)
+
+	ticketID := waitingDoctorTicketWithConsultation(t, db, svc, 9203)
+	_, takeErr := svc.TakeDoctor(ticketID, TakeDoctorRequest{CreateConsultation: true}, doc)
+	if statusOf(takeErr) != 409 {
+		t.Fatalf("unsupported consultation status want 409 got %d (%v)", statusOf(takeErr), takeErr)
+	}
+
+	after, ge := svc.Get(ticketID, adminAccess(100))
+	if ge != nil {
+		t.Fatal(ge)
+	}
+	if after.Ticket.Stage != StageWaitingDoctor {
+		t.Fatalf("ticket stage after rollback=%s want WAITING_DOCTOR", after.Ticket.Stage)
+	}
+	if after.Ticket.DoctorTakenBy != nil {
+		t.Fatalf("doctor_taken_by must stay unset after rollback, got %v", *after.Ticket.DoctorTakenBy)
+	}
+	var status string
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=9203`).Scan(&status).Error; err != nil {
+		t.Fatal(err)
+	}
+	if status != "paused" {
+		t.Fatalf("consultation status after rollback=%s want paused", status)
 	}
 }
 

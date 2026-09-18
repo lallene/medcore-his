@@ -3,6 +3,7 @@ package consultations
 import (
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 )
@@ -20,6 +21,8 @@ type Consultation struct {
 	Patient   patients.Patient `gorm:"foreignKey:PatientID" json:"patient"`
 
 	DoctorName          string                `json:"doctorName"`
+	DoctorUserID        *uint                 `gorm:"index" json:"doctorUserId,omitempty"`
+	DoctorUser          *auth.User            `gorm:"foreignKey:DoctorUserID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"-"`
 	Service             string                `json:"service"`
 	ServiceID           *uint                 `gorm:"index" json:"serviceId"`
 	OrganizationService *organization.Service `gorm:"foreignKey:ServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"organizationService,omitempty"`
