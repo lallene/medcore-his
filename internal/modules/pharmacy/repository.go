@@ -402,6 +402,14 @@ func (r *Repository) Dispense(
 			}
 		}
 
+		// Authoritative prescription-cap enforcement must share this transaction
+		// with stock mutation (F24-07). Service preflight is non-authoritative.
+		if dispensation.ReferenceType == "CONSULTATION_PRESCRIPTION" && dispensation.ReferenceID != nil {
+			if err := assertConsultationPrescriptionCapTx(tx, dispensation); err != nil {
+				return err
+			}
+		}
+
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("presentation_id = ?", dispensation.PresentationID).
 			First(&stock).Error; err != nil {
@@ -554,6 +562,56 @@ func (r *Repository) Dispense(
 		}
 		return nil
 	})
+}
+
+// assertConsultationPrescriptionCapTx locks the prescription row and enforces
+// remaining quantity inside the caller's Dispense transaction (no nested tx).
+// Already-dispensed is summed before the current row is inserted, so the
+// in-flight request is excluded from the total.
+func assertConsultationPrescriptionCapTx(tx *gorm.DB, dispensation *PharmacyDispensation) error {
+	var prescription ConsultationPrescriptionRef
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&prescription, *dispensation.ReferenceID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrPrescriptionNotFound
+		}
+		return err
+	}
+
+	if prescription.PresentationID == nil || *prescription.PresentationID != dispensation.PresentationID {
+		return ErrPrescriptionPresentationMismatch
+	}
+
+	if dispensation.PatientID != nil {
+		var patientID uint
+		if err := tx.Table("consultation_prescriptions cp").
+			Select("c.patient_id").
+			Joins("JOIN consultations c ON c.id = cp.consultation_id").
+			Where("cp.id = ?", *dispensation.ReferenceID).
+			Scan(&patientID).Error; err != nil {
+			return err
+		}
+		if patientID == 0 {
+			return ErrPrescriptionNotFound
+		}
+		if *dispensation.PatientID != patientID {
+			return ErrPrescriptionPatientMismatch
+		}
+	}
+
+	var alreadyDispensed float64
+	if err := tx.Model(&PharmacyDispensation{}).
+		Where("reference_type = ? AND reference_id = ?", "CONSULTATION_PRESCRIPTION", *dispensation.ReferenceID).
+		Select("COALESCE(SUM(quantity), 0)").
+		Scan(&alreadyDispensed).Error; err != nil {
+		return err
+	}
+
+	remaining := prescription.Quantity - alreadyDispensed
+	if dispensation.Quantity > remaining {
+		return ErrPrescriptionQuantityExceeded
+	}
+	return nil
 }
 
 func (r *Repository) FindDispensationByIdempotencyKey(key string) (*PharmacyDispensation, error) {
