@@ -860,12 +860,18 @@ func (s *Service) completeConsultationTx(tx *gorm.DB, consultationID uint, dispo
 			if dispositionNote != "" {
 				updates["patient_advice"] = dispositionNote
 			}
-			_ = tx.Table("consultation_soaps").Where("consultation_id=?", consultationID).Updates(updates).Error
+			if err := tx.Table("consultation_soaps").
+				Where("consultation_id=?", consultationID).
+				Updates(updates).Error; err != nil {
+				return err
+			}
 		} else {
-			_ = tx.Exec(`
-				INSERT INTO consultation_soaps(consultation_id, disposition, patient_advice, created_by, updated_by, created_at, updated_at)
-				VALUES (?,?,?,?,?,?,?)`,
-				consultationID, disposition, dispositionNote, authorID, authorID, now, now).Error
+			if err := tx.Exec(`
+	INSERT INTO consultation_soaps(consultation_id, disposition, patient_advice, created_by, updated_by, created_at, updated_at)
+	VALUES (?,?,?,?,?,?,?)`,
+				consultationID, disposition, dispositionNote, authorID, authorID, now, now).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil
