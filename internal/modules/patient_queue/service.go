@@ -1208,13 +1208,22 @@ func (s *Service) SetPriority(id uint, r PriorityRequest, a Access) (*Ticket, er
 		return nil, err
 	}
 	old := t.Priority
-	t.Priority = r.Priority
-	t.Version++
-	t.UpdatedAt = time.Now().UTC()
-	if err := s.db.Save(t).Error; err != nil {
-		return nil, coreerrors.Internal(err.Error())
+	// F24-10B: Priority + Version + PRIORITY history must commit atomically.
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		t.Priority = r.Priority
+		t.Version++
+		t.UpdatedAt = time.Now().UTC()
+		if err := tx.Save(t).Error; err != nil {
+			return coreerrors.Internal(err.Error())
+		}
+		if err := s.writeHistory(tx, id, a.UserID, t.Stage, t.Stage, "PRIORITY", old+"→"+r.Priority+": "+r.Reason); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	_ = s.writeHistory(s.db, id, a.UserID, t.Stage, t.Stage, "PRIORITY", old+"→"+r.Priority+": "+r.Reason)
 	return t, nil
 }
 
