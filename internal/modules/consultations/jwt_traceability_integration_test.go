@@ -232,3 +232,108 @@ func TestSOAPAndSpecialtyAuthorsComeOnlyFromJWT(t *testing.T) {
 		t.Fatalf("auteurs spécialité = %d/%d", specialty.CreatedBy, specialty.UpdatedBy)
 	}
 }
+
+func TestSOAPAndSpecialtyAreImmutableAfterConsultationTerminalStatus(t *testing.T) {
+	db := consultationIntegrationDB(t)
+	patient := patients.Patient{
+		CodePatient:   "LOCK-P",
+		NumeroDossier: "LOCK-D",
+		Nom:           "Patient",
+	}
+	if err := db.Table(db.NamingStrategy.TableName("patients")).Create(&patient).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(NewRepository(db), nil)
+
+	createTerminal := func(status string) Consultation {
+		c := Consultation{
+			PatientID:  patient.ID,
+			DoctorName: "Dr Lock",
+			Service:    "Médecine",
+			Status:     status,
+		}
+		if err := db.Create(&c).Error; err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	t.Run("completed", func(t *testing.T) {
+		c := createTerminal(ConsultationStatusCompleted)
+
+		_, err := service.UpsertSOAP(c.ID, UpsertConsultationSOAPRequest{
+			ChiefComplaint: "modification interdite",
+		}, 73)
+		if !errors.Is(err, ErrConsultationLocked) {
+			t.Fatalf("UpsertSOAP completed: expected ErrConsultationLocked, got %v", err)
+		}
+
+		_, err = service.UpsertSpecialtyData(c.ID, UpsertConsultationSpecialtyRequest{
+			SpecialtyCode: "CARDIOLOGY",
+			Data:          map[string]interface{}{"note": "modification interdite"},
+		}, 73)
+		if !errors.Is(err, ErrConsultationLocked) {
+			t.Fatalf("UpsertSpecialtyData completed: expected ErrConsultationLocked, got %v", err)
+		}
+
+		var soapCount int64
+		if err := db.Model(&ConsultationSOAP{}).
+			Where("consultation_id = ?", c.ID).
+			Count(&soapCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if soapCount != 0 {
+			t.Fatalf("SOAP créé malgré consultation completed: %d", soapCount)
+		}
+
+		var specialtyCount int64
+		if err := db.Model(&ConsultationSpecialtyData{}).
+			Where("consultation_id = ?", c.ID).
+			Count(&specialtyCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if specialtyCount != 0 {
+			t.Fatalf("Specialty créé malgré consultation completed: %d", specialtyCount)
+		}
+	})
+
+	t.Run("cancelled", func(t *testing.T) {
+		c := createTerminal(ConsultationStatusCancelled)
+
+		_, err := service.UpsertSOAP(c.ID, UpsertConsultationSOAPRequest{
+			ChiefComplaint: "modification interdite",
+		}, 73)
+		if !errors.Is(err, ErrConsultationLocked) {
+			t.Fatalf("UpsertSOAP cancelled: expected ErrConsultationLocked, got %v", err)
+		}
+
+		_, err = service.UpsertSpecialtyData(c.ID, UpsertConsultationSpecialtyRequest{
+			SpecialtyCode: "CARDIOLOGY",
+			Data:          map[string]interface{}{"note": "modification interdite"},
+		}, 73)
+		if !errors.Is(err, ErrConsultationLocked) {
+			t.Fatalf("UpsertSpecialtyData cancelled: expected ErrConsultationLocked, got %v", err)
+		}
+
+		var soapCount int64
+		if err := db.Model(&ConsultationSOAP{}).
+			Where("consultation_id = ?", c.ID).
+			Count(&soapCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if soapCount != 0 {
+			t.Fatalf("SOAP créé malgré consultation cancelled: %d", soapCount)
+		}
+
+		var specialtyCount int64
+		if err := db.Model(&ConsultationSpecialtyData{}).
+			Where("consultation_id = ?", c.ID).
+			Count(&specialtyCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if specialtyCount != 0 {
+			t.Fatalf("Specialty créé malgré consultation cancelled: %d", specialtyCount)
+		}
+	})
+}

@@ -913,6 +913,11 @@ func (s *Service) UpsertSOAP(
 		return nil, err
 	}
 
+	if consultation.Status == ConsultationStatusCompleted ||
+		consultation.Status == ConsultationStatusCancelled {
+		return nil, ErrConsultationLocked
+	}
+
 	soap := &ConsultationSOAP{
 		ConsultationID: consultationID,
 
@@ -985,6 +990,11 @@ func (s *Service) UpsertSpecialtyData(
 	consultation, err := s.repo.FindByID(consultationID)
 	if err != nil {
 		return nil, err
+	}
+
+	if consultation.Status == ConsultationStatusCompleted ||
+		consultation.Status == ConsultationStatusCancelled {
+		return nil, ErrConsultationLocked
 	}
 
 	dataJSON, err := json.Marshal(req.Data)
