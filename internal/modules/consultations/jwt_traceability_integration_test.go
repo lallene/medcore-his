@@ -55,7 +55,7 @@ func consultationIntegrationDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&Consultation{}, &ConsultationVitals{}, &ConsultationReason{},
-		&MedicalExam{}, &ConsultationPrescription{}, &ConsultationAntecedent{},
+		&MedicalExam{}, &ConsultationExamRequest{}, &ConsultationPrescription{}, &ConsultationAntecedent{},
 		&PhysicalExamArea{}, &ConsultationPhysicalExam{}, &ConsultationAdministeredTreatment{},
 		&ConsultationPreviousMedication{}, &ConsultationSurgicalHistory{},
 		&ConsultationGynecoObstetricHistory{}, &ConsultationSOAP{}, &ConsultationSpecialtyData{},
