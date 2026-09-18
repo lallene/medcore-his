@@ -334,8 +334,8 @@ func updateMedicalDevices(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMe
 func updateVitalSigns(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedicalRecordRequest) (bool, error) {
 	return applyCollection(tx, record.ID, req.VitalSigns, &VitalSign{}, func(item VitalSignRequest) (bool, error) {
 		updates := vitalUpdates(item)
-		updates["measured_by"] = req.authorID
 		if item.ID > 0 {
+			// AUTH-01a: preserve original MeasuredBy; modifier is attributable via dossier timeline.
 			return updateChild(tx, &VitalSign{}, record.ID, item.ID, updates)
 		}
 		entity := VitalSign{MedicalRecordID: record.ID, PatientID: record.PatientID, MeasuredAt: time.Now(), MeasuredBy: req.authorID}

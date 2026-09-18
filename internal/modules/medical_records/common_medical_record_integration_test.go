@@ -319,6 +319,52 @@ func TestCommonMedicalRecordTargetedUpdatesPreserveIdentityAndAudit(t *testing.T
 	}
 }
 
+// LOT 25E-1 — AUTH-01a: User A measures; User B corrects; MeasuredBy stays A; timeline attributes B.
+func TestVitalSignUpdatePreservesMeasuredByAndAttributesModifier(t *testing.T) {
+	db := integrationDB(t)
+	f := seedCommonFixture(t, db, 113)
+	repo := NewRepository(db)
+	service := NewService(repo)
+	const measurerA uint = 51
+	const modifierB uint = 88
+	if f.vital.MeasuredBy != measurerA {
+		t.Fatalf("fixture MeasuredBy=%d want %d", f.vital.MeasuredBy, measurerA)
+	}
+	beforeID, beforeCreated := f.vital.ID, f.vital.CreatedAt
+	updatedAt := f.record.UpdatedAt
+	_, err := service.UpdateCommonMedicalRecord(f.record.PatientID, UpdateCommonMedicalRecordRequest{
+		ExpectedUpdatedAt: &updatedAt,
+		VitalSigns: PatchCollection[VitalSignRequest]{
+			Present: true,
+			Upsert:  []VitalSignRequest{{ID: f.vital.ID, Comment: str("corrigé par B")}},
+		},
+	}, modifierB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vital VitalSign
+	if err := db.First(&vital, beforeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if vital.ID != beforeID || !vital.CreatedAt.Equal(beforeCreated) {
+		t.Fatalf("identité altérée: %#v", vital)
+	}
+	if vital.MeasuredBy != measurerA {
+		t.Fatalf("MeasuredBy overwritten: got %d want %d", vital.MeasuredBy, measurerA)
+	}
+	if vital.Comment != "corrigé par B" {
+		t.Fatalf("commentaire non mis à jour: %q", vital.Comment)
+	}
+	var event MedicalTimelineEvent
+	if err := db.Where("event_type = ? AND medical_record_id = ?", "common_medical_record_updated", f.record.ID).
+		Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("timeline modificateur absente: %v", err)
+	}
+	if event.CreatedBy != modifierB {
+		t.Fatalf("timeline CreatedBy=%d want %d", event.CreatedBy, modifierB)
+	}
+}
+
 func TestCommonMedicalRecordCreateAndExplicitDelete(t *testing.T) {
 	db := integrationDB(t)
 	f := seedCommonFixture(t, db, 104)
