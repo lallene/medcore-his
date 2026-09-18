@@ -65,6 +65,10 @@ func consultationIntegrationDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func unrestrictedAccess(userID uint) Access {
+	return Access{UserID: userID, Permissions: map[string]bool{"*": true}}
+}
+
 func TestDispensedPrescriptionUpdateGuardsAndRollback(t *testing.T) {
 	db := consultationIntegrationDB(t)
 	c := Consultation{PatientID: 1, DoctorName: "Dr Guard", Service: "Médecine", Status: ConsultationStatusDraft, Diagnosis: "initial"}
@@ -97,7 +101,7 @@ func TestDispensedPrescriptionUpdateGuardsAndRollback(t *testing.T) {
 			lines = append(lines, ConsultationPrescription{ID: p1.ID, ConsultationID: c.ID, PresentationID: presentation, MedicationName: p1.MedicationName, Quantity: quantity})
 		}
 
-		return repo.UpdateConsultation(c.ID, 1, current.Version, map[string]interface{}{"diagnosis": diagnosis}, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil)
+		return repo.UpdateConsultation(c.ID, 1, current.Version, map[string]interface{}{"diagnosis": diagnosis}, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil, true, nil)
 	}
 	if err := update(8, &presentationA, true, "authorized-8"); err != nil {
 		t.Fatal(err)
@@ -131,7 +135,7 @@ func TestDispensedPrescriptionUpdateGuardsAndRollback(t *testing.T) {
 	}
 
 	lines := []ConsultationPrescription{{ID: p1.ID, ConsultationID: c.ID, PresentationID: &presentationA, MedicationName: p1.MedicationName, Quantity: 4, Instructions: "clinique modifiée"}, {ID: p2.ID, ConsultationID: c.ID, PresentationID: p2.PresentationID, MedicationName: p2.MedicationName, Quantity: p2.Quantity}}
-	if err := repo.UpdateConsultation(c.ID, 1, current.Version, nil, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil); err != nil {
+	if err := repo.UpdateConsultation(c.ID, 1, current.Version, nil, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil, true, nil); err != nil {
 		t.Fatalf("champ clinique refusé: %v", err)
 	}
 }
@@ -162,7 +166,7 @@ func TestConsultationTimelineUsesAuthenticatedAuthor(t *testing.T) {
 	}
 
 	const statusAuthor uint = 82
-	if _, err := service.UpdateStatus(consultation.ID, UpdateConsultationStatusRequest{Status: ConsultationStatusInProgress}, statusAuthor); err != nil {
+	if _, err := service.UpdateStatus(consultation.ID, UpdateConsultationStatusRequest{Status: ConsultationStatusInProgress}, statusAuthor, unrestrictedAccess(statusAuthor)); err != nil {
 		t.Fatal(err)
 	}
 	var status medical_records.MedicalTimelineEvent
@@ -195,14 +199,14 @@ func TestListConsultationsPaginationAndFilters(t *testing.T) {
 		}
 	}
 	repo := NewRepository(db)
-	page, err := repo.List(ConsultationListFilter{Page: 1, Limit: 2})
+	page, err := repo.List(ConsultationListFilter{Page: 1, Limit: 2}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if page.Total != 3 || page.TotalPages != 2 || len(page.Data) != 2 || page.Data[0].ID != created[1].ID || page.Data[1].ID != created[2].ID {
 		t.Fatalf("pagination/ordre incorrects: %#v", page)
 	}
-	filtered, err := repo.List(ConsultationListFilter{Page: 1, Limit: 20, PatientID: &patientA.ID, Status: ConsultationStatusCompleted, Service: "cardiologie", Search: "Alice"})
+	filtered, err := repo.List(ConsultationListFilter{Page: 1, Limit: 20, PatientID: &patientA.ID, Status: ConsultationStatusCompleted, Service: "cardiologie", Search: "Alice"}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +232,7 @@ func TestSOAPAndSpecialtyAuthorsComeOnlyFromJWT(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"chiefComplaint":"test","userId":999}`), &soapRequest); err != nil {
 		t.Fatal(err)
 	}
-	soap, err := service.UpsertSOAP(consultation.ID, soapRequest, jwtUserID)
+	soap, err := service.UpsertSOAP(consultation.ID, soapRequest, jwtUserID, unrestrictedAccess(jwtUserID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +244,7 @@ func TestSOAPAndSpecialtyAuthorsComeOnlyFromJWT(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"specialtyCode":"CARDIOLOGY","data":{"note":"test"},"userId":999}`), &specialtyRequest); err != nil {
 		t.Fatal(err)
 	}
-	specialty, err := service.UpsertSpecialtyData(consultation.ID, specialtyRequest, jwtUserID)
+	specialty, err := service.UpsertSpecialtyData(consultation.ID, specialtyRequest, jwtUserID, unrestrictedAccess(jwtUserID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +284,7 @@ func TestSOAPAndSpecialtyAreImmutableAfterConsultationTerminalStatus(t *testing.
 
 		_, err := service.UpsertSOAP(c.ID, UpsertConsultationSOAPRequest{
 			ChiefComplaint: "modification interdite",
-		}, 73)
+		}, 73, unrestrictedAccess(73))
 		if !errors.Is(err, ErrConsultationLocked) {
 			t.Fatalf("UpsertSOAP completed: expected ErrConsultationLocked, got %v", err)
 		}
@@ -288,7 +292,7 @@ func TestSOAPAndSpecialtyAreImmutableAfterConsultationTerminalStatus(t *testing.
 		_, err = service.UpsertSpecialtyData(c.ID, UpsertConsultationSpecialtyRequest{
 			SpecialtyCode: "CARDIOLOGY",
 			Data:          map[string]interface{}{"note": "modification interdite"},
-		}, 73)
+		}, 73, unrestrictedAccess(73))
 		if !errors.Is(err, ErrConsultationLocked) {
 			t.Fatalf("UpsertSpecialtyData completed: expected ErrConsultationLocked, got %v", err)
 		}
@@ -319,7 +323,7 @@ func TestSOAPAndSpecialtyAreImmutableAfterConsultationTerminalStatus(t *testing.
 
 		_, err := service.UpsertSOAP(c.ID, UpsertConsultationSOAPRequest{
 			ChiefComplaint: "modification interdite",
-		}, 73)
+		}, 73, unrestrictedAccess(73))
 		if !errors.Is(err, ErrConsultationLocked) {
 			t.Fatalf("UpsertSOAP cancelled: expected ErrConsultationLocked, got %v", err)
 		}
@@ -327,7 +331,7 @@ func TestSOAPAndSpecialtyAreImmutableAfterConsultationTerminalStatus(t *testing.
 		_, err = service.UpsertSpecialtyData(c.ID, UpsertConsultationSpecialtyRequest{
 			SpecialtyCode: "CARDIOLOGY",
 			Data:          map[string]interface{}{"note": "modification interdite"},
-		}, 73)
+		}, 73, unrestrictedAccess(73))
 		if !errors.Is(err, ErrConsultationLocked) {
 			t.Fatalf("UpsertSpecialtyData cancelled: expected ErrConsultationLocked, got %v", err)
 		}
@@ -379,6 +383,7 @@ func TestUpdateConsultationRejectsStaleExpectedVersion(t *testing.T) {
 			Diagnosis:       &firstDiagnosis,
 		},
 		1,
+		unrestrictedAccess(1),
 	)
 	if err != nil {
 		t.Fatalf("première mise à jour refusée: %v", err)
@@ -400,6 +405,7 @@ func TestUpdateConsultationRejectsStaleExpectedVersion(t *testing.T) {
 			Diagnosis:       &staleDiagnosis,
 		},
 		2,
+		unrestrictedAccess(2),
 	)
 
 	if !errors.Is(err, ErrConsultationVersionConflict) {
@@ -466,6 +472,7 @@ func TestUpdateConsultationChildOnlyMutationBumpsVersion(t *testing.T) {
 			},
 		},
 		1,
+		unrestrictedAccess(1),
 	)
 	if err != nil {
 		t.Fatalf("mutation enfant refusée: %v", err)
@@ -550,6 +557,8 @@ func TestUpdateConsultationChildFailureRollsBackVersion(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		true,
+		nil,
 	)
 
 	if !errors.Is(err, ErrDispensedPrescriptionConflict) {
@@ -631,6 +640,7 @@ func TestUpdateConsultationHTTPReturnsConflictForStaleExpectedVersion(t *testing
 		{Key: "id", Value: fmt.Sprintf("%d", consultation.ID)},
 	}
 	ctx.Set(rbac.ContextUserID, uint(1))
+	ctx.Set(rbac.ContextPermissions, []string{"*"})
 
 	handler.UpdateConsultation(ctx)
 

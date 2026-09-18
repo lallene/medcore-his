@@ -31,6 +31,23 @@ func consultationAuthorID(c *gin.Context) (uint, bool) {
 	return userID, true
 }
 
+func access(c *gin.Context) (Access, bool) {
+	id, err := rbac.CurrentUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return Access{}, false
+	}
+	a := Access{UserID: id, Permissions: map[string]bool{}}
+	if p, ok := c.Get(rbac.ContextPermissions); ok {
+		if values, ok := p.([]string); ok {
+			for _, v := range values {
+				a.Permissions[v] = true
+			}
+		}
+	}
+	return a, true
+}
+
 // GetReasons godoc
 // @Summary Liste des motifs de consultation
 // @Tags Consultations
@@ -119,6 +136,10 @@ func (h *Handler) CreateConsultation(c *gin.Context) {
 }
 
 func (h *Handler) ListConsultations(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	paging := pagination.FromContext(c)
 	filter := ConsultationListFilter{
 		Page: paging.Page, Limit: paging.Limit,
@@ -142,7 +163,7 @@ func (h *Handler) ListConsultations(c *gin.Context) {
 		id := uint(value)
 		filter.ServiceID = &id
 	}
-	result, err := h.service.ListConsultations(filter)
+	result, err := h.service.ListConsultations(filter, a)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -162,9 +183,13 @@ func (h *Handler) ListConsultations(c *gin.Context) {
 // @Success 200 {object} Consultation
 // @Router /consultations/{id} [get]
 func (h *Handler) GetConsultation(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	consultation, err := h.service.GetConsultation(uint(id))
+	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "consultation introuvable"})
 		return
@@ -186,9 +211,13 @@ func (h *Handler) GetConsultation(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{}
 // @Router /patients/{id}/consultations [get]
 func (h *Handler) GetPatientConsultations(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	patientID, _ := strconv.Atoi(c.Param("id"))
 
-	consultations, err := h.service.GetPatientConsultations(uint(patientID))
+	consultations, err := h.service.GetPatientConsultations(uint(patientID), a)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -366,6 +395,10 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 	if !ok {
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -387,6 +420,7 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 		uint(id),
 		req,
 		authorID,
+		a,
 	)
 	if err != nil {
 		switch {
@@ -437,6 +471,10 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 	if !ok {
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -458,6 +496,7 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 		uint(id),
 		req,
 		authorID,
+		a,
 	)
 
 	if err != nil {
@@ -531,9 +570,13 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{}
 // @Router /consultations/{id}/sick-leave/pdf [get]
 func (h *Handler) GenerateSickLeavePDF(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	consultation, err := h.service.GetConsultation(uint(id))
+	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "consultation introuvable"})
 		return
@@ -560,9 +603,13 @@ func (h *Handler) GenerateSickLeavePDF(c *gin.Context) {
 // @Success 200 {file} file
 // @Router /consultations/{id}/exam-request/pdf [get]
 func (h *Handler) GenerateExamRequestPDF(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	consultation, err := h.service.GetConsultation(uint(id))
+	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "consultation introuvable"})
 		return
@@ -589,6 +636,10 @@ func (h *Handler) GenerateExamRequestPDF(c *gin.Context) {
 // @Success 200 {file} file
 // @Router /consultations/{id}/prescription/pdf [get]
 func (h *Handler) GeneratePrescriptionPDF(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -597,7 +648,7 @@ func (h *Handler) GeneratePrescriptionPDF(c *gin.Context) {
 		return
 	}
 
-	consultation, err := h.service.GetConsultation(uint(id))
+	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "consultation introuvable",
@@ -645,6 +696,10 @@ func (h *Handler) GeneratePrescriptionPDF(c *gin.Context) {
 // @Success 200 {file} file
 // @Router /consultations/{id}/report/pdf [get]
 func (h *Handler) GenerateConsultationReportPDF(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -653,7 +708,7 @@ func (h *Handler) GenerateConsultationReportPDF(c *gin.Context) {
 		return
 	}
 
-	consultation, err := h.service.GetConsultation(uint(id))
+	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "consultation introuvable",
@@ -695,13 +750,17 @@ func (h *Handler) GenerateConsultationReportPDF(c *gin.Context) {
 // @Success 200 {file} file
 // @Router /consultations/{id}/hospitalization/pdf [get]
 func (h *Handler) GenerateHospitalizationPDF(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant de consultation invalide"})
 		return
 	}
 
-	consultation, err := h.service.GetConsultation(uint(id))
+	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "consultation introuvable"})
 		return
@@ -770,13 +829,21 @@ func (h *Handler) GetPhysicalExamAreas(c *gin.Context) {
 }
 
 func (h *Handler) GetSOAP(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
 		return
 	}
 
-	soap, err := h.service.GetSOAP(uint(id))
+	soap, err := h.service.GetSOAP(uint(id), a)
+	if errors.Is(err, ErrConsultationNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "SOAP non renseigné"})
 		return
@@ -807,7 +874,15 @@ func (h *Handler) UpsertSOAP(c *gin.Context) {
 		return
 	}
 
-	soap, err := h.service.UpsertSOAP(uint(id), req, authorID)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	soap, err := h.service.UpsertSOAP(uint(id), req, authorID, a)
+	if errors.Is(err, ErrConsultationNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -817,6 +892,10 @@ func (h *Handler) UpsertSOAP(c *gin.Context) {
 }
 
 func (h *Handler) GetSpecialtyData(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -825,7 +904,11 @@ func (h *Handler) GetSpecialtyData(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetSpecialtyData(uint(id))
+	data, err := h.service.GetSpecialtyData(uint(id), a)
+	if errors.Is(err, ErrConsultationNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "données de spécialité non renseignées",
@@ -880,7 +963,15 @@ func (h *Handler) UpsertSpecialtyData(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.UpsertSpecialtyData(uint(id), req, authorID)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.UpsertSpecialtyData(uint(id), req, authorID, a)
+	if errors.Is(err, ErrConsultationNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),

@@ -75,8 +75,12 @@ func (s *Service) GetExams() ([]MedicalExam, error) {
 	return s.repo.FindExams()
 }
 
-func (s *Service) ListConsultations(filter ConsultationListFilter) (*ConsultationListResult, error) {
-	return s.repo.List(filter)
+func (s *Service) ListConsultations(filter ConsultationListFilter, access Access) (*ConsultationListResult, error) {
+	unrestricted, ids, err := s.assignedServiceIDs(access)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.List(filter, unrestricted, ids)
 }
 
 func (s *Service) CreateConsultation(req CreateConsultationRequest, authorID uint) (*Consultation, error) {
@@ -332,12 +336,16 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest, authorID uin
 	return s.repo.FindByID(consultation.ID)
 }
 
-func (s *Service) GetConsultation(id uint) (*Consultation, error) {
-	return s.repo.FindByID(id)
+func (s *Service) GetConsultation(id uint, access Access) (*Consultation, error) {
+	return s.loadConsultationForAccess(id, access)
 }
 
-func (s *Service) GetPatientConsultations(patientID uint) ([]Consultation, error) {
-	return s.repo.FindByPatientID(patientID)
+func (s *Service) GetPatientConsultations(patientID uint, access Access) ([]Consultation, error) {
+	unrestricted, ids, err := s.assignedServiceIDs(access)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.FindByPatientID(patientID, unrestricted, ids)
 }
 
 func (s *Service) CreateReason(req CreateReferenceRequest) (*ConsultationReason, error) {
@@ -398,11 +406,10 @@ func canTransitionConsultationStatus(currentStatus, newStatus string) bool {
 	}
 }
 
-func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, authorID uint) (*Consultation, error) {
-
-	consultation, err := s.repo.FindByID(id)
+func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, authorID uint, access Access) (*Consultation, error) {
+	consultation, err := s.loadConsultationForAccess(id, access)
 	if err != nil {
-		return nil, ErrConsultationNotFound
+		return nil, err
 	}
 
 	if !canTransitionConsultationStatus(
@@ -437,7 +444,11 @@ func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, aut
 
 	oldStatus := consultation.Status
 
-	if err := s.repo.UpdateStatus(id, updates); err != nil {
+	unrestricted, ids, err := s.assignedServiceIDs(access)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateStatus(id, updates, unrestricted, ids); err != nil {
 		return nil, err
 	}
 
@@ -451,11 +462,10 @@ func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, aut
 		)
 	}
 
-	return s.repo.FindByID(id)
+	return s.loadConsultationForAccess(id, access)
 }
 
-func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, authorID uint) (*Consultation, error) {
-
+func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, authorID uint, access Access) (*Consultation, error) {
 	var antecedent *ConsultationAntecedent
 	var physicalExams *[]ConsultationPhysicalExam
 	var administeredTreatments *[]ConsultationAdministeredTreatment
@@ -463,9 +473,9 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 	var surgicalHistories *[]ConsultationSurgicalHistory
 	var gynecoObstetricHistories *[]ConsultationGynecoObstetricHistory
 
-	consultation, err := s.repo.FindByID(id)
+	consultation, err := s.loadConsultationForAccess(id, access)
 	if err != nil {
-		return nil, ErrConsultationNotFound
+		return nil, err
 	}
 
 	if consultation.Status == ConsultationStatusCompleted ||
@@ -760,6 +770,10 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 		return nil, ErrConsultationVersionConflict
 	}
 
+	unrestricted, ids, err := s.assignedServiceIDs(access)
+	if err != nil {
+		return nil, err
+	}
 	err = s.repo.UpdateConsultation(
 		id,
 		authorID,
@@ -778,6 +792,8 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 		previousMedications,
 		surgicalHistories,
 		gynecoObstetricHistories,
+		unrestricted,
+		ids,
 	)
 
 	if err != nil {
@@ -792,11 +808,11 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 		}
 	}
 
-	return s.repo.FindByID(id)
+	return s.loadConsultationForAccess(id, access)
 }
 
 func (s *Service) GetPatient360(patientID uint) (*Patient360Response, error) {
-	consultations, err := s.repo.FindByPatientID(patientID)
+	consultations, err := s.repo.FindByPatientID(patientID, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -904,8 +920,8 @@ func (s *Service) buildPreviousMedication(
 	}, nil
 }
 
-func (s *Service) GetSOAP(consultationID uint) (*ConsultationSOAP, error) {
-	if _, err := s.repo.FindByID(consultationID); err != nil {
+func (s *Service) GetSOAP(consultationID uint, access Access) (*ConsultationSOAP, error) {
+	if _, err := s.loadConsultationForAccess(consultationID, access); err != nil {
 		return nil, err
 	}
 
@@ -916,8 +932,9 @@ func (s *Service) UpsertSOAP(
 	consultationID uint,
 	req UpsertConsultationSOAPRequest,
 	authorID uint,
+	access Access,
 ) (*ConsultationSOAP, error) {
-	consultation, err := s.repo.FindByID(consultationID)
+	consultation, err := s.loadConsultationForAccess(consultationID, access)
 	if err != nil {
 		return nil, err
 	}
@@ -983,8 +1000,9 @@ func (s *Service) UpsertSOAP(
 
 func (s *Service) GetSpecialtyData(
 	consultationID uint,
+	access Access,
 ) (*ConsultationSpecialtyData, error) {
-	if _, err := s.repo.FindByID(consultationID); err != nil {
+	if _, err := s.loadConsultationForAccess(consultationID, access); err != nil {
 		return nil, err
 	}
 
@@ -995,8 +1013,9 @@ func (s *Service) UpsertSpecialtyData(
 	consultationID uint,
 	req UpsertConsultationSpecialtyRequest,
 	authorID uint,
+	access Access,
 ) (*ConsultationSpecialtyData, error) {
-	consultation, err := s.repo.FindByID(consultationID)
+	consultation, err := s.loadConsultationForAccess(consultationID, access)
 	if err != nil {
 		return nil, err
 	}

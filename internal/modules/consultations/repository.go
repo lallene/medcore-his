@@ -1,6 +1,8 @@
 package consultations
 
 import (
+	"errors"
+
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -37,11 +39,23 @@ func (r *Repository) Create(consultation *Consultation, authorID uint) error {
 	})
 }
 
-func (r *Repository) List(filter ConsultationListFilter) (*ConsultationListResult, error) {
+func (r *Repository) List(filter ConsultationListFilter, unrestricted bool, assignedServiceIDs []uint) (*ConsultationListResult, error) {
+	empty := &ConsultationListResult{Data: []ConsultationListItem{}, Page: filter.Page, Limit: filter.Limit, Total: 0, TotalPages: 0}
+	if !unrestricted && len(assignedServiceIDs) == 0 {
+		return empty, nil
+	}
+	if filter.ServiceID != nil && !unrestricted {
+		if !containsServiceID(assignedServiceIDs, *filter.ServiceID) {
+			return empty, nil
+		}
+	}
 	consultationsTable := r.db.NamingStrategy.TableName("consultations")
 	patientsTable := r.db.NamingStrategy.TableName("patients")
 	query := r.db.Table(consultationsTable + " AS c").
 		Joins("JOIN " + patientsTable + " AS p ON p.id = c.patient_id")
+	if !unrestricted {
+		query = query.Where("c.service_id IN ?", assignedServiceIDs)
+	}
 	if filter.PatientID != nil {
 		query = query.Where("c.patient_id = ?", *filter.PatientID)
 	}
@@ -115,41 +129,32 @@ func (r *Repository) FindByID(id uint) (*Consultation, error) {
 	return &consultation, nil
 }
 
-func (r *Repository) FindByPatientID(patientID uint) ([]Consultation, error) {
+func (r *Repository) FindByPatientID(patientID uint, unrestricted bool, assignedServiceIDs []uint) ([]Consultation, error) {
+	if !unrestricted && len(assignedServiceIDs) == 0 {
+		return []Consultation{}, nil
+	}
 	var consultations []Consultation
 
-	err := r.db.
+	q := r.db.
 		Preload("Patient").
 		Preload("Vitals").
 		Preload("Reasons").
 		Preload("Exams").
 		Preload("Prescriptions").
 		Preload("Antecedent").
-
-		// Examen physique
 		Preload("PhysicalExams").
 		Preload("PhysicalExams.Area").
-
-		// Traitements administrés
 		Preload("AdministeredTreatments").
-
-		// Historique médicamenteux
 		Preload("PreviousMedications").
-
-		// Antécédents chirurgicaux
 		Preload("SurgicalHistories").
-
-		// Historique gynécologique / obstétrical
 		Preload("GynecoObstetricHistories").
-
-		// SOAP
 		Preload("SOAP").
-
-		// Données spécifiques à la spécialité
 		Preload("SpecialtyData").
-		Where("patient_id = ?", patientID).
-		Order("created_at DESC").
-		Find(&consultations).Error
+		Where("patient_id = ?", patientID)
+	if !unrestricted {
+		q = q.Where("service_id IN ?", assignedServiceIDs)
+	}
+	err := q.Order("created_at DESC").Find(&consultations).Error
 
 	return consultations, err
 }
@@ -227,13 +232,24 @@ func (r *Repository) DeleteExam(id uint) error {
 func (r *Repository) UpdateStatus(
 	id uint,
 	updates map[string]interface{},
+	unrestricted bool,
+	assignedServiceIDs []uint,
 ) error {
-	result := r.db.
-		Model(&Consultation{}).
-		Where("id = ?", id).
-		Updates(updates)
-
-	return result.Error
+	if !unrestricted && len(assignedServiceIDs) == 0 {
+		return ErrConsultationNotFound
+	}
+	q := r.db.Model(&Consultation{}).Where("id = ?", id)
+	if !unrestricted {
+		q = q.Where("service_id IN ?", assignedServiceIDs)
+	}
+	result := q.Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrConsultationNotFound
+	}
+	return nil
 }
 
 func (r *Repository) UpdateConsultation(
@@ -254,14 +270,25 @@ func (r *Repository) UpdateConsultation(
 	previousMedications *[]ConsultationPreviousMedication,
 	surgicalHistories *[]ConsultationSurgicalHistory,
 	gynecoObstetricHistories *[]ConsultationGynecoObstetricHistory,
+	unrestricted bool,
+	assignedServiceIDs []uint,
 ) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var locked Consultation
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("id", "status", "version").
+			Select("id", "status", "version", "service_id").
 			First(&locked, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrConsultationNotFound
+			}
 			return err
+		}
+
+		if !unrestricted {
+			if locked.ServiceID == nil || *locked.ServiceID == 0 || !containsServiceID(assignedServiceIDs, *locked.ServiceID) {
+				return ErrConsultationNotFound
+			}
 		}
 
 		if locked.Status == ConsultationStatusCompleted ||
@@ -279,10 +306,11 @@ func (r *Repository) UpdateConsultation(
 
 		updates["version"] = gorm.Expr("version + 1")
 
-		result := tx.
-			Model(&Consultation{}).
-			Where("id = ? AND version = ?", id, expectedVersion).
-			Updates(updates)
+		q := tx.Model(&Consultation{}).Where("id = ? AND version = ?", id, expectedVersion)
+		if !unrestricted {
+			q = q.Where("service_id IN ?", assignedServiceIDs)
+		}
+		result := q.Updates(updates)
 
 		if result.Error != nil {
 			return result.Error
