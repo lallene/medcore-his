@@ -66,9 +66,28 @@ func (r *Repository) Materialize(authorID uint) error {
 	})
 }
 
-func (r *Repository) List(f ListFilter) (*ListResult, error) {
+func (r *Repository) List(f ListFilter, unrestricted bool, executingServiceIDs []uint) (*ListResult, error) {
+	empty := &ListResult{Data: []ListItem{}, Page: f.Page, Limit: f.Limit, Total: 0, TotalPages: 0}
+	if !unrestricted && len(executingServiceIDs) == 0 {
+		return empty, nil
+	}
+	if f.ServiceID != nil && !unrestricted {
+		allowed := false
+		for _, id := range executingServiceIDs {
+			if id == *f.ServiceID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return empty, nil
+		}
+	}
 	q := r.db.Table("laboratory_orders lo").Joins("JOIN consultations c ON c.id=lo.consultation_id").Joins("JOIN patients p ON p.id=lo.patient_id").Joins("JOIN medical_exams me ON me.id=lo.medical_exam_id").Joins("LEFT JOIN laboratory_samples ls ON ls.order_id=lo.id")
 	q = q.Where("LOWER(BTRIM(me.category)) IN ?", laboratoryCategories)
+	if !unrestricted {
+		q = q.Where("lo.executing_service_id IN ?", executingServiceIDs)
+	}
 	if f.Status != "" {
 		q = q.Where("lo.status=?", f.Status)
 	}
@@ -79,7 +98,7 @@ func (r *Repository) List(f ListFilter) (*ListResult, error) {
 		q = q.Where("LOWER(me.category)=LOWER(?)", f.Category)
 	}
 	if f.ServiceID != nil {
-		q = q.Where("lo.requesting_service_id=?", *f.ServiceID)
+		q = q.Where("lo.executing_service_id=?", *f.ServiceID)
 	}
 	if f.PatientID != nil {
 		q = q.Where("lo.patient_id=?", *f.PatientID)

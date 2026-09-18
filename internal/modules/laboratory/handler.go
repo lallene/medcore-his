@@ -2,25 +2,36 @@ package laboratory
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/shared/pagination"
 	"gorm.io/gorm"
-	"net/http"
-	"strconv"
 )
 
 type Handler struct{ service *Service }
 
 func NewHandler(s *Service) *Handler { return &Handler{service: s} }
-func user(c *gin.Context) (uint, bool) {
+
+func access(c *gin.Context) (Access, bool) {
 	id, e := rbac.CurrentUserID(c)
 	if e != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": e.Error()})
-		return 0, false
+		return Access{}, false
 	}
-	return id, true
+	a := Access{UserID: id, Permissions: map[string]bool{}}
+	if p, ok := c.Get(rbac.ContextPermissions); ok {
+		if values, ok := p.([]string); ok {
+			for _, v := range values {
+				a.Permissions[v] = true
+			}
+		}
+	}
+	return a, true
 }
+
 func orderID(c *gin.Context) (uint, bool) {
 	v, e := strconv.ParseUint(c.Param("id"), 10, 64)
 	if e != nil || v == 0 {
@@ -29,8 +40,9 @@ func orderID(c *gin.Context) (uint, bool) {
 	}
 	return uint(v), true
 }
+
 func (h *Handler) List(c *gin.Context) {
-	u, ok := user(c)
+	a, ok := access(c)
 	if !ok {
 		return
 	}
@@ -67,18 +79,19 @@ func (h *Handler) List(c *gin.Context) {
 		x := uint(v)
 		f.ConsultationID = &x
 	}
-	r, e := h.service.List(f, u)
+	r, e := h.service.List(f, a)
 	if e != nil {
 		c.JSON(500, gin.H{"error": e.Error()})
 		return
 	}
 	c.JSON(200, gin.H{"data": r.Data, "meta": gin.H{"page": r.Page, "limit": r.Limit, "total": r.Total, "totalPages": r.TotalPages}})
 }
+
 func (h *Handler) Get(c *gin.Context) {
-	h.respond(c, func(id, u uint) (*Order, error) { return h.service.Get(id, u) })
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.Get(id, a) })
 }
 func (h *Handler) PrepareSample(c *gin.Context) {
-	h.respond(c, func(id, u uint) (*Order, error) { return h.service.PrepareSample(id, u) })
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.PrepareSample(id, a) })
 }
 func (h *Handler) Collect(c *gin.Context) {
 	var req CollectRequest
@@ -86,10 +99,10 @@ func (h *Handler) Collect(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "prélèvement invalide"})
 		return
 	}
-	h.respond(c, func(id, u uint) (*Order, error) { return h.service.Collect(id, u, req) })
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.Collect(id, a, req) })
 }
 func (h *Handler) Start(c *gin.Context) {
-	h.respond(c, func(id, u uint) (*Order, error) { return h.service.Start(id, u) })
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.Start(id, a) })
 }
 func (h *Handler) Results(c *gin.Context) {
 	var req EnterResultsRequest
@@ -97,10 +110,10 @@ func (h *Handler) Results(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "résultats invalides"})
 		return
 	}
-	h.respond(c, func(id, u uint) (*Order, error) { return h.service.EnterResults(id, u, req) })
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.EnterResults(id, a, req) })
 }
 func (h *Handler) Validate(c *gin.Context) {
-	h.respond(c, func(id, u uint) (*Order, error) { return h.service.Validate(id, u) })
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.Validate(id, a) })
 }
 func (h *Handler) Cancel(c *gin.Context) {
 	var req CancelRequest
@@ -108,18 +121,19 @@ func (h *Handler) Cancel(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "motif obligatoire"})
 		return
 	}
-	h.respond(c, func(id, u uint) (*Order, error) { return h.service.Cancel(id, u, req.Reason) })
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.Cancel(id, a, req.Reason) })
 }
-func (h *Handler) respond(c *gin.Context, fn func(uint, uint) (*Order, error)) {
+
+func (h *Handler) respond(c *gin.Context, fn func(uint, Access) (*Order, error)) {
 	id, ok := orderID(c)
 	if !ok {
 		return
 	}
-	u, ok := user(c)
+	a, ok := access(c)
 	if !ok {
 		return
 	}
-	o, e := fn(id, u)
+	o, e := fn(id, a)
 	if e != nil {
 		switch {
 		case errors.Is(e, gorm.ErrRecordNotFound):

@@ -66,8 +66,27 @@ func (r *Repository) Materialize(authorID uint) error {
 	})
 }
 
-func (r *Repository) List(f ListFilter) (*ListResult, error) {
+func (r *Repository) List(f ListFilter, unrestricted bool, executingServiceIDs []uint) (*ListResult, error) {
+	empty := &ListResult{Data: []ListItem{}, Page: f.Page, Limit: f.Limit, Total: 0, TotalPages: 0}
+	if !unrestricted && len(executingServiceIDs) == 0 {
+		return empty, nil
+	}
+	if f.ServiceID != nil && !unrestricted {
+		allowed := false
+		for _, id := range executingServiceIDs {
+			if id == *f.ServiceID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return empty, nil
+		}
+	}
 	q := r.db.Table("imaging_orders io").Joins("JOIN consultations c ON c.id=io.consultation_id").Joins("JOIN patients p ON p.id=io.patient_id").Joins("JOIN medical_exams me ON me.id=io.medical_exam_id").Joins("LEFT JOIN imaging_reports ir ON ir.order_id=io.id").Where("LOWER(BTRIM(me.category))='imagerie'")
+	if !unrestricted {
+		q = q.Where("io.executing_service_id IN ?", executingServiceIDs)
+	}
 	if f.Status != "" {
 		q = q.Where("io.status=?", f.Status)
 	}
@@ -81,7 +100,7 @@ func (r *Repository) List(f ListFilter) (*ListResult, error) {
 		q = q.Where("LOWER(c.service)=LOWER(?)", f.Service)
 	}
 	if f.ServiceID != nil {
-		q = q.Where("io.requesting_service_id=?", *f.ServiceID)
+		q = q.Where("io.executing_service_id=?", *f.ServiceID)
 	}
 	if f.Date != "" {
 		q = q.Where("DATE(COALESCE(ir.validated_at,io.performed_at,io.scheduled_at,io.created_at))=?", f.Date)
