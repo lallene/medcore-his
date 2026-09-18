@@ -11,6 +11,7 @@ import (
 	"time"
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
+	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -37,8 +38,22 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	if e != nil {
 		t.Fatal(e)
 	}
-	sqlDB, _ := db.DB()
-	t.Cleanup(func() { sqlDB.Close(); admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`) })
+
+	adminSQL, err := admin.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
+		_ = adminSQL.Close()
+	})
 	if e = db.AutoMigrate(&AppointmentType{}, &AppointmentSeries{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
 		&StaffWorkingSchedule{}, &ScheduleException{}, &ScheduleAuditEvent{},
 		&AppointmentNotificationIntent{}, &AppointmentNotificationAttempt{}); e != nil {
@@ -838,7 +853,8 @@ func TestPostgresDoctorWorklistOnlyAfterTriage(t *testing.T) {
 func migrateClinicalFlowTables(db *gorm.DB) {
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS consultations (
 		id BIGSERIAL PRIMARY KEY, patient_id BIGINT NOT NULL, doctor_name TEXT, service TEXT,
-		service_id BIGINT, status TEXT DEFAULT 'draft', started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+		service_id BIGINT, status TEXT DEFAULT 'draft', version INT NOT NULL DEFAULT 1,
+		started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
 		cancelled_at TIMESTAMPTZ, cancellation_reason TEXT, diagnosis TEXT, observations TEXT,
 		treatment TEXT, sick_leave_required BOOLEAN DEFAULT false, sick_leave_days INT DEFAULT 0,
 		sick_leave_start_date TIMESTAMPTZ, sick_leave_end_date TIMESTAMPTZ,
@@ -928,6 +944,87 @@ func TestPostgresClinicalFlowDoctorBOtherCannotComplete(t *testing.T) {
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (103,'Médecin B') ON CONFLICT DO NOTHING`)
 	if _, e := svc.Complete(taken.ID, CompleteRequest{}, docB); statusOf(e) != 403 {
 		t.Fatalf("other doctor complete want 403 got %d (%v)", statusOf(e), e)
+	}
+}
+
+// Characterization F24-11: failure to persist the clinical closing SOAP data
+// must abort the whole completion transaction.
+func TestPostgresClinicalFlowCompleteRollsBackWhenSOAPClosingPersistenceFails(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+
+	taken := clinicalFlowReadyTicket(t, db, svc)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+
+	if taken.ConsultationID == nil {
+		t.Fatal("consultation expected")
+	}
+
+	consultationID := *taken.ConsultationID
+
+	if err := db.Exec(`
+	INSERT INTO consultation_soaps(
+		consultation_id,
+		disposition,
+		patient_advice,
+		created_by,
+		updated_by,
+		created_at,
+		updated_at
+	)
+	VALUES (?, 'OBSERVATION', 'Conseil initial', ?, ?, NOW(), NOW())
+`, consultationID, doc.UserID, doc.UserID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Break only the SOAP closing write path after the clinical-flow fixture
+	// has been prepared.
+	if err := db.Exec(`
+		ALTER TABLE consultation_soaps
+		RENAME COLUMN patient_advice TO patient_advice_broken
+	`).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = db.Exec(`
+			ALTER TABLE consultation_soaps
+			RENAME COLUMN patient_advice_broken TO patient_advice
+		`).Error
+	})
+
+	_, err := svc.Complete(taken.ID, CompleteRequest{
+		Disposition:     "DISCHARGED",
+		DispositionNote: "Consignes de sortie",
+	}, doc)
+	if err == nil {
+		t.Fatal("Complete should fail when SOAP closing persistence fails")
+	}
+
+	var ticket Ticket
+	if err := db.First(&ticket, taken.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ticket.Stage != StageDoctorInProgress {
+		t.Fatalf("ticket stage after rollback=%s want %s", ticket.Stage, StageDoctorInProgress)
+	}
+	if ticket.Status != StatusActive {
+		t.Fatalf("ticket status after rollback=%s want %s", ticket.Status, StatusActive)
+	}
+
+	var consultationStatus string
+	if err := db.Raw(
+		`SELECT status FROM consultations WHERE id=?`,
+		consultationID,
+	).Scan(&consultationStatus).Error; err != nil {
+		t.Fatal(err)
+	}
+	if consultationStatus != consultations.ConsultationStatusInProgress {
+		t.Fatalf(
+			"consultation status after rollback=%s want %s",
+			consultationStatus,
+			consultations.ConsultationStatusInProgress,
+		)
 	}
 }
 
