@@ -967,6 +967,122 @@ func TestPostgresClinicalFlowReuseExistingConsultation(t *testing.T) {
 	}
 }
 
+// Characterization: TakeDoctor(CreateConsultation) must reject when the ticket already
+// links a COMPLETED consultation for the same patient/service, and must leave the
+// ticket in WAITING_DOCTOR (no silent doctor take / reactivation).
+func TestPostgresClinicalFlowRejectTakeDoctorOnCompletedConsultation(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	migrateClinicalFlowTables(db)
+	admin := adminAccess(100)
+	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
+
+	tk, e := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 1, ServiceID: 10, IdentityConfirmed: true, Reason: "completed-consult-guard",
+	}, admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.TakeTriage(tk.ID, admin); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := svc.CompleteTriage(tk.ID, CompleteTriageRequest{}, admin); e != nil {
+		t.Fatal(e)
+	}
+	waiting, ge := svc.Get(tk.ID, admin)
+	if ge != nil {
+		t.Fatal(ge)
+	}
+	if waiting.Ticket.Stage != StageWaitingDoctor {
+		t.Fatalf("precondition stage want WAITING_DOCTOR got %s", waiting.Ticket.Stage)
+	}
+
+	_ = db.Exec(`INSERT INTO consultations(id, patient_id, doctor_name, service, service_id, status, diagnosis, completed_at)
+		VALUES (9101, 1, 'Dr Test', 'Urgences', 10, 'completed', 'déjà clôturée', NOW())`)
+	if err := db.Model(&Ticket{}).Where("id=?", waiting.Ticket.ID).Update("consultation_id", 9101).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, takeErr := svc.TakeDoctor(waiting.Ticket.ID, TakeDoctorRequest{CreateConsultation: true}, doc)
+	if takeErr == nil {
+		t.Fatal("TakeDoctor with CreateConsultation on COMPLETED consultation must be rejected")
+	}
+
+	after, ge := svc.Get(waiting.Ticket.ID, admin)
+	if ge != nil {
+		t.Fatal(ge)
+	}
+	if after.Ticket.Stage != StageWaitingDoctor {
+		t.Fatalf("ticket must remain WAITING_DOCTOR after rejected TakeDoctor, got %s (err=%v)", after.Ticket.Stage, takeErr)
+	}
+	if after.Ticket.DoctorTakenBy != nil {
+		t.Fatalf("doctor_taken_by must stay unset after rejection, got %v", *after.Ticket.DoctorTakenBy)
+	}
+	var consultStatus string
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=9101`).Scan(&consultStatus).Error; err != nil {
+		t.Fatal(err)
+	}
+	if consultStatus != "completed" {
+		t.Fatalf("completed consultation must stay completed, got %s", consultStatus)
+	}
+}
+
+// Characterization: cancelling a queue ticket during an active doctor encounter must not
+// leave CANCELLED ticket + IN_PROGRESS consultation linked together.
+func TestPostgresClinicalFlowCancelDuringDoctorEncounterConsultationIntegrity(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	taken := clinicalFlowReadyTicket(t, db, svc)
+	admin := adminAccess(100)
+
+	if taken.Stage != StageDoctorInProgress {
+		t.Fatalf("precondition ticket stage want DOCTOR_IN_PROGRESS got %s", taken.Stage)
+	}
+	if taken.ConsultationID == nil {
+		t.Fatal("precondition: linked consultation required")
+	}
+	var consultBefore string
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=?`, *taken.ConsultationID).Scan(&consultBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if consultBefore != "in_progress" {
+		t.Fatalf("precondition consultation want in_progress got %s", consultBefore)
+	}
+
+	cancelled, e := svc.Cancel(taken.ID, CancelRequest{Reason: "cancel-during-doctor-encounter"}, admin)
+	if e != nil {
+		t.Fatalf("Queue Cancel with authorized actor: %v", e)
+	}
+
+	detail, ge := svc.Get(taken.ID, admin)
+	if ge != nil {
+		t.Fatal(ge)
+	}
+	var consultAfter string
+	if err := db.Raw(`SELECT status FROM consultations WHERE id=?`, *taken.ConsultationID).Scan(&consultAfter).Error; err != nil {
+		t.Fatal(err)
+	}
+	var apptStatus string
+	apptNote := "none"
+	if detail.Ticket.AppointmentID != nil {
+		if err := db.Raw(`SELECT status FROM patient_queue_appointments WHERE id=?`, *detail.Ticket.AppointmentID).Scan(&apptStatus).Error; err != nil {
+			t.Fatal(err)
+		}
+		apptNote = apptStatus
+	}
+
+	t.Logf("after Cancel: ticket.status=%s ticket.stage=%s consultation.status=%s appointment.status=%s",
+		detail.Ticket.Status, detail.Ticket.Stage, consultAfter, apptNote)
+
+	if cancelled.Status != StatusCancelled && detail.Ticket.Status != StatusCancelled {
+		t.Fatalf("expected cancelled ticket status, got cancelResult=%s detail=%s", cancelled.Status, detail.Ticket.Status)
+	}
+	if detail.Ticket.Status == StatusCancelled && consultAfter == "in_progress" {
+		t.Fatalf("integrity invariant violated: CANCELLED ticket still linked to IN_PROGRESS consultation (ticket stage=%s consult=%s appt=%s)",
+			detail.Ticket.Stage, consultAfter, apptNote)
+	}
+}
+
 func TestPostgresClinicalFlowGetByConsultationAndActivePatient(t *testing.T) {
 	db := queuePostgres(t)
 	svc := NewService(db)

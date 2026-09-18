@@ -409,11 +409,11 @@ func (s *Service) List(f Filter, a Access) (*ListResponse, error) {
 func (s *Service) enrichTicket(t Ticket) TicketDTO {
 	d := TicketDTO{Ticket: t}
 	var demog struct {
-		Code      string
-		Name      string
-		Sex       string
-		Phone     string
-		Dob       *time.Time
+		Code  string
+		Name  string
+		Sex   string
+		Phone string
+		Dob   *time.Time
 	}
 	_ = s.db.Raw(`
 		SELECT code_patient AS code,
@@ -802,8 +802,10 @@ func (s *Service) activateConsultationTx(tx *gorm.DB, consultationID uint, docto
 		return coreerrors.Internal(err.Error())
 	}
 	switch status {
-	case consultations.ConsultationStatusCompleted, consultations.ConsultationStatusCancelled:
-		return nil
+	case consultations.ConsultationStatusCompleted:
+		return coreerrors.Conflict("La consultation liée est déjà terminée")
+	case consultations.ConsultationStatusCancelled:
+		return coreerrors.Conflict("La consultation liée est annulée")
 	case consultations.ConsultationStatusInProgress:
 		return nil
 	case consultations.ConsultationStatusDraft, "":
@@ -1100,10 +1102,41 @@ func (s *Service) Cancel(id uint, r CancelRequest, a Access) (*Ticket, error) {
 		}
 		from := t.Stage
 		now := time.Now().UTC()
+
+		if t.ConsultationID != nil {
+			var consultationStatus string
+			if err := tx.Raw(
+				`SELECT status FROM consultations WHERE id=? FOR UPDATE`,
+				*t.ConsultationID,
+			).Scan(&consultationStatus).Error; err != nil {
+				return coreerrors.Internal(err.Error())
+			}
+
+			switch consultationStatus {
+			case consultations.ConsultationStatusInProgress:
+				if err := tx.Model(&consultations.Consultation{}).
+					Where("id=?", *t.ConsultationID).
+					Updates(map[string]any{
+						"status":       consultations.ConsultationStatusCancelled,
+						"cancelled_at": now,
+						"updated_at":   now,
+					}).Error; err != nil {
+					return err
+				}
+
+			case consultations.ConsultationStatusCompleted,
+				consultations.ConsultationStatusCancelled:
+				// Consultation déjà terminale : ne pas la rouvrir ni la modifier.
+
+			default:
+				return coreerrors.Conflict("État de consultation incompatible avec l'annulation du ticket")
+			}
+		}
 		t.Stage = StageCancelled
 		t.Status = StatusCancelled
 		t.Version++
 		t.UpdatedAt = now
+
 		if err := tx.Save(&t).Error; err != nil {
 			return err
 		}
