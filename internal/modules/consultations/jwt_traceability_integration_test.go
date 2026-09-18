@@ -19,7 +19,6 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/schema"
 )
 
 func consultationIntegrationDB(t *testing.T) *gorm.DB {
@@ -41,14 +40,17 @@ func consultationIntegrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	q := u.Query()
+	q.Set("search_path", schemaName)
+	u.RawQuery = q.Encode()
 	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{
-		NamingStrategy:                           schema.NamingStrategy{TablePrefix: `"` + schemaName + `".`},
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE "` + schemaName + `"."patients" (LIKE public.patients INCLUDING ALL)`).Error; err != nil {
+	// Declared immutable DDL dependency on public.patients shape only.
+	if err := db.Exec(`CREATE TABLE patients (LIKE public.patients INCLUDING ALL)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
@@ -58,7 +60,7 @@ func consultationIntegrationDB(t *testing.T) *gorm.DB {
 		&ConsultationPreviousMedication{}, &ConsultationSurgicalHistory{},
 		&ConsultationGynecoObstetricHistory{}, &ConsultationSOAP{}, &ConsultationSpecialtyData{},
 		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
-		&pharmacy.PharmacyDispensation{},
+		&pharmacy.PharmacyDispensation{}, &pharmacy.PharmacyVoucher{}, &pharmacy.PharmacyVoucherLine{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +145,7 @@ func TestDispensedPrescriptionUpdateGuardsAndRollback(t *testing.T) {
 func TestConsultationTimelineUsesAuthenticatedAuthor(t *testing.T) {
 	db := consultationIntegrationDB(t)
 	patient := patients.Patient{CodePatient: "JWT-T-P", NumeroDossier: "JWT-T-D", Nom: "Timeline"}
-	if err := db.Table(db.NamingStrategy.TableName("patients")).Create(&patient).Error; err != nil {
+	if err := db.Create(&patient).Error; err != nil {
 		t.Fatal(err)
 	}
 	record := medical_records.MedicalRecord{PatientID: patient.ID, RecordNumber: "JWT-T-MR", Status: "active"}
@@ -182,10 +184,10 @@ func TestListConsultationsPaginationAndFilters(t *testing.T) {
 	db := consultationIntegrationDB(t)
 	patientA := patients.Patient{CodePatient: "LIST-A", NumeroDossier: "DOS-A", Nom: "Alpha", Prenoms: "Alice"}
 	patientB := patients.Patient{CodePatient: "LIST-B", NumeroDossier: "DOS-B", Nom: "Beta", Prenoms: "Bob"}
-	if err := db.Table(db.NamingStrategy.TableName("patients")).Create(&patientA).Error; err != nil {
+	if err := db.Create(&patientA).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Table(db.NamingStrategy.TableName("patients")).Create(&patientB).Error; err != nil {
+	if err := db.Create(&patientB).Error; err != nil {
 		t.Fatal(err)
 	}
 	created := []Consultation{
@@ -218,7 +220,7 @@ func TestListConsultationsPaginationAndFilters(t *testing.T) {
 func TestSOAPAndSpecialtyAuthorsComeOnlyFromJWT(t *testing.T) {
 	db := consultationIntegrationDB(t)
 	patient := patients.Patient{CodePatient: "JWT-P", NumeroDossier: "JWT-D", Nom: "Patient"}
-	if err := db.Table(db.NamingStrategy.TableName("patients")).Create(&patient).Error; err != nil {
+	if err := db.Create(&patient).Error; err != nil {
 		t.Fatal(err)
 	}
 	consultation := Consultation{PatientID: patient.ID, DoctorName: "Dr JWT", Status: ConsultationStatusDraft}
@@ -260,7 +262,7 @@ func TestSOAPAndSpecialtyAreImmutableAfterConsultationTerminalStatus(t *testing.
 		NumeroDossier: "LOCK-D",
 		Nom:           "Patient",
 	}
-	if err := db.Table(db.NamingStrategy.TableName("patients")).Create(&patient).Error; err != nil {
+	if err := db.Create(&patient).Error; err != nil {
 		t.Fatal(err)
 	}
 
