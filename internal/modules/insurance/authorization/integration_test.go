@@ -20,6 +20,7 @@ import (
 
 type authorizationConsultation struct {
 	ID, PatientID               uint
+	ServiceID                   *uint  `gorm:"index"`
 	Service, DoctorName, Status string
 	CreatedAt                   time.Time
 }
@@ -35,6 +36,8 @@ func (authorizationMedicalExam) TableName() string { return "medical_exams" }
 
 type authorizationLaboratoryOrder struct {
 	ID, PatientID, MedicalExamID uint
+	ConsultationID               uint  `gorm:"not null;index"`
+	RequestingServiceID          *uint `gorm:"index"`
 	RequestNumber, Status        string
 	CreatedAt                    time.Time
 }
@@ -43,6 +46,8 @@ func (authorizationLaboratoryOrder) TableName() string { return "laboratory_orde
 
 type authorizationImagingOrder struct {
 	ID, PatientID, MedicalExamID  uint
+	ConsultationID                uint  `gorm:"not null;index"`
+	RequestingServiceID           *uint `gorm:"index"`
 	OrderNumber, Modality, Status string
 	CreatedAt                     time.Time
 }
@@ -51,6 +56,7 @@ func (authorizationImagingOrder) TableName() string { return "imaging_orders" }
 
 type authorizationHospitalization struct {
 	ID, PatientID                                        uint
+	ServiceID                                            *uint `gorm:"index"`
 	AdmissionNumber, Department, AdmissionReason, Status string
 	CreatedAt                                            time.Time
 }
@@ -109,9 +115,9 @@ func TestEligibleActsCoversSupportedClinicalSources(t *testing.T) {
 	f := seedAuthorization(t, db)
 	exam := authorizationMedicalExam{Name: "Radiographie thoracique", Category: "Imagerie"}
 	db.Create(&exam)
-	lab := authorizationLaboratoryOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, RequestNumber: "LAB-1", Status: "VALIDATED"}
+	lab := authorizationLaboratoryOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID, RequestNumber: "LAB-1", Status: "VALIDATED"}
 	db.Create(&lab)
-	img := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, OrderNumber: "IMG-1", Modality: "XR", Status: "VALIDATED"}
+	img := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID, OrderNumber: "IMG-1", Modality: "XR", Status: "VALIDATED"}
 	db.Create(&img)
 	hosp := authorizationHospitalization{PatientID: f.patient.ID, AdmissionNumber: "HOSP-1", Department: "Urgences", AdmissionReason: "Test", Status: "DISCHARGED"}
 	db.Create(&hosp)
@@ -146,13 +152,16 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if primary.ServiceID != nil || primary.Service != "Médecine" {
+		t.Fatalf("nullable ServiceID fallback: ServiceID=%v Service=%q", primary.ServiceID, primary.Service)
+	}
 	direct, err := s.FindAuthorizationForAct(f.patient.ID, f.coverage.ID, "CONSULTATION", f.act.ID)
 	if err != nil || direct.MatchType != "DIRECT" || direct.Authorization.ID != primary.ID {
 		t.Fatalf("direct=%#v err=%v", direct, err)
 	}
 	exam := authorizationMedicalExam{Name: "Radiographie thoracique"}
 	db.Create(&exam)
-	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID}
+	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID}
 	db.Create(&imaging)
 	none, err := s.FindAuthorizationForAct(f.patient.ID, f.coverage.ID, "IMAGING", imaging.ID)
 	if err != nil || none.MatchType != "NONE" {
@@ -170,7 +179,7 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 	if err != nil || again.ID != linked.ID {
 		t.Fatalf("idempotent=%#v err=%v", again, err)
 	}
-	foreignImaging := authorizationImagingOrder{PatientID: f.other.ID, MedicalExamID: exam.ID}
+	foreignImaging := authorizationImagingOrder{PatientID: f.other.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID}
 	db.Create(&foreignImaging)
 	if _, err = s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: foreignImaging.ID}, 72); !IsConflict(err) {
 		t.Fatalf("foreign act=%v", err)
@@ -196,7 +205,7 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	concurrentImaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID}
+	concurrentImaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID}
 	db.Create(&concurrentImaging)
 	results := make(chan error, 2)
 	var wg sync.WaitGroup
@@ -240,7 +249,7 @@ func TestCreateAuthorizationWithCoveredActsIsAtomic(t *testing.T) {
 	f := seedAuthorization(t, db)
 	exam := authorizationMedicalExam{Name: "Scanner multi-actes", Category: "Imagerie"}
 	db.Create(&exam)
-	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID}
+	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID}
 	db.Create(&imaging)
 	amount := 42000.0
 	created, err := NewService(db).Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: f.act.ID, RequestedAmount: &amount, CoveredActs: []ActRequest{{ReferenceType: "IMAGING", ReferenceID: imaging.ID}}}, 88)
@@ -250,7 +259,7 @@ func TestCreateAuthorizationWithCoveredActsIsAtomic(t *testing.T) {
 	if len(created.CoveredActs) != 1 || created.CoveredActs[0].ReferenceID != imaging.ID || created.CoveredActs[0].CreatedBy != 88 {
 		t.Fatalf("covered acts=%#v", created.CoveredActs)
 	}
-	foreign := authorizationImagingOrder{PatientID: f.other.ID, MedicalExamID: exam.ID}
+	foreign := authorizationImagingOrder{PatientID: f.other.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID}
 	db.Create(&foreign)
 	otherAct := authorizationConsultation{PatientID: f.patient.ID, Service: "ORL"}
 	db.Create(&otherAct)
@@ -271,8 +280,8 @@ func TestAuthorizationUsesClinicalExamLabels(t *testing.T) {
 	examImaging := authorizationMedicalExam{Name: "Radiographie thoracique"}
 	db.Create(&examLab)
 	db.Create(&examImaging)
-	lab := authorizationLaboratoryOrder{PatientID: f.patient.ID, MedicalExamID: examLab.ID}
-	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: examImaging.ID}
+	lab := authorizationLaboratoryOrder{PatientID: f.patient.ID, MedicalExamID: examLab.ID, ConsultationID: f.act.ID}
+	imaging := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: examImaging.ID, ConsultationID: f.act.ID}
 	db.Create(&lab)
 	db.Create(&imaging)
 	s := NewService(db)
@@ -287,6 +296,12 @@ func TestAuthorizationUsesClinicalExamLabels(t *testing.T) {
 	}
 	if labAuthorization.ReferenceLabel != examLab.Name || imagingAuthorization.ReferenceLabel != examImaging.Name {
 		t.Fatalf("labels: laboratory=%q imaging=%q", labAuthorization.ReferenceLabel, imagingAuthorization.ReferenceLabel)
+	}
+	if labAuthorization.Service != "Médecine" || imagingAuthorization.Service != "Médecine" {
+		t.Fatalf("service fallback: laboratory=%q imaging=%q", labAuthorization.Service, imagingAuthorization.Service)
+	}
+	if labAuthorization.ServiceID != nil || imagingAuthorization.ServiceID != nil {
+		t.Fatalf("expected nil RequestingServiceID fallback: lab=%v img=%v", labAuthorization.ServiceID, imagingAuthorization.ServiceID)
 	}
 }
 
