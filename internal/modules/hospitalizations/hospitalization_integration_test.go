@@ -17,6 +17,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
+	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -60,11 +61,41 @@ func hospitalizationDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// seedBedsCapableService creates the minimal Department → active SupportsBeds Service
+// hierarchy required by production CreateRoom authority in the ephemeral schema.
+func seedBedsCapableService(t *testing.T, db *gorm.DB) organization.Service {
+	t.Helper()
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	dept := organization.Department{
+		Code: "HD-" + suffix, Name: "Pôle hospitalisation test", Active: true, CreatedBy: 1, UpdatedBy: 1,
+	}
+	if err := db.Create(&dept).Error; err != nil {
+		t.Fatalf("seed department: %v", err)
+	}
+	svc := organization.Service{
+		DepartmentID: dept.ID, Code: "HB-" + suffix, Name: "Service lits test", ShortName: "LITS",
+		ServiceType: organization.TypeClinical, Active: true, Clinical: true, SupportsBeds: true,
+		CreatedBy: 1, UpdatedBy: 1,
+	}
+	if err := db.Create(&svc).Error; err != nil {
+		t.Fatalf("seed beds service: %v", err)
+	}
+	return svc
+}
+
 func seedRoomAndBeds(t *testing.T, db *gorm.DB) (Room, Bed, Bed) {
 	t.Helper()
-	room := Room{Code: "R-" + fmt.Sprint(time.Now().UnixNano()), Name: "Chambre test", Department: "Médecine", Floor: "1", RoomType: "STANDARD", IsActive: true}
+	svc := seedBedsCapableService(t, db)
+	serviceID := svc.ID
+	room := Room{
+		Code: "R-" + fmt.Sprint(time.Now().UnixNano()), Name: "Chambre test", Department: svc.Name,
+		ServiceID: &serviceID, Floor: "1", RoomType: "STANDARD", IsActive: true,
+	}
 	if err := db.Create(&room).Error; err != nil {
 		t.Fatal(err)
+	}
+	if room.ServiceID == nil || *room.ServiceID != svc.ID {
+		t.Fatalf("seedRoomAndBeds ServiceID invariant: got %#v want %d", room.ServiceID, svc.ID)
 	}
 	first := Bed{RoomID: room.ID, Code: room.Code + "-A", Label: "Lit A", BedType: "STANDARD", Status: BedAvailable, IsActive: true}
 	second := Bed{RoomID: room.ID, Code: room.Code + "-B", Label: "Lit B", BedType: "STANDARD", Status: BedAvailable, IsActive: true}
@@ -199,14 +230,16 @@ func TestDischargeReleasesOccupiedBedAndAdmissionWithoutBedIsAllowed(t *testing.
 func TestRoomAdministrationRulesAndCounts(t *testing.T) {
 	db := hospitalizationDB(t)
 	service := NewService(db, NewRepository(db))
-	room, err := service.CreateRoom(CreateRoomRequest{Code: " ADMIN-R1 ", Name: " Chambre 1 ", Department: " Médecine ", RoomType: " STANDARD "}, 70)
+	bedsService := seedBedsCapableService(t, db)
+	serviceID := bedsService.ID
+	room, err := service.CreateRoom(CreateRoomRequest{Code: " ADMIN-R1 ", Name: " Chambre 1 ", Department: " Médecine ", ServiceID: &serviceID, RoomType: " STANDARD "}, 70)
 	if err != nil || room.Code != "ADMIN-R1" || room.CreatedBy == nil || *room.CreatedBy != 70 {
 		t.Fatalf("création chambre: %#v %v", room, err)
 	}
-	if _, err := service.CreateRoom(CreateRoomRequest{Code: "ADMIN-R1", Name: "Doublon", Department: "Médecine", RoomType: "STANDARD"}, 70); err == nil {
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "ADMIN-R1", Name: "Doublon", Department: "Médecine", ServiceID: &serviceID, RoomType: "STANDARD"}, 70); err == nil {
 		t.Fatal("code chambre dupliqué accepté")
 	}
-	if _, err := service.CreateRoom(CreateRoomRequest{Code: "   ", Name: "Vide", Department: "Médecine", RoomType: "STANDARD"}, 70); err == nil {
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "   ", Name: "Vide", Department: "Médecine", ServiceID: &serviceID, RoomType: "STANDARD"}, 70); err == nil {
 		t.Fatal("code chambre vide accepté")
 	}
 	newCode, newName := "ADMIN-R1B", "Chambre renommée"
@@ -253,7 +286,7 @@ func TestBedAdministrationSafeTransitions(t *testing.T) {
 	db := hospitalizationDB(t)
 	service := NewService(db, NewRepository(db))
 	room, first, _ := seedRoomAndBeds(t, db)
-	otherRoom, err := service.CreateRoom(CreateRoomRequest{Code: "ADMIN-R2", Name: "Autre chambre", Department: "Médecine", RoomType: "STANDARD"}, 80)
+	otherRoom, err := service.CreateRoom(CreateRoomRequest{Code: "ADMIN-R2", Name: "Autre chambre", Department: "Médecine", ServiceID: room.ServiceID, RoomType: "STANDARD"}, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,12 +351,15 @@ func TestBedAdministrationSafeTransitions(t *testing.T) {
 
 func TestBedAdministrationHandlerUsesJWTAuthor(t *testing.T) {
 	db := hospitalizationDB(t)
-	_, _, _ = seedRoomAndBeds(t, db)
+	seeded, _, _ := seedRoomAndBeds(t, db)
 	handler := NewBedHandler(NewService(db, NewRepository(db)))
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.POST("/rooms", func(c *gin.Context) { rbac.SetUser(c, 91, "admin", []string{"rooms.manage"}); c.Next() }, handler.CreateRoom)
-	body := bytes.NewBufferString(`{"code":"JWT-ROOM","name":"JWT","department":"Test","roomType":"STANDARD","createdBy":999}`)
+	body := bytes.NewBufferString(fmt.Sprintf(
+		`{"code":"JWT-ROOM","name":"JWT","department":"Test","roomType":"STANDARD","serviceId":%d,"createdBy":999}`,
+		*seeded.ServiceID,
+	))
 	request := httptest.NewRequest(http.MethodPost, "/rooms", body)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -337,6 +373,63 @@ func TestBedAdministrationHandlerUsesJWTAuthor(t *testing.T) {
 	}
 	if room.CreatedBy == nil || *room.CreatedBy != 91 {
 		t.Fatalf("auteur client accepté: %#v", room)
+	}
+}
+
+func TestCreateRoomRequiresBedsCapableService(t *testing.T) {
+	db := hospitalizationDB(t)
+	service := NewService(db, NewRepository(db))
+	ok := seedBedsCapableService(t, db)
+
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "SVC-NIL", Name: "N", RoomType: "STANDARD"}, 1); err == nil {
+		t.Fatal("nil ServiceID accepté")
+	}
+
+	unknown := uint(999999)
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "SVC-UNK", Name: "N", RoomType: "STANDARD", ServiceID: &unknown}, 1); err == nil {
+		t.Fatal("ServiceID inconnu accepté")
+	}
+
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	noBeds := organization.Service{
+		DepartmentID: ok.DepartmentID, Code: "NB-" + suffix, Name: "Sans lits", ServiceType: organization.TypeClinical,
+		Active: true, Clinical: true, SupportsConsultation: true, CreatedBy: 1, UpdatedBy: 1,
+	}
+	if err := db.Create(&noBeds).Error; err != nil {
+		t.Fatal(err)
+	}
+	noBedsID := noBeds.ID
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "SVC-NB", Name: "N", RoomType: "STANDARD", ServiceID: &noBedsID}, 1); err == nil {
+		t.Fatal("service sans SupportsBeds accepté")
+	}
+
+	inactive := organization.Service{
+		DepartmentID: ok.DepartmentID, Code: "IN-" + suffix, Name: "Inactif lits", ServiceType: organization.TypeClinical,
+		Active: true, Clinical: true, SupportsBeds: true, CreatedBy: 1, UpdatedBy: 1,
+	}
+	if err := db.Create(&inactive).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&inactive).Update("active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	inactiveID := inactive.ID
+	if _, err := service.CreateRoom(CreateRoomRequest{Code: "SVC-IN", Name: "N", RoomType: "STANDARD", ServiceID: &inactiveID}, 1); err == nil {
+		t.Fatal("service inactif accepté")
+	}
+
+	okID := ok.ID
+	room, err := service.CreateRoom(CreateRoomRequest{
+		Code: "SVC-OK", Name: "Valide", Department: "IGNORED", RoomType: "STANDARD", ServiceID: &okID,
+	}, 2)
+	if err != nil {
+		t.Fatalf("service beds valide rejeté: %v", err)
+	}
+	if room.ServiceID == nil || *room.ServiceID != ok.ID {
+		t.Fatalf("ServiceID non persisté: %#v", room.ServiceID)
+	}
+	if room.Department != ok.Name {
+		t.Fatalf("Department non dérivé du service: got %q want %q", room.Department, ok.Name)
 	}
 }
 
