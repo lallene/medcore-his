@@ -99,6 +99,8 @@ type UpdateConsultationStatusRequest struct {
 }
 
 type UpdateConsultationRequest struct {
+	ExpectedVersion int `json:"expectedVersion" binding:"required"`
+
 	DoctorName *string `json:"doctorName"`
 	Service    *string `json:"service"`
 	ServiceID  *uint   `json:"serviceId"`

@@ -24,6 +24,7 @@ type Consultation struct {
 	ServiceID           *uint                 `gorm:"index" json:"serviceId"`
 	OrganizationService *organization.Service `gorm:"foreignKey:ServiceID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"organizationService,omitempty"`
 	Status              string                `gorm:"not null;default:draft;index" json:"status"`
+	Version             int                   `gorm:"not null;default:1" json:"version"`
 	StartedAt           *time.Time            `json:"startedAt"`
 	CompletedAt         *time.Time            `json:"completedAt"`
 	CancelledAt         *time.Time            `json:"cancelledAt"`

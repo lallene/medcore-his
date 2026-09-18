@@ -25,6 +25,10 @@ var (
 		"la consultation est verrouillée",
 	)
 
+	ErrConsultationVersionConflict = errors.New(
+		"état de la consultation obsolète",
+	)
+
 	ErrCancellationReasonRequired = errors.New(
 		"le motif d'annulation est obligatoire",
 	)
@@ -752,9 +756,14 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 		gynecoObstetricHistories = &items
 	}
 
+	if req.ExpectedVersion < 1 {
+		return nil, ErrConsultationVersionConflict
+	}
+
 	err = s.repo.UpdateConsultation(
 		id,
 		authorID,
+		req.ExpectedVersion,
 		updates,
 		req.Vitals,
 		reasons,

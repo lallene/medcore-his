@@ -468,7 +468,8 @@ func (h *Handler) UpdateConsultation(c *gin.Context) {
 				"error": err.Error(),
 			})
 
-		case errors.Is(err, ErrConsultationLocked):
+		case errors.Is(err, ErrConsultationLocked),
+			errors.Is(err, ErrConsultationVersionConflict):
 			c.JSON(http.StatusConflict, gin.H{
 				"error": err.Error(),
 			})

@@ -3,6 +3,7 @@ package consultations
 import (
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Repository struct {
@@ -238,6 +239,7 @@ func (r *Repository) UpdateStatus(
 func (r *Repository) UpdateConsultation(
 	id uint,
 	authorID uint,
+	expectedVersion int,
 	updates map[string]interface{},
 	vitals *ConsultationVitalsRequest,
 	reasons []ConsultationReason,
@@ -254,14 +256,40 @@ func (r *Repository) UpdateConsultation(
 	gynecoObstetricHistories *[]ConsultationGynecoObstetricHistory,
 ) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		var locked Consultation
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "status", "version").
+			First(&locked, id).Error; err != nil {
+			return err
+		}
 
-		if len(updates) > 0 {
-			if err := tx.
-				Model(&Consultation{}).
-				Where("id = ?", id).
-				Updates(updates).Error; err != nil {
-				return err
-			}
+		if locked.Status == ConsultationStatusCompleted ||
+			locked.Status == ConsultationStatusCancelled {
+			return ErrConsultationLocked
+		}
+
+		if expectedVersion < 1 || locked.Version != expectedVersion {
+			return ErrConsultationVersionConflict
+		}
+
+		if updates == nil {
+			updates = make(map[string]interface{})
+		}
+
+		updates["version"] = gorm.Expr("version + 1")
+
+		result := tx.
+			Model(&Consultation{}).
+			Where("id = ? AND version = ?", id, expectedVersion).
+			Updates(updates)
+
+		if result.Error != nil {
+			return result.Error
+		}
+
+		if result.RowsAffected != 1 {
+			return ErrConsultationVersionConflict
 		}
 
 		if vitals != nil {

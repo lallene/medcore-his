@@ -1,14 +1,19 @@
 package consultations
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
@@ -82,11 +87,17 @@ func TestDispensedPrescriptionUpdateGuardsAndRollback(t *testing.T) {
 	}
 	repo := NewRepository(db)
 	update := func(quantity float64, presentation *uint, include bool, diagnosis string) error {
+		var current Consultation
+		if err := db.Select("id", "version").First(&current, c.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+
 		lines := []ConsultationPrescription{{ID: p2.ID, ConsultationID: c.ID, PresentationID: p2.PresentationID, MedicationName: p2.MedicationName, Quantity: p2.Quantity}}
 		if include {
 			lines = append(lines, ConsultationPrescription{ID: p1.ID, ConsultationID: c.ID, PresentationID: presentation, MedicationName: p1.MedicationName, Quantity: quantity})
 		}
-		return repo.UpdateConsultation(c.ID, 1, map[string]interface{}{"diagnosis": diagnosis}, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil)
+
+		return repo.UpdateConsultation(c.ID, 1, current.Version, map[string]interface{}{"diagnosis": diagnosis}, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil)
 	}
 	if err := update(8, &presentationA, true, "authorized-8"); err != nil {
 		t.Fatal(err)
@@ -114,8 +125,13 @@ func TestDispensedPrescriptionUpdateGuardsAndRollback(t *testing.T) {
 	if err := update(12, &presentationA, true, "invalid-complete"); !errors.Is(err, ErrDispensedPrescriptionConflict) {
 		t.Fatalf("prescription complète modifiable: %v", err)
 	}
+	var current Consultation
+	if err := db.Select("id", "version").First(&current, c.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	lines := []ConsultationPrescription{{ID: p1.ID, ConsultationID: c.ID, PresentationID: &presentationA, MedicationName: p1.MedicationName, Quantity: 4, Instructions: "clinique modifiée"}, {ID: p2.ID, ConsultationID: c.ID, PresentationID: p2.PresentationID, MedicationName: p2.MedicationName, Quantity: p2.Quantity}}
-	if err := repo.UpdateConsultation(c.ID, 1, nil, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil); err != nil {
+	if err := repo.UpdateConsultation(c.ID, 1, current.Version, nil, nil, nil, false, nil, false, lines, true, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("champ clinique refusé: %v", err)
 	}
 }
@@ -336,4 +352,326 @@ func TestSOAPAndSpecialtyAreImmutableAfterConsultationTerminalStatus(t *testing.
 			t.Fatalf("Specialty créé malgré consultation cancelled: %d", specialtyCount)
 		}
 	})
+}
+
+func TestUpdateConsultationRejectsStaleExpectedVersion(t *testing.T) {
+	db := consultationIntegrationDB(t)
+
+	consultation := Consultation{
+		PatientID:  1,
+		DoctorName: "Dr OCC",
+		Service:    "Médecine",
+		Status:     ConsultationStatusDraft,
+		Diagnosis:  "initial",
+	}
+
+	if err := db.Create(&consultation).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(NewRepository(db), nil)
+
+	firstDiagnosis := "diagnostic-client-a"
+	first, err := service.UpdateConsultation(
+		consultation.ID,
+		UpdateConsultationRequest{
+			ExpectedVersion: 1,
+			Diagnosis:       &firstDiagnosis,
+		},
+		1,
+	)
+	if err != nil {
+		t.Fatalf("première mise à jour refusée: %v", err)
+	}
+
+	if first.Diagnosis != firstDiagnosis {
+		t.Fatalf(
+			"première mise à jour non persistée: got=%q want=%q",
+			first.Diagnosis,
+			firstDiagnosis,
+		)
+	}
+
+	staleDiagnosis := "diagnostic-client-b"
+	_, err = service.UpdateConsultation(
+		consultation.ID,
+		UpdateConsultationRequest{
+			ExpectedVersion: 1,
+			Diagnosis:       &staleDiagnosis,
+		},
+		2,
+	)
+
+	if !errors.Is(err, ErrConsultationVersionConflict) {
+		t.Fatalf(
+			"mise à jour obsolète acceptée ou mauvaise erreur: got=%v want=%v",
+			err,
+			ErrConsultationVersionConflict,
+		)
+	}
+
+	var persisted Consultation
+	if err := db.First(&persisted, consultation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if persisted.Diagnosis != firstDiagnosis {
+		t.Fatalf(
+			"lost update détecté: got=%q want=%q",
+			persisted.Diagnosis,
+			firstDiagnosis,
+		)
+	}
+
+	if persisted.Version != 2 {
+		t.Fatalf(
+			"version inattendue après conflit: got=%d want=2",
+			persisted.Version,
+		)
+	}
+}
+
+func TestUpdateConsultationChildOnlyMutationBumpsVersion(t *testing.T) {
+	db := consultationIntegrationDB(t)
+
+	consultation := Consultation{
+		PatientID:  1,
+		DoctorName: "Dr OCC",
+		Service:    "Médecine",
+		Status:     ConsultationStatusDraft,
+		Diagnosis:  "initial",
+	}
+	if err := db.Create(&consultation).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	initialTemperature := 36.5
+	vitals := ConsultationVitals{
+		ConsultationID: consultation.ID,
+		Temperature:    &initialTemperature,
+	}
+	if err := db.Create(&vitals).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(NewRepository(db), nil)
+
+	updatedTemperature := 38.2
+	updated, err := service.UpdateConsultation(
+		consultation.ID,
+		UpdateConsultationRequest{
+			ExpectedVersion: 1,
+			Vitals: &ConsultationVitalsRequest{
+				Temperature: &updatedTemperature,
+			},
+		},
+		1,
+	)
+	if err != nil {
+		t.Fatalf("mutation enfant refusée: %v", err)
+	}
+
+	if updated.Version != 2 {
+		t.Fatalf(
+			"version non incrémentée après mutation enfant: got=%d want=2",
+			updated.Version,
+		)
+	}
+
+	var persistedVitals ConsultationVitals
+	if err := db.
+		Where("consultation_id = ?", consultation.ID).
+		First(&persistedVitals).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if persistedVitals.Temperature == nil ||
+		*persistedVitals.Temperature != updatedTemperature {
+		t.Fatalf(
+			"température non persistée: got=%v want=%v",
+			persistedVitals.Temperature,
+			updatedTemperature,
+		)
+	}
+
+	var persisted Consultation
+	if err := db.First(&persisted, consultation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if persisted.Version != 2 {
+		t.Fatalf(
+			"version persistée incorrecte: got=%d want=2",
+			persisted.Version,
+		)
+	}
+}
+
+func TestUpdateConsultationChildFailureRollsBackVersion(t *testing.T) {
+	db := consultationIntegrationDB(t)
+
+	consultation := Consultation{
+		PatientID:  1,
+		DoctorName: "Dr OCC",
+		Service:    "Médecine",
+		Status:     ConsultationStatusDraft,
+		Diagnosis:  "initial",
+	}
+	if err := db.Create(&consultation).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewRepository(db)
+
+	err := repo.UpdateConsultation(
+		consultation.ID,
+		1,
+		1,
+		map[string]interface{}{
+			"diagnosis": "ne doit pas être persisté",
+		},
+		nil,
+		nil,
+		false,
+		nil,
+		false,
+		[]ConsultationPrescription{
+			{
+				ID:             999999,
+				ConsultationID: consultation.ID,
+				MedicationName: "Prescription inexistante",
+				Quantity:       1,
+			},
+		},
+		true,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if !errors.Is(err, ErrDispensedPrescriptionConflict) {
+		t.Fatalf(
+			"erreur enfant inattendue: got=%v want=%v",
+			err,
+			ErrDispensedPrescriptionConflict,
+		)
+	}
+
+	var persisted Consultation
+	if err := db.First(&persisted, consultation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if persisted.Version != 1 {
+		t.Fatalf(
+			"version non rollbackée après erreur enfant: got=%d want=1",
+			persisted.Version,
+		)
+	}
+
+	if persisted.Diagnosis != "initial" {
+		t.Fatalf(
+			"mutation scalaire non rollbackée: got=%q want=%q",
+			persisted.Diagnosis,
+			"initial",
+		)
+	}
+}
+
+func TestUpdateConsultationHTTPReturnsConflictForStaleExpectedVersion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := consultationIntegrationDB(t)
+
+	consultation := Consultation{
+		PatientID:  1,
+		DoctorName: "Dr OCC HTTP",
+		Service:    "Médecine",
+		Status:     ConsultationStatusDraft,
+		Diagnosis:  "version-courante",
+	}
+
+	if err := db.Create(&consultation).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Simule une première modification ayant déjà consommé la version 1.
+	if err := db.Model(&Consultation{}).
+		Where("id = ?", consultation.ID).
+		Updates(map[string]interface{}{
+			"diagnosis": "modification-déjà-persistée",
+			"version":   2,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(NewRepository(db), nil)
+	handler := NewHandler(service)
+
+	body := []byte(`{
+		"expectedVersion": 1,
+		"diagnosis": "modification-obsolète"
+	}`)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("/api/consultations/%d", consultation.ID),
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	ctx.Request = req
+	ctx.Params = gin.Params{
+		{Key: "id", Value: fmt.Sprintf("%d", consultation.ID)},
+	}
+	ctx.Set(rbac.ContextUserID, uint(1))
+
+	handler.UpdateConsultation(ctx)
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf(
+			"status HTTP inattendu: got=%d body=%s want=%d",
+			recorder.Code,
+			recorder.Body.String(),
+			http.StatusConflict,
+		)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("réponse JSON invalide: %v", err)
+	}
+
+	if response["error"] != ErrConsultationVersionConflict.Error() {
+		t.Fatalf(
+			"erreur HTTP inattendue: got=%v want=%q",
+			response["error"],
+			ErrConsultationVersionConflict.Error(),
+		)
+	}
+
+	var persisted Consultation
+	if err := db.First(&persisted, consultation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if persisted.Version != 2 {
+		t.Fatalf(
+			"version modifiée malgré conflit HTTP: got=%d want=2",
+			persisted.Version,
+		)
+	}
+
+	if persisted.Diagnosis != "modification-déjà-persistée" {
+		t.Fatalf(
+			"lost update après conflit HTTP: got=%q",
+			persisted.Diagnosis,
+		)
+	}
 }
