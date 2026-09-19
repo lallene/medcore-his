@@ -93,7 +93,8 @@ func (s *Service) EnterResults(id uint, a Access, req EnterResultsRequest) (*Ord
 		for _, in := range req.Results {
 			flag, numeric := computeFlag(in)
 			r := Result{OrderID: o.ID, Parameter: in.Parameter, Value: in.Value, NumericValue: numeric, Unit: in.Unit, ReferenceMin: in.ReferenceMin, ReferenceMax: in.ReferenceMax, ReferenceText: in.ReferenceText, Flag: flag, Comment: in.Comment, EnteredBy: a.UserID}
-			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "order_id"}, {Name: "parameter"}}, DoUpdates: clause.AssignmentColumns([]string{"value", "numeric_value", "unit", "reference_min", "reference_max", "reference_text", "flag", "comment", "entered_by", "updated_at"})}).Create(&r).Error; err != nil {
+			// AUTH-01c: preserve original EnteredBy on correction; modifier via order.UpdatedBy + lab_result_entered timeline.
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "order_id"}, {Name: "parameter"}}, DoUpdates: clause.AssignmentColumns([]string{"value", "numeric_value", "unit", "reference_min", "reference_max", "reference_text", "flag", "comment", "updated_at"})}).Create(&r).Error; err != nil {
 				return err
 			}
 			if flag == "CRITICAL" && o.MedicalRecordID != nil {

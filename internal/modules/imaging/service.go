@@ -86,7 +86,8 @@ func (s *Service) SaveReport(id uint, a Access, req ReportRequest) (*Order, erro
 		}
 		now := time.Now()
 		report := Report{OrderID: o.ID, ClinicalIndication: req.ClinicalIndication, Technique: req.Technique, Findings: req.Findings, Conclusion: req.Conclusion, Recommendation: req.Recommendation, DocumentURL: req.DocumentURL, DraftedBy: a.UserID, DraftedAt: now}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "order_id"}}, DoUpdates: clause.AssignmentColumns([]string{"clinical_indication", "technique", "findings", "conclusion", "recommendation", "document_url", "drafted_by", "drafted_at", "updated_at"})}).Create(&report).Error; err != nil {
+		// AUTH-01d: preserve original DraftedBy on correction; modifier via order.UpdatedBy + imaging_report_drafted timeline.
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "order_id"}}, DoUpdates: clause.AssignmentColumns([]string{"clinical_indication", "technique", "findings", "conclusion", "recommendation", "document_url", "drafted_at", "updated_at"})}).Create(&report).Error; err != nil {
 			return err
 		}
 		return s.updateAndEvent(tx, o, map[string]interface{}{"status": StatusReportDrafted, "updated_by": a.UserID}, "imaging_report_drafted", "Compte rendu d’imagerie rédigé", o.OrderNumber, a.UserID)

@@ -320,3 +320,57 @@ func TestPostgresImagingExecutingServiceIsolationF2408(t *testing.T) {
 		t.Fatalf("same-service Cancel: %#v %v", cancelled, cancelAErr)
 	}
 }
+
+// LOT 25E-3 AUTH-01d: A drafts, B corrects, DraftedBy stays A; timeline + order.UpdatedBy attribute B; C validates.
+func TestImagingReportCorrectionPreservesDraftedBy(t *testing.T) {
+	db := imagingDB(t)
+	s, id := seedImagingOrder(t, db)
+	const drafterA, editorB, validatorC uint = 83, 88, 84
+	scheduled := time.Now().Add(2 * time.Hour)
+	if _, e := s.Schedule(id, testAccess(81), ScheduleRequest{ScheduledAt: scheduled}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Start(id, testAccess(82), StartRequest{}); e != nil {
+		t.Fatal(e)
+	}
+	o, e := s.SaveReport(id, testAccess(drafterA), ReportRequest{
+		ClinicalIndication: "toux", Technique: "face", Findings: "opacité", Conclusion: "pneumopathie",
+	})
+	if e != nil || o.Report == nil || o.Report.DraftedBy != drafterA {
+		t.Fatalf("brouillon initial: %#v %v", o, e)
+	}
+	reportID := o.Report.ID
+	o, e = s.SaveReport(id, testAccess(editorB), ReportRequest{
+		ClinicalIndication: "toux", Technique: "face", Findings: "opacité corrigée", Conclusion: "pneumopathie typique",
+	})
+	if e != nil || o.Report == nil {
+		t.Fatalf("correction: %#v %v", o, e)
+	}
+	if o.Report.ID != reportID {
+		t.Fatalf("identité rapport altérée: got %d want %d", o.Report.ID, reportID)
+	}
+	if o.Report.Findings != "opacité corrigée" || o.Report.Conclusion != "pneumopathie typique" {
+		t.Fatalf("contenu non corrigé: %#v", o.Report)
+	}
+	if o.Report.DraftedBy != drafterA {
+		t.Fatalf("DraftedBy overwritten: got %d want %d", o.Report.DraftedBy, drafterA)
+	}
+	if o.UpdatedBy != editorB {
+		t.Fatalf("order UpdatedBy=%d want %d", o.UpdatedBy, editorB)
+	}
+	var correction medical_records.MedicalTimelineEvent
+	if e := db.Where("event_type=? AND reference_id=? AND created_by=?", "imaging_report_drafted", id, editorB).
+		Order("id DESC").First(&correction).Error; e != nil {
+		t.Fatalf("timeline éditeur absente: %v", e)
+	}
+	o, e = s.Validate(id, testAccess(validatorC))
+	if e != nil || o.Status != StatusValidated || o.Report == nil || o.Report.ValidatedBy == nil || *o.Report.ValidatedBy != validatorC {
+		t.Fatalf("validation: %#v %v", o, e)
+	}
+	if o.Report.DraftedBy != drafterA {
+		t.Fatalf("DraftedBy after validate: got %d want %d", o.Report.DraftedBy, drafterA)
+	}
+	if _, e = s.SaveReport(id, testAccess(999), ReportRequest{Findings: "fraude", Conclusion: "fraude"}); e == nil {
+		t.Fatal("édition après validation acceptée")
+	}
+}

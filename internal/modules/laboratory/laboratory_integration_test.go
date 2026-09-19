@@ -347,3 +347,63 @@ func TestPostgresLabExecutingServiceIsolationF2408(t *testing.T) {
 		t.Fatalf("same-service Cancel: %#v %v", cancelled, cancelAErr)
 	}
 }
+
+// LOT 25E-3 AUTH-01c: A enters, B corrects, EnteredBy stays A; timeline + order.UpdatedBy attribute B; C validates.
+func TestLaboratoryResultCorrectionPreservesEnteredBy(t *testing.T) {
+	db := laboratoryDB(t)
+	s, id := seedOrder(t, db)
+	const entererA, correctorB, validatorC uint = 83, 88, 84
+	if _, e := s.PrepareSample(id, testAccess(80)); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Collect(id, testAccess(81), CollectRequest{SampleType: "Sang"}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Start(id, testAccess(82)); e != nil {
+		t.Fatal(e)
+	}
+	o, e := s.EnterResults(id, testAccess(entererA), EnterResultsRequest{Results: []ResultInput{{Parameter: "Hb", Value: "8", Unit: "g/dL"}}})
+	if e != nil || len(o.Results) != 1 || o.Results[0].EnteredBy != entererA {
+		t.Fatalf("saisie initiale: %#v %v", o, e)
+	}
+	resultID := o.Results[0].ID
+	o, e = s.EnterResults(id, testAccess(correctorB), EnterResultsRequest{Results: []ResultInput{{Parameter: "Hb", Value: "9.5", Unit: "g/dL"}}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	var hb Result
+	for _, r := range o.Results {
+		if r.Parameter == "Hb" {
+			hb = r
+		}
+	}
+	if hb.ID != resultID {
+		t.Fatalf("identité résultat altérée: got %d want %d", hb.ID, resultID)
+	}
+	if hb.Value != "9.5" {
+		t.Fatalf("valeur non corrigée: %q", hb.Value)
+	}
+	if hb.EnteredBy != entererA {
+		t.Fatalf("EnteredBy overwritten: got %d want %d", hb.EnteredBy, entererA)
+	}
+	if o.UpdatedBy != correctorB {
+		t.Fatalf("order UpdatedBy=%d want %d", o.UpdatedBy, correctorB)
+	}
+	var correction medical_records.MedicalTimelineEvent
+	if e := db.Where("event_type=? AND reference_id=? AND created_by=?", "lab_result_entered", id, correctorB).
+		Order("id DESC").First(&correction).Error; e != nil {
+		t.Fatalf("timeline correcteur absente: %v", e)
+	}
+	o, e = s.Validate(id, testAccess(validatorC))
+	if e != nil || o.Status != StatusValidated || o.ValidatedBy == nil || *o.ValidatedBy != validatorC {
+		t.Fatalf("validation: %#v %v", o, e)
+	}
+	for _, r := range o.Results {
+		if r.Parameter == "Hb" && (r.EnteredBy != entererA || r.Value != "9.5") {
+			t.Fatalf("après validation: %#v", r)
+		}
+	}
+	if _, e = s.EnterResults(id, testAccess(999), EnterResultsRequest{Results: []ResultInput{{Parameter: "Hb", Value: "10"}}}); e == nil {
+		t.Fatal("édition après validation acceptée")
+	}
+}
