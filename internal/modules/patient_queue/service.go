@@ -12,9 +12,45 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type Service struct{ db *gorm.DB }
+// NotificationLifecycleConfig controls which channels receive durable lifecycle intents.
+// Default (zero value): LOG only. EMAIL is opt-in; SMS is never enabled here.
+type NotificationLifecycleConfig struct {
+	EmailEnabled bool
+}
 
-func NewService(db *gorm.DB) *Service { return &Service{db: db} }
+type Service struct {
+	db       *gorm.DB
+	notifCfg NotificationLifecycleConfig
+}
+
+// NewService constructs a queue/scheduling service with LOG-only notification lifecycle (EMAIL off).
+func NewService(db *gorm.DB) *Service {
+	return &Service{db: db}
+}
+
+// WithNotificationLifecycleConfig returns a shallow copy with the given lifecycle channel policy.
+// Does not mutate the receiver. Safe for tests and composition roots (26F-5 wires EMAIL).
+func (s *Service) WithNotificationLifecycleConfig(cfg NotificationLifecycleConfig) *Service {
+	if s == nil {
+		return NewService(nil)
+	}
+	out := *s
+	out.notifCfg = cfg
+	return &out
+}
+
+// NotificationLifecycleChannels returns the deterministic enabled lifecycle channels (defensive copy).
+func (s *Service) NotificationLifecycleChannels() []string {
+	return s.lifecycleNotificationChannels()
+}
+
+func (s *Service) lifecycleNotificationChannels() []string {
+	ch := []string{NotifChannelLog}
+	if s != nil && s.notifCfg.EmailEnabled {
+		ch = append(ch, NotifChannelEmail)
+	}
+	return ch
+}
 
 func (s *Service) has(a Access, p string) bool { return a.Has(p) }
 

@@ -16,7 +16,8 @@ func appointmentAllowsBookNotificationRepair(status string) bool {
 	return status == ApptScheduled
 }
 
-// applyBookNotificationIntentsTx enqueues BOOKED + optional REMINDER_T24H (LOG only) inside the book TX.
+// applyBookNotificationIntentsTx enqueues BOOKED + optional REMINDER_T24H for enabled
+// lifecycle channels inside the book TX.
 // Idempotent reuse of an active SCHEDULED appointment may repair missing intents.
 // Replay against CANCELLED / NO_SHOW / COMPLETED / other non-SCHEDULED rows is a no-op
 // (does not rearm CANCELLED reminders or fabricate a new BOOKED lifecycle intent).
@@ -24,32 +25,32 @@ func (s *Service) applyBookNotificationIntentsTx(tx *gorm.DB, appt Appointment, 
 	if !appointmentAllowsBookNotificationRepair(appt.Status) {
 		return nil
 	}
-	if _, err := s.enqueueLifecycleLogTx(tx, appt, NotifKindBooked, now); err != nil {
+	if err := s.enqueueLifecycleForChannelsTx(tx, appt, NotifKindBooked, now); err != nil {
 		return err
 	}
-	return s.ensureReminderT24HLogTx(tx, appt, now)
+	return s.ensureReminderT24HForChannelsTx(tx, appt, now)
 }
 
-// applyRescheduleNotificationIntentsTx suppresses the old-occurrence reminder, enqueues RESCHEDULED,
-// and ensures a reminder for the new scheduled instant (rearm if same-key CANCELLED).
+// applyRescheduleNotificationIntentsTx suppresses the old-occurrence reminder (all channels),
+// enqueues RESCHEDULED for enabled channels, and ensures reminders on the new schedule.
 func (s *Service) applyRescheduleNotificationIntentsTx(tx *gorm.DB, oldScheduledAt time.Time, appt Appointment, now time.Time) error {
 	oldKey := OccurrenceKeyFromScheduledAt(oldScheduledAt)
 	if _, err := s.suppressActiveReminderIntentsTx(tx, appt.ID, oldKey); err != nil {
 		return err
 	}
-	if _, err := s.enqueueLifecycleLogTx(tx, appt, NotifKindRescheduled, now); err != nil {
+	if err := s.enqueueLifecycleForChannelsTx(tx, appt, NotifKindRescheduled, now); err != nil {
 		return err
 	}
-	return s.ensureReminderT24HLogTx(tx, appt, now)
+	return s.ensureReminderT24HForChannelsTx(tx, appt, now)
 }
 
-// applyCancelNotificationIntentsTx suppresses active reminders and enqueues CANCELLED (LOG).
+// applyCancelNotificationIntentsTx suppresses active reminders (all channels) and enqueues
+// CANCELLED for enabled lifecycle channels.
 func (s *Service) applyCancelNotificationIntentsTx(tx *gorm.DB, appt Appointment, now time.Time) error {
 	if _, err := s.suppressActiveReminderIntentsTx(tx, appt.ID, ""); err != nil {
 		return err
 	}
-	_, err := s.enqueueLifecycleLogTx(tx, appt, NotifKindCancelled, now)
-	return err
+	return s.enqueueLifecycleForChannelsTx(tx, appt, NotifKindCancelled, now)
 }
 
 // applyNoShowNotificationSuppressTx suppresses active reminders only (no CANCELLED lifecycle intent).
@@ -58,29 +59,37 @@ func (s *Service) applyNoShowNotificationSuppressTx(tx *gorm.DB, appointmentID u
 	return err
 }
 
-func (s *Service) enqueueLifecycleLogTx(tx *gorm.DB, appt Appointment, kind string, now time.Time) (*AppointmentNotificationIntent, error) {
+// enqueueLifecycleForChannelsTx inserts one lifecycle intent per enabled channel.
+// Payload and occurrence key are built once and shared across channels.
+func (s *Service) enqueueLifecycleForChannelsTx(tx *gorm.DB, appt Appointment, kind string, now time.Time) error {
 	_, payload, err := BuildNotificationPayload(appt.ID, appt.ScheduledAt, "", "", "")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	sendAfter := now.UTC()
 	if sendAfter.IsZero() {
 		sendAfter = time.Now().UTC()
 	}
-	return s.enqueueNotificationIntentTx(tx, EnqueueNotificationIntentInput{
-		AppointmentID: appt.ID,
-		PatientID:     appt.PatientID,
-		Kind:          kind,
-		Channel:       NotifChannelLog,
-		OccurrenceKey: OccurrenceKeyFromScheduledAt(appt.ScheduledAt),
-		SendAfter:     sendAfter,
-		PayloadJSON:   payload,
-	})
+	key := OccurrenceKeyFromScheduledAt(appt.ScheduledAt)
+	for _, channel := range s.lifecycleNotificationChannels() {
+		if _, err := s.enqueueNotificationIntentTx(tx, EnqueueNotificationIntentInput{
+			AppointmentID: appt.ID,
+			PatientID:     appt.PatientID,
+			Kind:          kind,
+			Channel:       channel,
+			OccurrenceKey: key,
+			SendAfter:     sendAfter,
+			PayloadJSON:   payload,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// ensureReminderT24HLogTx enqueues or rearms REMINDER_T24H/LOG when eligible.
-// Does not reactivate SENT/FAILED/SKIPPED. Explicit CANCELLED → PENDING rearm only.
-func (s *Service) ensureReminderT24HLogTx(tx *gorm.DB, appt Appointment, now time.Time) error {
+// ensureReminderT24HForChannelsTx enqueues or rearms REMINDER_T24H per enabled channel when eligible.
+// Does not reactivate SENT/FAILED/SKIPPED. Explicit CANCELLED → PENDING rearm only (same channel).
+func (s *Service) ensureReminderT24HForChannelsTx(tx *gorm.DB, appt Appointment, now time.Time) error {
 	if !ReminderT24HEligible(appt.ScheduledAt, now) {
 		return nil
 	}
@@ -90,14 +99,29 @@ func (s *Service) ensureReminderT24HLogTx(tx *gorm.DB, appt Appointment, now tim
 	}
 	key := OccurrenceKeyFromScheduledAt(appt.ScheduledAt)
 	sendAfter := ReminderSendAfterT24H(appt.ScheduledAt)
+	for _, channel := range s.lifecycleNotificationChannels() {
+		if err := s.ensureReminderT24HChannelTx(tx, appt, channel, key, sendAfter, payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) ensureReminderT24HChannelTx(
+	tx *gorm.DB,
+	appt Appointment,
+	channel, occurrenceKey string,
+	sendAfter time.Time,
+	payloadJSON string,
+) error {
 	row, err := s.enqueueNotificationIntentTx(tx, EnqueueNotificationIntentInput{
 		AppointmentID: appt.ID,
 		PatientID:     appt.PatientID,
 		Kind:          NotifKindReminderT24H,
-		Channel:       NotifChannelLog,
-		OccurrenceKey: key,
+		Channel:       channel,
+		OccurrenceKey: occurrenceKey,
 		SendAfter:     sendAfter,
-		PayloadJSON:   payload,
+		PayloadJSON:   payloadJSON,
 	})
 	if err != nil {
 		return err
@@ -106,7 +130,7 @@ func (s *Service) ensureReminderT24HLogTx(tx *gorm.DB, appt Appointment, now tim
 	case NotifStatusPending, NotifStatusProcessing:
 		return nil
 	case NotifStatusCancelled:
-		_, err = s.rearmCancelledReminderTx(tx, appt.ID, key, sendAfter, payload)
+		_, err = s.rearmCancelledReminderTx(tx, appt.ID, channel, occurrenceKey, sendAfter, payloadJSON)
 		return err
 	case NotifStatusSent, NotifStatusFailed, NotifStatusSkipped:
 		// Terminal — do not silently reactivate.
@@ -116,7 +140,7 @@ func (s *Service) ensureReminderT24HLogTx(tx *gorm.DB, appt Appointment, now tim
 	}
 }
 
-// suppressActiveReminderIntentsTx cancels PENDING/PROCESSING REMINDER_T24H LOG intents.
+// suppressActiveReminderIntentsTx cancels PENDING/PROCESSING REMINDER_T24H intents for any channel.
 // If occurrenceKey is non-empty, only that occurrence is suppressed; otherwise all for the appointment.
 func (s *Service) suppressActiveReminderIntentsTx(tx *gorm.DB, appointmentID uint, occurrenceKey string) (int64, error) {
 	if appointmentID == 0 {
@@ -124,8 +148,8 @@ func (s *Service) suppressActiveReminderIntentsTx(tx *gorm.DB, appointmentID uin
 	}
 	now := time.Now().UTC()
 	q := tx.Model(&AppointmentNotificationIntent{}).
-		Where("appointment_id = ? AND kind = ? AND channel = ? AND status IN ?",
-			appointmentID, NotifKindReminderT24H, NotifChannelLog,
+		Where("appointment_id = ? AND kind = ? AND status IN ?",
+			appointmentID, NotifKindReminderT24H,
 			[]string{NotifStatusPending, NotifStatusProcessing})
 	if strings.TrimSpace(occurrenceKey) != "" {
 		q = q.Where("occurrence_key = ?", occurrenceKey)
@@ -142,17 +166,26 @@ func (s *Service) suppressActiveReminderIntentsTx(tx *gorm.DB, appointmentID uin
 	return res.RowsAffected, nil
 }
 
-// rearmCancelledReminderTx explicitly reactivates CANCELLED → PENDING for REMINDER_T24H/LOG
-// with the exact occurrence key. Does not reopen other kinds or terminal SENT/FAILED/SKIPPED.
+// rearmCancelledReminderTx explicitly reactivates CANCELLED → PENDING for REMINDER_T24H
+// on the given channel with the exact occurrence key.
+// Does not reopen other kinds or terminal SENT/FAILED/SKIPPED.
 func (s *Service) rearmCancelledReminderTx(
 	tx *gorm.DB,
 	appointmentID uint,
+	channel string,
 	occurrenceKey string,
 	sendAfter time.Time,
 	payloadJSON string,
 ) (*AppointmentNotificationIntent, error) {
 	if appointmentID == 0 || strings.TrimSpace(occurrenceKey) == "" {
 		return nil, coreerrors.BadRequest("appointmentId et occurrenceKey requis")
+	}
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		return nil, coreerrors.BadRequest("channel requis")
+	}
+	if err := ValidateNotificationChannel(channel); err != nil {
+		return nil, err
 	}
 	if sendAfter.IsZero() {
 		return nil, coreerrors.BadRequest("sendAfter requis")
@@ -163,7 +196,7 @@ func (s *Service) rearmCancelledReminderTx(
 	var row AppointmentNotificationIntent
 	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("appointment_id = ? AND kind = ? AND channel = ? AND occurrence_key = ?",
-			appointmentID, NotifKindReminderT24H, NotifChannelLog, occurrenceKey).
+			appointmentID, NotifKindReminderT24H, channel, occurrenceKey).
 		First(&row).Error; e != nil {
 		if e == gorm.ErrRecordNotFound {
 			return nil, coreerrors.NotFound("NotificationIntent")
@@ -198,11 +231,12 @@ func (s *Service) rearmCancelledReminderTx(
 	return &out, nil
 }
 
-// RearmCancelledReminder is the public non-TX helper for tests/tools (dedicated rearm path).
+// RearmCancelledReminder is the public non-TX helper for tests/tools (LOG channel only).
+// Preserves pre-26F-4 caller semantics; internal tx helper is channel-parameterized.
 func (s *Service) RearmCancelledReminder(appointmentID uint, occurrenceKey string, sendAfter time.Time, payloadJSON string) (*AppointmentNotificationIntent, error) {
 	var out *AppointmentNotificationIntent
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		row, e := s.rearmCancelledReminderTx(tx, appointmentID, occurrenceKey, sendAfter, payloadJSON)
+		row, e := s.rearmCancelledReminderTx(tx, appointmentID, NotifChannelLog, occurrenceKey, sendAfter, payloadJSON)
 		if e != nil {
 			return e
 		}
