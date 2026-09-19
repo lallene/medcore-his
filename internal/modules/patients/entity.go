@@ -19,6 +19,7 @@ type Patient struct {
 	Age           *int       `json:"age"`
 
 	Telephone       string `gorm:"size:50;index" json:"telephone"`
+	Email           string `gorm:"size:150" json:"email"`
 	Quartier        string `gorm:"size:150" json:"quartier"`
 	PersonneContact string `gorm:"size:150" json:"personneContact"`
 

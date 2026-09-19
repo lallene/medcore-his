@@ -22,6 +22,7 @@ func ToResponse(patient *Patient) PatientResponse {
 		Age:           patient.Age,
 
 		Telephone:       patient.Telephone,
+		Email:           patient.Email,
 		Quartier:        patient.Quartier,
 		PersonneContact: patient.PersonneContact,
 
@@ -46,6 +47,7 @@ func ToSummary(patient Patient) PatientSummary {
 		Age:           patient.Age,
 
 		Telephone:       patient.Telephone,
+		Email:           patient.Email,
 		Quartier:        patient.Quartier,
 		PersonneContact: patient.PersonneContact,
 

@@ -60,6 +60,11 @@ func (s *service) Create(req CreatePatientRequest) (*Patient, error) {
 	numeroDossier := fmt.Sprintf("PAT-%d-%04d", year, count+1)
 	codePatient := fmt.Sprintf("P%04d", count+1)
 
+	email, err := NormalizePatientEmail(req.Email)
+	if err != nil {
+		return nil, err
+	}
+
 	dateNaissance := parseDate(req.DateNaissance)
 
 	patient := &Patient{
@@ -71,6 +76,7 @@ func (s *service) Create(req CreatePatientRequest) (*Patient, error) {
 		DateNaissance:   dateNaissance,
 		Age:             req.Age,
 		Telephone:       strings.TrimSpace(req.Telephone),
+		Email:           email,
 		Quartier:        strings.TrimSpace(req.Quartier),
 		PersonneContact: strings.TrimSpace(req.PersonneContact),
 		IsAssure:        req.IsAssure,
@@ -107,6 +113,16 @@ func (s *service) Update(id uint, req UpdatePatientRequest) (*Patient, error) {
 		return nil, err
 	}
 
+	var normalizedEmail string
+	emailProvided := false
+	if req.Email != nil {
+		normalizedEmail, err = NormalizePatientEmail(*req.Email)
+		if err != nil {
+			return nil, err
+		}
+		emailProvided = true
+	}
+
 	if strings.TrimSpace(req.Nom) != "" {
 		patient.Nom = strings.ToUpper(strings.TrimSpace(req.Nom))
 	}
@@ -116,6 +132,9 @@ func (s *service) Update(id uint, req UpdatePatientRequest) (*Patient, error) {
 	patient.DateNaissance = parseDate(req.DateNaissance)
 	patient.Age = req.Age
 	patient.Telephone = strings.TrimSpace(req.Telephone)
+	if emailProvided {
+		patient.Email = normalizedEmail
+	}
 	patient.Quartier = strings.TrimSpace(req.Quartier)
 	patient.PersonneContact = strings.TrimSpace(req.PersonneContact)
 	patient.IsAssure = req.IsAssure

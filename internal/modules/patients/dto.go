@@ -9,6 +9,7 @@ type CreatePatientRequest struct {
 	DateNaissance   string  `json:"dateNaissance"`
 	Age             *int    `json:"age" binding:"omitempty,gte=0,lte=130"`
 	Telephone       string  `json:"telephone" binding:"omitempty,min=8,max=30"`
+	Email           string  `json:"email" binding:"omitempty,max=150"`
 	Quartier        string  `json:"quartier" binding:"max=150"`
 	PersonneContact string  `json:"personneContact" binding:"max=150"`
 	IsAssure        bool    `json:"isAssure"`
@@ -17,12 +18,15 @@ type CreatePatientRequest struct {
 }
 
 type UpdatePatientRequest struct {
-	Nom             string  `json:"nom"`
-	Prenoms         string  `json:"prenoms"`
-	Sexe            string  `json:"sexe"`
-	DateNaissance   string  `json:"dateNaissance"`
-	Age             *int    `json:"age"`
-	Telephone       string  `json:"telephone"`
+	Nom           string `json:"nom"`
+	Prenoms       string `json:"prenoms"`
+	Sexe          string `json:"sexe"`
+	DateNaissance string `json:"dateNaissance"`
+	Age           *int   `json:"age"`
+	Telephone     string `json:"telephone"`
+	// Email uses *string so JSON omit preserves the stored value while
+	// "email":"" / whitespace clears it (plain string cannot distinguish).
+	Email           *string `json:"email"`
 	Quartier        string  `json:"quartier"`
 	PersonneContact string  `json:"personneContact"`
 	IsAssure        bool    `json:"isAssure"`
@@ -45,6 +49,7 @@ type PatientResponse struct {
 	Age           *int       `json:"age"`
 
 	Telephone       string `json:"telephone"`
+	Email           string `json:"email"`
 	Quartier        string `json:"quartier"`
 	PersonneContact string `json:"personneContact"`
 
@@ -67,6 +72,7 @@ type PatientSummary struct {
 	Age           *int       `json:"age"`
 
 	Telephone       string `json:"telephone"`
+	Email           string `json:"email"`
 	Quartier        string `json:"quartier"`
 	PersonneContact string `json:"personneContact"`
 
