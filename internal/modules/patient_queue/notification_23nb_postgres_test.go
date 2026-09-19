@@ -172,7 +172,7 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	claimed, err := svc.ClaimDueNotificationIntents(time.Now().UTC(), 50)
+	claimed, err := svc.ClaimDueNotificationIntents(time.Now().UTC(), 50, []string{NotifChannelLog})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			rows, e := svc.ClaimDueNotificationIntents(time.Now().UTC(), 10)
+			rows, e := svc.ClaimDueNotificationIntents(time.Now().UTC(), 10, []string{NotifChannelLog})
 			if e != nil {
 				t.Errorf("claim: %v", e)
 				return
@@ -236,10 +236,10 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 		"status": NotifStatusPending, "send_after": time.Now().UTC().Add(-time.Minute), "processing_started_at": nil,
 	})
 
-	w := NewNotificationWorker(svc, NotificationWorkerConfig{
+	w := mustNotificationWorker(t, svc, NotificationWorkerConfig{
 		PollInterval: time.Hour,
 		BatchSize:    20,
-		Adapter:      NewLogDeliveryAdapter(NotifChannelLog, nil),
+		Adapters:     notificationAdapters(NewLogDeliveryAdapter(NotifChannelLog, nil)),
 	})
 	if err := w.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -254,11 +254,11 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 		OccurrenceKey: "noop-k", SendAfter: time.Now().UTC().Add(-time.Minute),
 		PayloadJSON: mustPayload(t, 3006, start2),
 	})
-	wNoop := NewNotificationWorker(svc, NotificationWorkerConfig{
+	wNoop := mustNotificationWorker(t, svc, NotificationWorkerConfig{
 		BatchSize: 10,
-		Adapter:   NewNoopDeliveryAdapter(NotifChannelLog),
+		Adapters:  notificationAdapters(NewNoopDeliveryAdapter(NotifChannelLog)),
 	})
-	claimedNoop, _ := svc.ClaimDueNotificationIntents(time.Now().UTC(), 50)
+	claimedNoop, _ := svc.ClaimDueNotificationIntents(time.Now().UTC(), 50, []string{NotifChannelLog})
 	for i := range claimedNoop {
 		if claimedNoop[i].ID == noopIntent.ID {
 			wNoop.processClaimed(context.Background(), &claimedNoop[i], time.Now().UTC())
@@ -274,12 +274,15 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 		OccurrenceKey: "fail-k", SendAfter: time.Now().UTC().Add(-time.Minute),
 		PayloadJSON: mustPayload(t, 3007, start2),
 	})
-	wFail := NewNotificationWorker(svc, NotificationWorkerConfig{Adapter: &failAdapter{}, BatchSize: 5})
+	wFail := mustNotificationWorker(t, svc, NotificationWorkerConfig{
+		Adapters:  notificationAdapters(&failAdapter{}),
+		BatchSize: 5,
+	})
 	for i := 0; i < NotificationMaxAttempts; i++ {
 		db.Model(&AppointmentNotificationIntent{}).Where("id=?", failIntent.ID).Updates(map[string]any{
 			"status": NotifStatusPending, "send_after": time.Now().UTC().Add(-time.Minute), "processing_started_at": nil,
 		})
-		rows, _ := svc.ClaimDueNotificationIntents(time.Now().UTC(), 5)
+		rows, _ := svc.ClaimDueNotificationIntents(time.Now().UTC(), 5, []string{NotifChannelLog})
 		for j := range rows {
 			if rows[j].ID == failIntent.ID {
 				wFail.processClaimed(context.Background(), &rows[j], time.Now().UTC())
@@ -327,8 +330,10 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 		OccurrenceKey: OccurrenceKeyFromScheduledAt(start2), SendAfter: time.Now().UTC().Add(-time.Minute),
 		PayloadJSON: mustPayload(t, appt.ID, start2),
 	})
-	claimedRem, _ := svc.ClaimDueNotificationIntents(time.Now().UTC(), 10)
-	wSkip := NewNotificationWorker(svc, NotificationWorkerConfig{Adapter: NewLogDeliveryAdapter(NotifChannelLog, nil)})
+	claimedRem, _ := svc.ClaimDueNotificationIntents(time.Now().UTC(), 10, []string{NotifChannelLog})
+	wSkip := mustNotificationWorker(t, svc, NotificationWorkerConfig{
+		Adapters: notificationAdapters(NewLogDeliveryAdapter(NotifChannelLog, nil)),
+	})
 	for i := range claimedRem {
 		if claimedRem[i].ID == rem.ID {
 			wSkip.processClaimed(context.Background(), &claimedRem[i], time.Now().UTC())
@@ -359,7 +364,7 @@ func TestPostgresNotificationCompletedReminderSkipped23NB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := svc.ClaimDueNotificationIntents(time.Now().UTC(), 10)
+	claimed, err := svc.ClaimDueNotificationIntents(time.Now().UTC(), 10, []string{NotifChannelLog})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +380,7 @@ func TestPostgresNotificationCompletedReminderSkipped23NB(t *testing.T) {
 	}
 
 	spy := &countingAdapter{}
-	w := NewNotificationWorker(svc, NotificationWorkerConfig{Adapter: spy})
+	w := mustNotificationWorker(t, svc, NotificationWorkerConfig{Adapters: notificationAdapters(spy)})
 	w.processClaimed(context.Background(), found, time.Now().UTC())
 
 	got, err := svc.FindNotificationIntent(rem.ID)
@@ -427,6 +432,23 @@ func mustPayload(t *testing.T, id uint, start time.Time) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func notificationAdapters(ads ...NotificationDeliveryAdapter) map[string]NotificationDeliveryAdapter {
+	m := make(map[string]NotificationDeliveryAdapter, len(ads))
+	for _, a := range ads {
+		m[a.Channel()] = a
+	}
+	return m
+}
+
+func mustNotificationWorker(t *testing.T, svc *Service, cfg NotificationWorkerConfig) *NotificationWorker {
+	t.Helper()
+	w, err := NewNotificationWorker(svc, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
 }
 
 func TestPostgresNotificationCancelSuppressesProcessing23NB(t *testing.T) {

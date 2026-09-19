@@ -225,9 +225,15 @@ func (s *Service) MarkNotificationPendingRetry(id uint, sendAfter time.Time) (*A
 	})
 }
 
-// ClaimDueNotificationIntents atomically claims due PENDING LOG intents (FOR UPDATE SKIP LOCKED).
-// Does not hold the transaction open during adapter I/O — returns claimed rows already PROCESSING.
-func (s *Service) ClaimDueNotificationIntents(asOf time.Time, batch int) ([]AppointmentNotificationIntent, error) {
+// ClaimDueNotificationIntents atomically claims due PENDING intents for the given channels
+// (FOR UPDATE SKIP LOCKED). Does not hold the transaction open during adapter I/O —
+// returns claimed rows already PROCESSING.
+//
+// An empty channels slice returns no claims (never "all channels", never invalid IN ()).
+func (s *Service) ClaimDueNotificationIntents(asOf time.Time, batch int, channels []string) ([]AppointmentNotificationIntent, error) {
+	if len(channels) == 0 {
+		return nil, nil
+	}
 	if batch <= 0 {
 		batch = NotificationClaimBatchDefault
 	}
@@ -239,11 +245,11 @@ func (s *Service) ClaimDueNotificationIntents(asOf time.Time, batch int) ([]Appo
 		var ids []uint
 		if e := tx.Raw(`
 			SELECT id FROM appointment_notification_intents
-			WHERE status = ? AND send_after <= ? AND channel = ?
+			WHERE status = ? AND send_after <= ? AND channel IN ?
 			ORDER BY send_after ASC, id ASC
 			LIMIT ?
 			FOR UPDATE SKIP LOCKED
-		`, NotifStatusPending, asOf.UTC(), NotifChannelLog, batch).Scan(&ids).Error; e != nil {
+		`, NotifStatusPending, asOf.UTC(), channels, batch).Scan(&ids).Error; e != nil {
 			return coreerrors.Internal(e.Error())
 		}
 		if len(ids) == 0 {
@@ -417,6 +423,14 @@ func (s *Service) FinalizeNotificationFailure(intentID uint, provider string, pr
 			return coreerrors.Conflict("transition notification concurrente ou invalide")
 		}
 		return nil
+	})
+}
+
+// FinalizeNotificationFailedTerminal inserts a failed attempt and PROCESSING → FAILED
+// immediately (no retry/backoff). Used for permanent/invalid/not-configured delivery errors.
+func (s *Service) FinalizeNotificationFailedTerminal(intentID uint, provider string, providerMessageID, errMsg *string) (*AppointmentNotificationAttempt, error) {
+	return s.finalizeProcessingDelivery(intentID, provider, providerMessageID, errMsg, func(tx *gorm.DB, parent *AppointmentNotificationIntent, _ int, ts time.Time) error {
+		return applyProcessingTerminalTx(tx, parent.ID, NotifStatusFailed, ts, nil)
 	})
 }
 

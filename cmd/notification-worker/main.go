@@ -35,19 +35,26 @@ func main() {
 	}
 
 	svc := patient_queue.NewService(db)
-	worker := patient_queue.NewNotificationWorker(svc, patient_queue.NotificationWorkerConfig{
+	logAdapter := patient_queue.NewLogDeliveryAdapter(patient_queue.NotifChannelLog, log)
+	worker, err := patient_queue.NewNotificationWorker(svc, patient_queue.NotificationWorkerConfig{
 		PollInterval: envDuration("NOTIFICATION_WORKER_POLL", patient_queue.NotificationWorkerPollDefault),
 		BatchSize:    patient_queue.NotificationClaimBatchDefault,
-		Adapter:      patient_queue.NewLogDeliveryAdapter(patient_queue.NotifChannelLog, log),
-		Logger:       log,
+		Adapters: map[string]patient_queue.NotificationDeliveryAdapter{
+			patient_queue.NotifChannelLog: logAdapter,
+		},
+		Logger: log,
 	})
+	if err != nil {
+		log.Error("notification worker config", "error", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	log.Info("notification worker started",
 		"poll", workerPollLabel(),
-		"channel", patient_queue.NotifChannelLog,
+		"channels", worker.SupportedChannels(),
 	)
 	if err := worker.Run(ctx); err != nil && err != context.Canceled {
 		log.Error("notification worker stopped", "error", err)
