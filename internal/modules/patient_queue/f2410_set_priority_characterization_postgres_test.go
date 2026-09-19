@@ -3,26 +3,33 @@ package patient_queue
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
-// LOT 24G F24-10A — DESIGN GAP (deferred): no ExpectedVersion / OCC on SetPriority.
-// F24-10B — GREEN: Priority + Version + PRIORITY history commit in one transaction.
+// LOT 26C / F24-10A — SetPriority mandatory ExpectedVersion OCC.
+// F24-10B — Priority + Version + PRIORITY history remain atomic.
 
-// TestPostgresF2410A_SetPriorityConcurrentObservableBehavior characterizes
-// concurrent SetPriority without inventing an OCC contract.
-//
-// Observable under current non-OCC semantics: both callers can succeed;
-// final Priority is last-writer-wins; Version typically advances by 1 from
-// the shared pre-image (not by 2).
-func TestPostgresF2410A_SetPriorityConcurrentObservableBehavior(t *testing.T) {
+func priorityActor(uid uint) Access {
+	return Access{
+		UserID: uid,
+		Permissions: map[string]bool{
+			"queue.priority.update": true,
+			"queue.read.all":        true,
+		},
+	}
+}
+
+// TestPostgresF2410A_SetPriorityConcurrentOCC: two writers with the same ExpectedVersion —
+// exactly one success, one CONFLICT; Version bumps once; one PRIORITY history row.
+func TestPostgresF2410A_SetPriorityConcurrentOCC(t *testing.T) {
 	db := queuePostgres(t)
 	svc := NewService(db)
 	admin := adminAccess(100)
 
 	tk, err := svc.CheckInWalkIn(WalkInCheckInRequest{
 		PatientID: 1, ServiceID: 10, IdentityConfirmed: true, Priority: PriorityNormal,
-		Reason: "f2410a",
+		Reason: "f2410a-occ",
 	}, admin)
 	if err != nil {
 		t.Fatal(err)
@@ -32,72 +39,62 @@ func TestPostgresF2410A_SetPriorityConcurrentObservableBehavior(t *testing.T) {
 		t.Fatalf("start Version=%d", startVersion)
 	}
 
-	actorA := Access{
-		UserID: 24101,
-		Permissions: map[string]bool{
-			"queue.priority.update": true,
-			"queue.read.all":        true,
-		},
-	}
-	actorB := Access{
-		UserID: 24102,
-		Permissions: map[string]bool{
-			"queue.priority.update": true,
-			"queue.read.all":        true,
-		},
-	}
+	actorA := priorityActor(24101)
+	actorB := priorityActor(24102)
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (24101,'F2410A-A'),(24102,'F2410A-B') ON CONFLICT DO NOTHING`)
 
+	var okN, conflictN int32
+	var winnerPriority atomic.Value
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	errs := make(chan error, 2)
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		<-start
-		_, e := svc.SetPriority(tk.ID, PriorityRequest{Priority: PriorityUrgent, Reason: "A"}, actorA)
-		errs <- e
+		out, e := svc.SetPriority(tk.ID, PriorityRequest{
+			Priority: PriorityUrgent, Reason: "A", ExpectedVersion: startVersion,
+		}, actorA)
+		if e == nil {
+			atomic.AddInt32(&okN, 1)
+			winnerPriority.Store(out.Priority)
+		} else if statusOf(e) == 409 {
+			atomic.AddInt32(&conflictN, 1)
+		} else {
+			t.Errorf("A unexpected error: %v", e)
+		}
 	}()
 	go func() {
 		defer wg.Done()
 		<-start
-		_, e := svc.SetPriority(tk.ID, PriorityRequest{Priority: PriorityHigh, Reason: "B"}, actorB)
-		errs <- e
+		out, e := svc.SetPriority(tk.ID, PriorityRequest{
+			Priority: PriorityHigh, Reason: "B", ExpectedVersion: startVersion,
+		}, actorB)
+		if e == nil {
+			atomic.AddInt32(&okN, 1)
+			winnerPriority.Store(out.Priority)
+		} else if statusOf(e) == 409 {
+			atomic.AddInt32(&conflictN, 1)
+		} else {
+			t.Errorf("B unexpected error: %v", e)
+		}
 	}()
 	close(start)
 	wg.Wait()
-	close(errs)
 
-	success := 0
-	for e := range errs {
-		if e == nil {
-			success++
-		} else {
-			t.Logf("SetPriority error (characterization): %v", e)
-		}
+	if okN != 1 || conflictN != 1 {
+		t.Fatalf("OCC race: ok=%d conflict=%d want 1/1", okN, conflictN)
 	}
 
 	var after Ticket
 	if err := db.First(&after, tk.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-
-	t.Logf("F24-10A observed: success=%d startVersion=%d finalVersion=%d finalPriority=%s",
-		success, startVersion, after.Version, after.Priority)
-
-	// Characterization of deferred non-OCC contract — not a GREEN OCC expectation.
-	if success != 2 {
-		t.Fatalf("current SetPriority has no OCC gate; expected both concurrent calls to succeed, got success=%d", success)
-	}
-	if after.Priority != PriorityUrgent && after.Priority != PriorityHigh {
-		t.Fatalf("final Priority=%s want one of URGENT|HIGH (last-writer-wins)", after.Priority)
-	}
 	if after.Version != startVersion+1 {
-		t.Logf("NOTE: Version delta=%d (start=%d final=%d); classic lost-update stamp is +1",
-			after.Version-startVersion, startVersion, after.Version)
+		t.Fatalf("Version=%d want %d", after.Version, startVersion+1)
 	}
-	if after.Version < startVersion+1 {
-		t.Fatalf("Version must not decrease: start=%d final=%d", startVersion, after.Version)
+	wp, _ := winnerPriority.Load().(string)
+	if after.Priority != wp || (after.Priority != PriorityUrgent && after.Priority != PriorityHigh) {
+		t.Fatalf("final Priority=%s winner=%s", after.Priority, wp)
 	}
 
 	var priorityEvents int64
@@ -106,9 +103,79 @@ func TestPostgresF2410A_SetPriorityConcurrentObservableBehavior(t *testing.T) {
 		Count(&priorityEvents).Error; err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("F24-10A PRIORITY history rows=%d", priorityEvents)
-	if priorityEvents < 1 {
-		t.Fatal("successful SetPriority must leave at least one PRIORITY history row")
+	if priorityEvents != 1 {
+		t.Fatalf("PRIORITY history rows=%d want 1", priorityEvents)
+	}
+}
+
+// TestPostgresF2410A_SetPriorityOCCStaleAndSamePriority covers stale conflict + same-priority mutation.
+func TestPostgresF2410A_SetPriorityOCCStaleAndSamePriority(t *testing.T) {
+	db := queuePostgres(t)
+	svc := NewService(db)
+	admin := adminAccess(100)
+
+	tk, err := svc.CheckInWalkIn(WalkInCheckInRequest{
+		PatientID: 1, ServiceID: 10, IdentityConfirmed: true, Priority: PriorityNormal,
+		Reason: "f2410a-stale",
+	}, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := priorityActor(24105)
+	_ = db.Exec(`INSERT INTO users(id, name) VALUES (24105,'F2410A-STALE') ON CONFLICT DO NOTHING`)
+
+	if _, err := svc.SetPriority(tk.ID, PriorityRequest{
+		Priority: PriorityUrgent, Reason: "first", ExpectedVersion: 0,
+	}, actor); statusOf(err) != 400 {
+		t.Fatalf("expectedVersion<1 want 400 got %d (%v)", statusOf(err), err)
+	}
+
+	out, err := svc.SetPriority(tk.ID, PriorityRequest{
+		Priority: PriorityUrgent, Reason: "first", ExpectedVersion: tk.Version,
+	}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Version != tk.Version+1 || out.Priority != PriorityUrgent {
+		t.Fatalf("success: %+v", out)
+	}
+
+	var histBefore int64
+	db.Model(&History{}).Where("ticket_id=? AND event_type=?", tk.ID, "PRIORITY").Count(&histBefore)
+
+	_, err = svc.SetPriority(tk.ID, PriorityRequest{
+		Priority: PriorityHigh, Reason: "stale", ExpectedVersion: tk.Version,
+	}, actor)
+	if statusOf(err) != 409 {
+		t.Fatalf("stale want 409 got %d (%v)", statusOf(err), err)
+	}
+
+	var afterStale Ticket
+	if err := db.First(&afterStale, tk.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if afterStale.Priority != PriorityUrgent || afterStale.Version != out.Version {
+		t.Fatalf("stale mutated ticket: Priority=%s Version=%d", afterStale.Priority, afterStale.Version)
+	}
+	var histAfterStale int64
+	db.Model(&History{}).Where("ticket_id=? AND event_type=?", tk.ID, "PRIORITY").Count(&histAfterStale)
+	if histAfterStale != histBefore {
+		t.Fatalf("stale created history: before=%d after=%d", histBefore, histAfterStale)
+	}
+
+	same, err := svc.SetPriority(tk.ID, PriorityRequest{
+		Priority: PriorityUrgent, Reason: "same", ExpectedVersion: afterStale.Version,
+	}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same.Priority != PriorityUrgent || same.Version != afterStale.Version+1 {
+		t.Fatalf("same-priority: Priority=%s Version=%d", same.Priority, same.Version)
+	}
+	var histAfterSame int64
+	db.Model(&History{}).Where("ticket_id=? AND event_type=?", tk.ID, "PRIORITY").Count(&histAfterSame)
+	if histAfterSame != histBefore+1 {
+		t.Fatalf("same-priority history rows=%d want %d", histAfterSame, histBefore+1)
 	}
 }
 
@@ -143,16 +210,12 @@ func TestPostgresF2410B_SetPriorityHistoryFailureRollsBackPriority(t *testing.T)
 		_ = db.Exec(fmt.Sprintf(`ALTER TABLE patient_queue_history DROP CONSTRAINT IF EXISTS %s`, constraint))
 	})
 
-	actor := Access{
-		UserID: 24103,
-		Permissions: map[string]bool{
-			"queue.priority.update": true,
-			"queue.read.all":        true,
-		},
-	}
+	actor := priorityActor(24103)
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (24103,'F2410B') ON CONFLICT DO NOTHING`)
 
-	_, err = svc.SetPriority(tk.ID, PriorityRequest{Priority: PriorityUrgent, Reason: "audit-fail"}, actor)
+	_, err = svc.SetPriority(tk.ID, PriorityRequest{
+		Priority: PriorityUrgent, Reason: "audit-fail", ExpectedVersion: tk.Version,
+	}, actor)
 	if err == nil {
 		t.Fatal("SetPriority must return error when PRIORITY history insert fails")
 	}
@@ -195,16 +258,12 @@ func TestPostgresF2410B_SetPrioritySuccessCommitsPriorityAndHistory(t *testing.T
 	}
 	startVersion := tk.Version
 
-	actor := Access{
-		UserID: 24104,
-		Permissions: map[string]bool{
-			"queue.priority.update": true,
-			"queue.read.all":        true,
-		},
-	}
+	actor := priorityActor(24104)
 	_ = db.Exec(`INSERT INTO users(id, name) VALUES (24104,'F2410B-OK') ON CONFLICT DO NOTHING`)
 
-	out, err := svc.SetPriority(tk.ID, PriorityRequest{Priority: PriorityUrgent, Reason: "escalate"}, actor)
+	out, err := svc.SetPriority(tk.ID, PriorityRequest{
+		Priority: PriorityUrgent, Reason: "escalate", ExpectedVersion: tk.Version,
+	}, actor)
 	if err != nil {
 		t.Fatal(err)
 	}

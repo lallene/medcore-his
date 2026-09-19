@@ -405,7 +405,7 @@ func TestPostgresCrossServiceMutationsDenied(t *testing.T) {
 	if _, e := svc.Cancel(tkB2.ID, CancelRequest{Reason: "x"}, nurseA); statusOf(e) != 404 {
 		t.Fatalf("Cancel cross-service want 404 got %d (%v)", statusOf(e), e)
 	}
-	if _, e := svc.SetPriority(tkB2.ID, PriorityRequest{Priority: PriorityUrgent}, nurseA); statusOf(e) != 404 {
+	if _, e := svc.SetPriority(tkB2.ID, PriorityRequest{Priority: PriorityUrgent, ExpectedVersion: tkB2.Version}, nurseA); statusOf(e) != 404 {
 		t.Fatalf("SetPriority cross-service want 404 got %d (%v)", statusOf(e), e)
 	}
 	if _, e := svc.CheckInWalkIn(WalkInCheckInRequest{

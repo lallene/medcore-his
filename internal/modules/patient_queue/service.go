@@ -1203,20 +1203,35 @@ func (s *Service) SetPriority(id uint, r PriorityRequest, a Access) (*Ticket, er
 	if PriorityRank(r.Priority) == 99 {
 		return nil, coreerrors.BadRequest("Priorité invalide")
 	}
+	if r.ExpectedVersion < 1 {
+		return nil, coreerrors.BadRequest("expectedVersion requis")
+	}
 	t, err := s.loadTicketForMutation(id, a)
 	if err != nil {
 		return nil, err
 	}
 	old := t.Priority
-	// F24-10B: Priority + Version + PRIORITY history must commit atomically.
+	// F24-10B + F24-10A/LOT26C: OCC update + PRIORITY history in one transaction.
+	var out Ticket
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		t.Priority = r.Priority
-		t.Version++
-		t.UpdatedAt = time.Now().UTC()
-		if err := tx.Save(t).Error; err != nil {
-			return coreerrors.Internal(err.Error())
+		now := time.Now().UTC()
+		res := tx.Model(&Ticket{}).
+			Where("id = ? AND version = ?", id, r.ExpectedVersion).
+			Updates(map[string]any{
+				"priority":   r.Priority,
+				"version":    gorm.Expr("version + 1"),
+				"updated_at": now,
+			})
+		if res.Error != nil {
+			return coreerrors.Internal(res.Error.Error())
 		}
-		if err := s.writeHistory(tx, id, a.UserID, t.Stage, t.Stage, "PRIORITY", old+"→"+r.Priority+": "+r.Reason); err != nil {
+		if res.RowsAffected == 0 {
+			return coreerrors.Conflict("État du ticket obsolète")
+		}
+		if err := tx.First(&out, id).Error; err != nil {
+			return err
+		}
+		if err := s.writeHistory(tx, id, a.UserID, out.Stage, out.Stage, "PRIORITY", old+"→"+r.Priority+": "+r.Reason); err != nil {
 			return err
 		}
 		return nil
@@ -1224,7 +1239,7 @@ func (s *Service) SetPriority(id uint, r PriorityRequest, a Access) (*Ticket, er
 	if err != nil {
 		return nil, err
 	}
-	return t, nil
+	return &out, nil
 }
 
 func (s *Service) KPIs(a Access) (*KPIs, error) {

@@ -58,8 +58,9 @@ type AppointmentCheckInRequest struct {
 }
 
 type PriorityRequest struct {
-	Priority string `json:"priority" binding:"required"`
-	Reason   string `json:"reason"`
+	Priority        string `json:"priority" binding:"required"`
+	Reason          string `json:"reason"`
+	ExpectedVersion int    `json:"expectedVersion" binding:"required"`
 }
 
 type CancelRequest struct {
