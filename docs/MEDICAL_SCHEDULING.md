@@ -913,6 +913,43 @@ Typed `NotificationPayload` requires `appointmentId` (must match the intent) and
 
 ---
 
+## LOT 26D — Provider-neutral email transport boundary
+
+**Architecture only** for outbound email. No Microsoft Graph, SMTP, OAuth, worker EMAIL wiring, templates, or recipient resolution in this lot.
+
+### Flow (target)
+
+```
+business event
+  → durable notification intent (23N)
+  → NotificationDeliveryAdapter (channel boundary; LOG today)
+  → EMAIL channel adapter (future 26F)
+  → email.Transport (internal/shared/email — 26D)
+  → concrete provider (future 26E)
+```
+
+### Package
+
+`internal/shared/email` — `Message` / `Address` / `Result` / `Transport` / classified errors (`ErrNotConfigured`, `ErrTransient`, `ErrPermanent`) / in-memory `Fake`.
+
+- Does **not** import `patient_queue` or clinical modules.
+- Accepts only outbound `Message` copy; callers own privacy-approved wording (26G).
+- `IdempotencyKey` is a correlation/dedup hint only — **not** exactly-once delivery.
+
+### Lot split
+
+| Lot | Scope |
+|-----|--------|
+| **26D** | Provider-neutral transport contract (this section) |
+| **26E** | Microsoft 365 (or other) `Transport` implementation |
+| **26F** | Wire EMAIL into durable notification worker / claim |
+| **26G** | Templates + PHI/privacy outbound policy |
+| **26H** | Retry / crash-after-send / idempotence hardening |
+
+Production notification worker remains **LOG-only** until 26F.
+
+---
+
 ## LOT 23N-B — Lifecycle integration + durable worker
 
 ### Lifecycle hooks (same TX)
