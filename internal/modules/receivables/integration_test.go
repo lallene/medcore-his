@@ -124,7 +124,7 @@ func TestPostgresPatientDebtLifecycleAndInsuranceExclusion(t *testing.T) {
 		t.Fatalf("patient code missing from projection: %+v", byID[uninsured.ID])
 	}
 	if got := byID[insured.ID]; got.PatientDue != 15000 || got.PatientPaid != 5000 || got.PatientBalance != 10000 || got.Status != "OVERDUE" {
-		t.Fatalf("insured debt includes insurance or has wrong status: %+v", got)
+		t.Fatalf("insured patient debt amounts/status wrong (expect due=15000 paid=5000 balance=10000 OVERDUE; InsuranceAmount may be informational): %+v", got)
 	}
 
 	before := byID[insured.ID].PatientBalance

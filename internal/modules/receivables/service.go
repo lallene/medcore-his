@@ -13,11 +13,21 @@ import (
 type Service struct{ db *gorm.DB }
 
 func NewService(db *gorm.DB) *Service { return &Service{db: db} }
+
+// calendarDay returns a comparable civil date (Y/M/D only) in UTC.
+// PostgreSQL DATE values and parseOptionalDate both expose calendar components via Date();
+// we do not reinterpret wall-clock offsets. "Today" uses the process local calendar day
+// (time.Local), matching SQL CURRENT_DATE when the DB session shares the host timezone.
+func calendarDay(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
 func debtStatus(balance, paid int64, due *time.Time) string {
 	if balance <= 0 {
 		return "PAID"
 	}
-	if due != nil && due.Before(time.Now().Truncate(24*time.Hour)) {
+	if due != nil && calendarDay(*due).Before(calendarDay(time.Now().In(time.Local))) {
 		return "OVERDUE"
 	}
 	if paid > 0 {
