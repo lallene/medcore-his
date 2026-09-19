@@ -17,6 +17,10 @@ const DefaultBusinessTimezone = "UTC"
 // DefaultSchedulingTimezone is MEDCORE_TIMEZONE when unset (wall-clock schedules).
 const DefaultSchedulingTimezone = "UTC"
 
+// EnvNotificationEmailEnabled controls durable EMAIL lifecycle intents (API)
+// and worker EMAIL adapter registration. Graph credentials are worker-only.
+const EnvNotificationEmailEnabled = "MEDCORE_NOTIFICATION_EMAIL_ENABLED"
+
 type Config struct {
 	AppEnv      string
 	Port        string
@@ -28,6 +32,10 @@ type Config struct {
 	// BusinessTimezone is the IANA zone for hospital civil "today" / CURRENT_DATE
 	// alignment (MEDCORE_BUSINESS_TIMEZONE). Independent of Timezone.
 	BusinessTimezone string
+	// NotificationEmailEnabled enables LOG+EMAIL lifecycle enqueue on the API and
+	// EMAIL adapter registration on the notification-worker. Does not imply Graph
+	// credentials are present on this process (worker owns MEDCORE_M365_* secrets).
+	NotificationEmailEnabled bool
 }
 
 func Load() Config {
@@ -35,14 +43,20 @@ func Load() Config {
 		log.Println("Fichier .env non trouvé, utilisation des variables système")
 	}
 
+	emailEnabled, err := ParseNotificationEmailEnabled(os.Getenv(EnvNotificationEmailEnabled))
+	if err != nil {
+		log.Fatalf("configuration invalide: %v", err)
+	}
+
 	cfg := Config{
-		AppEnv:           getEnv("APP_ENV", "development"),
-		Port:             getEnv("PORT", "8080"),
-		DatabaseURL:      getEnv("DATABASE_URL", ""),
-		JWTSecret:        getEnv("JWT_SECRET", "change_me"),
-		CORSOrigin:       getEnv("CORS_ORIGIN", "http://localhost:5173"),
-		Timezone:         getEnv("MEDCORE_TIMEZONE", DefaultSchedulingTimezone),
-		BusinessTimezone: getEnv("MEDCORE_BUSINESS_TIMEZONE", DefaultBusinessTimezone),
+		AppEnv:                   getEnv("APP_ENV", "development"),
+		Port:                     getEnv("PORT", "8080"),
+		DatabaseURL:              getEnv("DATABASE_URL", ""),
+		JWTSecret:                getEnv("JWT_SECRET", "change_me"),
+		CORSOrigin:               getEnv("CORS_ORIGIN", "http://localhost:5173"),
+		Timezone:                 getEnv("MEDCORE_TIMEZONE", DefaultSchedulingTimezone),
+		BusinessTimezone:         getEnv("MEDCORE_BUSINESS_TIMEZONE", DefaultBusinessTimezone),
+		NotificationEmailEnabled: emailEnabled,
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -50,6 +64,24 @@ func Load() Config {
 	}
 
 	return cfg
+}
+
+// ParseNotificationEmailEnabled interprets MEDCORE_NOTIFICATION_EMAIL_ENABLED.
+// Missing/empty/whitespace → false. true/1 and false/0 (case-insensitive) are accepted.
+// Any other explicit value is an error (never silently disabled). Error text does not echo the value.
+func ParseNotificationEmailEnabled(raw string) (bool, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return false, nil
+	}
+	switch strings.ToLower(s) {
+	case "true", "1":
+		return true, nil
+	case "false", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s: valeur invalide", EnvNotificationEmailEnabled)
+	}
 }
 
 func (c Config) Validate() error {

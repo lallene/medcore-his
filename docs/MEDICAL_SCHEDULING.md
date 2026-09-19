@@ -981,13 +981,16 @@ If a `REMINDER_T24H`/`LOG` row for that key is `CANCELLED` and the reminder must
 
 Dedicated process: `cmd/notification-worker` (not started inside the API).
 
-- Claims due `PENDING` + `channel=LOG` + `send_after <= now` via `SELECT … FOR UPDATE SKIP LOCKED`, then sets `PROCESSING` + `processing_started_at` in the same short TX.
+- Claims due `PENDING` intents for **registered** channels (`channel IN (…)`) with `send_after <= now` via `SELECT … FOR UPDATE SKIP LOCKED`, then sets `PROCESSING` + `processing_started_at` in the same short TX.
 - Adapter I/O is **outside** the claim TX.
-- After adapter return, delivery finalization is **one short DB transaction**: lock intent (`FOR UPDATE`, must still be `PROCESSING`) → insert attempt → `SENT` / `SKIPPED` / retry `PENDING` / `FAILED` → commit. Partial attempt+status is rolled back together. Finalization errors are logged; intent stays `PROCESSING` for stale recovery.
-- Production adapter: **Log** only. Noop for tests.
+- After adapter return, delivery finalization is **one short DB transaction**: lock intent (`FOR UPDATE`, must still be `PROCESSING`) → insert attempt → `SENT` / `SKIPPED` / retry `PENDING` / `FAILED` / terminal `FAILED` → commit. Partial attempt+status is rolled back together. Finalization errors are logged; intent stays `PROCESSING` for stale recovery.
+- **Feature flag:** `MEDCORE_NOTIFICATION_EMAIL_ENABLED` (shared with API). Missing/empty/`false`/`0` → disabled; `true`/`1` → enabled; other explicit values fail config load.
+- **Disabled:** production adapters = **LOG** only. M365 env not required.
+- **Enabled (worker):** requires `MEDCORE_M365_TENANT_ID`, `MEDCORE_M365_CLIENT_ID`, `MEDCORE_M365_CLIENT_SECRET`, `MEDCORE_M365_SENDER`. Constructs Microsoft Graph transport + canonical `patients.email` reader + EMAIL adapter. Incomplete/invalid config → **startup failure** (never silently LOG-only). Token/Graph I/O is lazy on first Send.
+- **API vs worker secrets:** API uses the feature flag only for durable EMAIL lifecycle intents and does **not** need the Graph client secret. The worker alone holds `MEDCORE_M365_CLIENT_SECRET`. Keep the same enablement flag on both processes; if the worker is misconfigured while the API is enabled, EMAIL intents remain durable `PENDING` until the worker is fixed.
 - Pre-send guard for `REMINDER_T24H`: skip (`PROCESSING → SKIPPED`) if appointment missing/cancelled/no-show/**completed** or occurrence key stale.
-- Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
-- **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for future external providers. A provider may accept a message and the process may crash before finalization commits. Future EMAIL/SMS adapters must use provider idempotency/message keys where available. For 23N-B **LOG-only** execution this residual ambiguity is acceptable.
+- Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Permanent/invalid/not-configured email errors fail immediately. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
+- **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for external providers. A provider may accept a message and the process may crash before finalization commits. EMAIL adapters should use provider idempotency keys where available.
 
 ### PHI
 

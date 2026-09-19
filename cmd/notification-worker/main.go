@@ -14,8 +14,9 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 )
 
-// LOT 23N-B — dedicated appointment notification worker (LOG channel only).
+// Dedicated appointment notification worker (LOG always; EMAIL when feature flag + M365 configured).
 // Does not start inside the API process. Graceful SIGINT/SIGTERM shutdown.
+// Graph client secret is worker-only (never required by the API).
 func main() {
 	cfg := config.Load()
 	logger.Init(cfg.AppEnv)
@@ -34,15 +35,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	adapters, err := buildNotificationDeliveryAdapters(cfg.NotificationEmailEnabled, db, log)
+	if err != nil {
+		log.Error("notification worker adapters", "error", err)
+		os.Exit(1)
+	}
+
 	svc := patient_queue.NewService(db)
-	logAdapter := patient_queue.NewLogDeliveryAdapter(patient_queue.NotifChannelLog, log)
 	worker, err := patient_queue.NewNotificationWorker(svc, patient_queue.NotificationWorkerConfig{
 		PollInterval: envDuration("NOTIFICATION_WORKER_POLL", patient_queue.NotificationWorkerPollDefault),
 		BatchSize:    patient_queue.NotificationClaimBatchDefault,
-		Adapters: map[string]patient_queue.NotificationDeliveryAdapter{
-			patient_queue.NotifChannelLog: logAdapter,
-		},
-		Logger: log,
+		Adapters:     adapters,
+		Logger:       log,
 	})
 	if err != nil {
 		log.Error("notification worker config", "error", err)
@@ -55,6 +59,7 @@ func main() {
 	log.Info("notification worker started",
 		"poll", workerPollLabel(),
 		"channels", worker.SupportedChannels(),
+		"emailEnabled", cfg.NotificationEmailEnabled,
 	)
 	if err := worker.Run(ctx); err != nil && err != context.Canceled {
 		log.Error("notification worker stopped", "error", err)

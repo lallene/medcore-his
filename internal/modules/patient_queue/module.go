@@ -34,7 +34,9 @@ func (Module) Register(app *application.Application) {
 		logger.Error("Index appointment notifications", "error", err)
 		panic(err)
 	}
-	s := NewService(app.DB)
+	s := NewService(app.DB).WithNotificationLifecycleConfig(NotificationLifecycleConfig{
+		EmailEnabled: app.Config.NotificationEmailEnabled,
+	})
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 	RegisterRoutes(g, NewHandler(s))
