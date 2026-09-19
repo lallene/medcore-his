@@ -10,6 +10,13 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// DefaultBusinessTimezone is the deployment business calendar when
+// MEDCORE_BUSINESS_TIMEZONE is unset. UTC is explicit (never process time.Local).
+const DefaultBusinessTimezone = "UTC"
+
+// DefaultSchedulingTimezone is MEDCORE_TIMEZONE when unset (wall-clock schedules).
+const DefaultSchedulingTimezone = "UTC"
+
 type Config struct {
 	AppEnv      string
 	Port        string
@@ -18,6 +25,9 @@ type Config struct {
 	CORSOrigin  string
 	// Timezone is the IANA zone for recurring wall-clock schedules (MEDCORE_TIMEZONE).
 	Timezone string
+	// BusinessTimezone is the IANA zone for hospital civil "today" / CURRENT_DATE
+	// alignment (MEDCORE_BUSINESS_TIMEZONE). Independent of Timezone.
+	BusinessTimezone string
 }
 
 func Load() Config {
@@ -26,12 +36,13 @@ func Load() Config {
 	}
 
 	cfg := Config{
-		AppEnv:      getEnv("APP_ENV", "development"),
-		Port:        getEnv("PORT", "8080"),
-		DatabaseURL: getEnv("DATABASE_URL", ""),
-		JWTSecret:   getEnv("JWT_SECRET", "change_me"),
-		CORSOrigin:  getEnv("CORS_ORIGIN", "http://localhost:5173"),
-		Timezone:    getEnv("MEDCORE_TIMEZONE", "UTC"),
+		AppEnv:           getEnv("APP_ENV", "development"),
+		Port:             getEnv("PORT", "8080"),
+		DatabaseURL:      getEnv("DATABASE_URL", ""),
+		JWTSecret:        getEnv("JWT_SECRET", "change_me"),
+		CORSOrigin:       getEnv("CORS_ORIGIN", "http://localhost:5173"),
+		Timezone:         getEnv("MEDCORE_TIMEZONE", DefaultSchedulingTimezone),
+		BusinessTimezone: getEnv("MEDCORE_BUSINESS_TIMEZONE", DefaultBusinessTimezone),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -52,6 +63,13 @@ func (c Config) Validate() error {
 		}
 	}
 
+	if strings.TrimSpace(c.BusinessTimezone) == "" {
+		return fmt.Errorf("MEDCORE_BUSINESS_TIMEZONE est obligatoire")
+	}
+	if _, err := time.LoadLocation(c.BusinessTimezone); err != nil {
+		return fmt.Errorf("MEDCORE_BUSINESS_TIMEZONE invalide %q: %w", c.BusinessTimezone, err)
+	}
+
 	if strings.EqualFold(strings.TrimSpace(c.AppEnv), "production") {
 		if strings.TrimSpace(c.JWTSecret) == "" ||
 			c.JWTSecret == "change_me" {
@@ -65,6 +83,16 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+// BusinessLocation returns the validated business IANA location.
+func (c Config) BusinessLocation() *time.Location {
+	loc, err := time.LoadLocation(c.BusinessTimezone)
+	if err != nil {
+		// Validate() already rejected invalid names; fall back to UTC if raced.
+		return time.UTC
+	}
+	return loc
 }
 
 func getEnv(key string, fallback string) string {

@@ -29,7 +29,7 @@ func main() {
 	}
 	logger.Init(cfg.AppEnv)
 
-	db := database.Connect(cfg.DatabaseURL)
+	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
 	if len(os.Args) > 1 && os.Args[1] == "--demo-pharmacy" {
 		seedFullDemoPharmacy(db)
 		log.Println("Workflow Pharmacy DEMO exécuté avec succès")

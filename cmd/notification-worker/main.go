@@ -21,7 +21,7 @@ func main() {
 	logger.Init(cfg.AppEnv)
 	log := slog.Default()
 
-	db := database.Connect(cfg.DatabaseURL)
+	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
 	if err := db.AutoMigrate(
 		&patient_queue.AppointmentNotificationIntent{},
 		&patient_queue.AppointmentNotificationAttempt{},

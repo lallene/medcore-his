@@ -70,10 +70,12 @@ Appointments remain authoritative booked intervals. Changing a schedule **never*
 
 ### Timezone configuration
 
-- Env: **`MEDCORE_TIMEZONE`** (IANA name)
+- Env: **`MEDCORE_TIMEZONE`** (IANA name) — **scheduling wall-clock / recurrence only**
 - Config field: `config.Timezone`
 - Runtime: `internal/core/scheduling` (`Location()`)
 - **Default:** `UTC` (consistent with current appointment UTC storage until a deployment sets an explicit zone)
+
+Hospital civil calendar / SQL `CURRENT_DATE` alignment uses a **separate** env: **`MEDCORE_BUSINESS_TIMEZONE`**. See [`TEMPORAL_CONTRACT.md`](./TEMPORAL_CONTRACT.md). Do not silently treat `MEDCORE_TIMEZONE` as the global business calendar.
 
 LOT 23C will convert `Monday 08:00` + date → real timestamps via `time.Date(..., scheduling.Location())`. **DST uses IANA rules**, not fixed UTC offsets. Do not scatter hard-coded `Europe/Paris` in services.
 

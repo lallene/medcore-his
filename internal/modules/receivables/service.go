@@ -3,6 +3,7 @@ package receivables
 import (
 	"errors"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
+	"github.com/lallene/medcore-his/backend/internal/core/businessdate"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -10,24 +11,37 @@ import (
 	"time"
 )
 
-type Service struct{ db *gorm.DB }
-
-func NewService(db *gorm.DB) *Service { return &Service{db: db} }
-
-// calendarDay returns a comparable civil date (Y/M/D only) in UTC.
-// PostgreSQL DATE values and parseOptionalDate both expose calendar components via Date();
-// we do not reinterpret wall-clock offsets. "Today" uses the process local calendar day
-// (time.Local), matching SQL CURRENT_DATE when the DB session shares the host timezone.
-func calendarDay(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+type Service struct {
+	db  *gorm.DB
+	loc *time.Location
 }
 
-func debtStatus(balance, paid int64, due *time.Time) string {
+func NewService(db *gorm.DB, businessLoc *time.Location) *Service {
+	if businessLoc == nil {
+		panic("receivables.NewService: businessLoc is required")
+	}
+	return &Service{db: db, loc: businessLoc}
+}
+
+func debtStatus(balance, paid int64, due *time.Time, loc *time.Location) string {
 	if balance <= 0 {
 		return "PAID"
 	}
-	if due != nil && calendarDay(*due).Before(calendarDay(time.Now().In(time.Local))) {
+	if businessdate.IsOverdue(due, businessdate.TodayIn(loc)) {
+		return "OVERDUE"
+	}
+	if paid > 0 {
+		return "PARTIALLY_PAID"
+	}
+	return "DUE"
+}
+
+// debtStatusAt is test-only: overdue vs an explicit "now" in loc.
+func debtStatusAt(balance, paid int64, due *time.Time, now time.Time, loc *time.Location) string {
+	if balance <= 0 {
+		return "PAID"
+	}
+	if businessdate.IsOverdue(due, businessdate.TodayAt(now, loc)) {
 		return "OVERDUE"
 	}
 	if paid > 0 {
@@ -91,7 +105,7 @@ func (s *Service) List(f Filter) (*Page, error) {
 	}
 	out := make([]Item, 0, len(rows))
 	for _, r := range rows {
-		r.Status = debtStatus(r.PatientBalance, r.PatientPaid, r.DueDate)
+		r.Status = debtStatus(r.PatientBalance, r.PatientPaid, r.DueDate, s.loc)
 		out = append(out, r)
 	}
 	return &Page{Items: out, Page: f.Page, Limit: f.Limit, Total: total, TotalPages: int((total + int64(f.Limit) - 1) / int64(f.Limit))}, nil
@@ -107,7 +121,7 @@ func (s *Service) KPIs() (*KPIs, error) {
 	k := &KPIs{}
 	seen := map[uint]bool{}
 	for _, r := range rows {
-		r.Status = debtStatus(r.PatientBalance, r.PatientPaid, r.DueDate)
+		r.Status = debtStatus(r.PatientBalance, r.PatientPaid, r.DueDate, s.loc)
 		k.TotalReceivables += r.PatientBalance
 		k.UnpaidInvoices++
 		seen[r.PatientID] = true
@@ -129,7 +143,7 @@ func (s *Service) Detail(id uint) (*Detail, error) {
 	if row.InvoiceID == 0 {
 		return nil, coreerrors.NotFound("RECEIVABLE")
 	}
-	row.Status = debtStatus(row.PatientBalance, row.PatientPaid, row.DueDate)
+	row.Status = debtStatus(row.PatientBalance, row.PatientPaid, row.DueDate, s.loc)
 	d := &Detail{Item: row, Lines: []Line{}, Payments: []Payment{}, FollowUps: []FollowUp{}}
 	s.db.Table("billing_invoice_lines").Select("description,act_type,gross_amount,insurance_amount,patient_amount").Where("invoice_id=? AND is_active", id).Order("id").Scan(&d.Lines)
 	s.db.Table("billing_payments p").Select("p.id,p.amount,p.payment_method,p.reference,p.paid_at,COALESCE(r.id,0) receipt_id,COALESCE(r.receipt_number,'') receipt_number").Joins("LEFT JOIN cash_receipts r ON r.payment_id=p.id").Where("p.invoice_id=?", id).Order("p.paid_at").Scan(&d.Payments)

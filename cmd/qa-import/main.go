@@ -15,7 +15,7 @@ func main() {
 		log.Fatal("usage: qa-import <qa-summary.json>")
 	}
 	cfg := config.Load()
-	db := database.Connect(cfg.DatabaseURL)
+	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
 	var name string
 	if e := db.Raw("SELECT current_database()").Scan(&name).Error; e != nil {
 		log.Fatal(e)

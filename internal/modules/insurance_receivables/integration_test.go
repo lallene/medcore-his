@@ -101,7 +101,7 @@ func insuredLine(t *testing.T, db *gorm.DB, company insCompany, patient insPatie
 }
 func TestPostgresPatientAndInsuranceCircuitsStayIndependent(t *testing.T) {
 	db := insDB(t)
-	service := NewService(db)
+	service := NewService(db, time.UTC)
 	company := insCompany{Code: "ALLIANZ", Name: "Allianz"}
 	patient := insPatient{CodePatient: "INS-P1", NumeroDossier: "INS-D1", Nom: "Assure", Prenoms: "Patient"}
 	inv, line := insuredLine(t, db, company, patient, "INV-INS-1", 50000, 35000, 15000)
@@ -156,7 +156,7 @@ func TestPostgresPatientAndInsuranceCircuitsStayIndependent(t *testing.T) {
 
 func TestPostgresMultiInvoiceCapsUnallocatedBatchAndConcurrency(t *testing.T) {
 	db := insDB(t)
-	service := NewService(db)
+	service := NewService(db, time.UTC)
 	company := insCompany{Code: "NSIA", Name: "NSIA"}
 	_, a := insuredLine(t, db, company, insPatient{CodePatient: "M1", NumeroDossier: "MD1", Nom: "A"}, "INV-M1", 35000, 35000, 0)
 	_, b := insuredLine(t, db, company, insPatient{CodePatient: "M2", NumeroDossier: "MD2", Nom: "B"}, "INV-M2", 25000, 25000, 0)
@@ -246,7 +246,7 @@ func TestPostgresMultiInvoiceCapsUnallocatedBatchAndConcurrency(t *testing.T) {
 
 func TestPostgresOnlyApprovedDirectOrCoveredLinesBecomeReceivables(t *testing.T) {
 	db := insDB(t)
-	service := NewService(db)
+	service := NewService(db, time.UTC)
 	company := insCompany{Code: "FILTER", Name: "Filter Assurance"}
 	patient := insPatient{CodePatient: "FILTER-P", NumeroDossier: "FILTER-D", Nom: "Filter"}
 	_, direct := insuredLine(t, db, company, patient, "INV-DIRECT", 10000, 7000, 3000)
@@ -289,14 +289,14 @@ func TestPostgresOnlyApprovedDirectOrCoveredLinesBecomeReceivables(t *testing.T)
 // LOT 26A: partial settlement + yesterday DATE due must remain OVERDUE (calendar-safe).
 func TestPostgresPartialSettlementYesterdayDueIsOverdue(t *testing.T) {
 	db := insDB(t)
-	service := NewService(db)
+	service := NewService(db, time.UTC)
 	company := insCompany{Code: "CAL-SAFE", Name: "Calendar Safe"}
 	patient := insPatient{CodePatient: "INS-CAL-P1", NumeroDossier: "INS-CAL-D1", Nom: "Calendar", Prenoms: "Due"}
 	_, line := insuredLine(t, db, company, patient, "INV-CAL-1", 50000, 35000, 15000)
 	if e := db.Where("code=?", company.Code).First(&company).Error; e != nil {
 		t.Fatal(e)
 	}
-	y, m, d := time.Now().In(time.Local).Date()
+	y, m, d := time.Now().UTC().Date()
 	yesterday := time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1).Format("2006-01-02")
 	if _, e := service.SetDue(line.ID, DueDateRequest{DueDate: &yesterday}, 50); e != nil {
 		t.Fatal(e)

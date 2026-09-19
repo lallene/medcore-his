@@ -13,5 +13,5 @@ func (Module) Register(app *application.Application) {
 	app.MustMigrate(&Metadata{}, &FollowUp{})
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
-	RegisterRoutes(g, NewHandler(NewService(app.DB)))
+	RegisterRoutes(g, NewHandler(NewService(app.DB, app.BusinessLocation)))
 }

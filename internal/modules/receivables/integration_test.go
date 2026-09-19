@@ -83,7 +83,7 @@ func createReceivableInvoice(t *testing.T, db *gorm.DB, patient receivablePatien
 
 func TestPostgresPatientDebtLifecycleAndInsuranceExclusion(t *testing.T) {
 	db := receivablePostgres(t)
-	service := NewService(db)
+	service := NewService(db, time.UTC)
 	uninsured := createReceivableInvoice(t, db, receivablePatient{CodePatient: "REC-P1", NumeroDossier: "REC-D1", Nom: "Sans", Prenoms: "Assurance"}, "REC-INV-1", billing.InvoiceIssued, 20000, 0, 20000, false)
 	insured := createReceivableInvoice(t, db, receivablePatient{CodePatient: "REC-P2", NumeroDossier: "REC-D2", Nom: "Avec", Prenoms: "Assurance"}, "REC-INV-2", billing.InvoicePartiallyPaid, 50000, 35000, 15000, false)
 	_ = createReceivableInvoice(t, db, receivablePatient{CodePatient: "REC-P3", NumeroDossier: "REC-D3", Nom: "Couverture", Prenoms: "Attente"}, "REC-INV-3", billing.InvoiceIssued, 10000, 0, 10000, true)
@@ -93,7 +93,8 @@ func TestPostgresPatientDebtLifecycleAndInsuranceExclusion(t *testing.T) {
 	if err := db.Create(&payment).Error; err != nil {
 		t.Fatal(err)
 	}
-	past := time.Now().AddDate(0, 0, -1)
+	past := time.Now().UTC().AddDate(0, 0, -1)
+	past = time.Date(past.Year(), past.Month(), past.Day(), 0, 0, 0, 0, time.UTC)
 	if err := db.Create(&Metadata{InvoiceID: insured.ID, PatientID: insured.PatientID, DueDate: &past, UpdatedBy: 42}).Error; err != nil {
 		t.Fatal(err)
 	}

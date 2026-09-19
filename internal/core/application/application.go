@@ -2,6 +2,7 @@ package application
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -23,10 +24,11 @@ type Module interface {
 }
 
 type Application struct {
-	Config    config.Config
-	DB        *gorm.DB
-	Router    *gin.Engine
-	Container *container.Container
+	Config           config.Config
+	BusinessLocation *time.Location
+	DB               *gorm.DB
+	Router           *gin.Engine
+	Container        *container.Container
 }
 
 func New() *Application {
@@ -40,8 +42,9 @@ func New() *Application {
 		panic(err)
 	}
 	logger.Info("Timezone planning", "iana", scheduling.LocationName())
+	logger.Info("Timezone métier", "iana", cfg.BusinessTimezone)
 
-	db := database.Connect(cfg.DatabaseURL)
+	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
 	di := container.New()
 
 	r := gin.New()
@@ -55,10 +58,11 @@ func New() *Application {
 	r.Use(middleware.RequestLogger())
 
 	app := &Application{
-		Config:    cfg,
-		DB:        db,
-		Router:    r,
-		Container: di,
+		Config:           cfg,
+		BusinessLocation: cfg.BusinessLocation(),
+		DB:               db,
+		Router:           r,
+		Container:        di,
 	}
 
 	app.registerCoreRoutes()

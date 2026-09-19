@@ -7,29 +7,42 @@ import (
 	"time"
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
+	"github.com/lallene/medcore-his/backend/internal/core/businessdate"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-type Service struct{ db *gorm.DB }
-
-func NewService(db *gorm.DB) *Service { return &Service{db: db} }
-
-// calendarDay returns a comparable civil date (Y/M/D only) in UTC.
-// PostgreSQL DATE values and parseDate both expose calendar components via Date();
-// we do not reinterpret wall-clock offsets. "Today" uses the process local calendar day
-// (time.Local), matching SQL CURRENT_DATE when the DB session shares the host timezone.
-func calendarDay(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+type Service struct {
+	db  *gorm.DB
+	loc *time.Location
 }
 
-func insuranceStatus(balance, paid int64, due *time.Time) string {
+func NewService(db *gorm.DB, businessLoc *time.Location) *Service {
+	if businessLoc == nil {
+		panic("insurance_receivables.NewService: businessLoc is required")
+	}
+	return &Service{db: db, loc: businessLoc}
+}
+
+func insuranceStatus(balance, paid int64, due *time.Time, loc *time.Location) string {
 	if balance <= 0 {
 		return "PAID"
 	}
-	if due != nil && calendarDay(*due).Before(calendarDay(time.Now().In(time.Local))) {
+	if businessdate.IsOverdue(due, businessdate.TodayIn(loc)) {
+		return "OVERDUE"
+	}
+	if paid > 0 {
+		return "PARTIALLY_PAID"
+	}
+	return "UNPAID"
+}
+
+func insuranceStatusAt(balance, paid int64, due *time.Time, now time.Time, loc *time.Location) string {
+	if balance <= 0 {
+		return "PAID"
+	}
+	if businessdate.IsOverdue(due, businessdate.TodayAt(now, loc)) {
 		return "OVERDUE"
 	}
 	if paid > 0 {
@@ -100,7 +113,7 @@ func (s *Service) List(f Filter) (*Page, error) {
 		return nil, e
 	}
 	for i := range rows {
-		rows[i].Status = insuranceStatus(rows[i].InsuranceBalance, rows[i].InsurancePaid, rows[i].DueDate)
+		rows[i].Status = insuranceStatus(rows[i].InsuranceBalance, rows[i].InsurancePaid, rows[i].DueDate, s.loc)
 	}
 	return &Page{Items: rows, Page: f.Page, Limit: f.Limit, Total: total, TotalPages: int((total + int64(f.Limit) - 1) / int64(f.Limit))}, nil
 }
@@ -110,7 +123,7 @@ func (s *Service) Receivable(lineID uint) (*Item, error) {
 	if e := s.projection().Where("l.id=?", lineID).Scan(&row).Error; e != nil || row.InvoiceLineID == 0 {
 		return nil, coreerrors.NotFound("INSURANCE_RECEIVABLE")
 	}
-	row.Status = insuranceStatus(row.InsuranceBalance, row.InsurancePaid, row.DueDate)
+	row.Status = insuranceStatus(row.InsuranceBalance, row.InsurancePaid, row.DueDate, s.loc)
 	return &row, nil
 }
 
@@ -162,7 +175,7 @@ func (s *Service) KPIs() (*KPIs, error) {
 		}
 		k.TotalReceivables += r.InsuranceBalance
 		k.SettledAmount += r.InsurancePaid
-		if insuranceStatus(r.InsuranceBalance, r.InsurancePaid, r.DueDate) == "OVERDUE" {
+		if insuranceStatus(r.InsuranceBalance, r.InsurancePaid, r.DueDate, s.loc) == "OVERDUE" {
 			k.OverdueAmount += r.InsuranceBalance
 		}
 	}
@@ -325,7 +338,7 @@ func (s *Service) Allocate(id uint, r AllocationRequest, user uint) (*Settlement
 		if line.InsuranceAmount <= 0 || line.AuthorizationID == nil {
 			return coreerrors.Conflict("Cette ligne ne porte aucune créance assureur")
 		}
-		receivable, e := NewService(tx).Receivable(line.ID)
+		receivable, e := NewService(tx, s.loc).Receivable(line.ID)
 		if e != nil || receivable.InsuranceBalance <= 0 {
 			return coreerrors.Conflict("Cette ligne ne porte aucune créance assureur ouverte")
 		}
@@ -441,7 +454,7 @@ func (s *Service) SetDue(lineID uint, r DueDateRequest, user uint) (*Item, error
 	if e = s.projection().Where("l.id=?", lineID).Scan(&row).Error; e != nil || row.InvoiceLineID == 0 {
 		return nil, coreerrors.NotFound("INSURANCE_RECEIVABLE")
 	}
-	row.Status = insuranceStatus(row.InsuranceBalance, row.InsurancePaid, row.DueDate)
+	row.Status = insuranceStatus(row.InsuranceBalance, row.InsurancePaid, row.DueDate, s.loc)
 	return &row, nil
 }
 
@@ -472,7 +485,7 @@ func (s *Service) CreateBatch(r BatchRequest, user uint) (*BatchView, error) {
 			if e := tx.First(&line, lineID).Error; e != nil || line.InsuranceAmount <= 0 || line.AuthorizationID == nil {
 				return coreerrors.Conflict("Ligne de bordereau invalide")
 			}
-			receivable, findErr := NewService(tx).Receivable(line.ID)
+			receivable, findErr := NewService(tx, s.loc).Receivable(line.ID)
 			if findErr != nil || receivable.InsuranceBalance <= 0 {
 				return coreerrors.Conflict("Ligne de bordereau sans créance assureur ouverte")
 			}

@@ -38,7 +38,7 @@ func main() {
 
 	logger.Init(cfg.AppEnv)
 
-	db := database.Connect(cfg.DatabaseURL)
+	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
 
 	err := db.AutoMigrate(
 		&audit.AuditLog{},

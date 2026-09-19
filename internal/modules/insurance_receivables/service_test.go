@@ -5,13 +5,13 @@ import (
 	"time"
 )
 
-// dateOnlyUTC builds a PostgreSQL DATE-like value (civil day at UTC midnight).
 func dateOnlyUTC(y int, m time.Month, d int) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 func TestInsuranceStatus(t *testing.T) {
-	now := time.Now().In(time.Local)
+	loc := time.UTC
+	now := time.Date(2026, 9, 19, 15, 0, 0, 0, time.UTC)
 	y, m, d := now.Date()
 	today := dateOnlyUTC(y, m, d)
 	yesterday := today.AddDate(0, 0, -1)
@@ -34,10 +34,29 @@ func TestInsuranceStatus(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := insuranceStatus(c.balance, c.paid, c.due); got != c.want {
+			if got := insuranceStatusAt(c.balance, c.paid, c.due, now, loc); got != c.want {
 				t.Fatalf("got=%s want=%s", got, c.want)
 			}
 		})
+	}
+}
+
+func TestInsuranceStatusIgnoresProcessLocal(t *testing.T) {
+	now := time.Date(2026, 9, 18, 23, 30, 0, 0, time.UTC)
+	due := dateOnlyUTC(2026, 9, 18)
+	paris, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := insuranceStatusAt(15000, 20000, &due, now, paris); got != "OVERDUE" {
+		t.Fatalf("paris: got %s want OVERDUE", got)
+	}
+	if got := insuranceStatusAt(15000, 20000, &due, now, ny); got != "PARTIALLY_PAID" {
+		t.Fatalf("ny: got %s want PARTIALLY_PAID", got)
 	}
 }
 

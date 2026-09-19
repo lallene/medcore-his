@@ -814,7 +814,7 @@ func seedDemoInsuranceReceivables(
 	ensureInvoice func(string, string, billing.Tariff, *float64) billing.Invoice,
 	payOnce func(billing.Invoice, int64, string),
 ) {
-	service := insurance_receivables.NewService(db)
+	service := insurance_receivables.NewService(db, time.UTC)
 	rate70, rate100 := 70.0, 100.0
 	fifty := ensureTariff("DEMO-INSREC-50K", 50000)
 	t35 := ensureTariff("DEMO-INSREC-35K", 35000)
