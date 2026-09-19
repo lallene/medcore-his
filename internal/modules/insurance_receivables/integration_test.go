@@ -285,3 +285,47 @@ func TestPostgresOnlyApprovedDirectOrCoveredLinesBecomeReceivables(t *testing.T)
 		t.Fatalf("detail=%+v err=%v", detail, e)
 	}
 }
+
+// LOT 26A: partial settlement + yesterday DATE due must remain OVERDUE (calendar-safe).
+func TestPostgresPartialSettlementYesterdayDueIsOverdue(t *testing.T) {
+	db := insDB(t)
+	service := NewService(db)
+	company := insCompany{Code: "CAL-SAFE", Name: "Calendar Safe"}
+	patient := insPatient{CodePatient: "INS-CAL-P1", NumeroDossier: "INS-CAL-D1", Nom: "Calendar", Prenoms: "Due"}
+	_, line := insuredLine(t, db, company, patient, "INV-CAL-1", 50000, 35000, 15000)
+	if e := db.Where("code=?", company.Code).First(&company).Error; e != nil {
+		t.Fatal(e)
+	}
+	y, m, d := time.Now().In(time.Local).Date()
+	yesterday := time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1).Format("2006-01-02")
+	if _, e := service.SetDue(line.ID, DueDateRequest{DueDate: &yesterday}, 50); e != nil {
+		t.Fatal(e)
+	}
+	settlement, e := service.CreateSettlement(SettlementRequest{
+		InsuranceCompanyID: company.ID,
+		ExternalReference:  "VIR-CAL-20K",
+		ReceivedAt:         time.Now().Format("2006-01-02"),
+		TotalAmount:        20000,
+		PaymentMethod:      "BANK_TRANSFER",
+		IdempotencyKey:     "CAL-IDEM-20K",
+	}, 51)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = service.Allocate(settlement.ID, AllocationRequest{InvoiceLineID: line.ID, Amount: 20000}, 52); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = service.Post(settlement.ID, 53); e != nil {
+		t.Fatal(e)
+	}
+	item, e := service.Receivable(line.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if item.InsuranceDue != 35000 || item.InsurancePaid != 20000 || item.InsuranceBalance != 15000 {
+		t.Fatalf("amounts wrong: %+v", item)
+	}
+	if item.Status != "OVERDUE" {
+		t.Fatalf("status=%s want OVERDUE for partial+yesterday DATE: %+v", item.Status, item)
+	}
+}
