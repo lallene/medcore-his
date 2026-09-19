@@ -9,6 +9,9 @@ import (
 type DeliveryResult struct {
 	ProviderMessageID string
 	Skipped           bool
+	// SkipReason is a generic technical reason when Skipped is true (no PHI / no addresses).
+	// Consumed by the worker in LOT 26F-3; adapters may set it in 26F-2.
+	SkipReason string
 }
 
 // NotificationDeliveryAdapter sends an intent via a channel. 23N-A: no external I/O.
