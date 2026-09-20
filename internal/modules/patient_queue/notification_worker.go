@@ -179,14 +179,36 @@ func (w *NotificationWorker) processClaimed(ctx context.Context, intent *Appoint
 		id := res.ProviderMessageID
 		pmid = &id
 	}
+	// Residual 26H window (not closed by ErrAmbiguousDelivery alone): if Send
+	// returned success (provider accepted) but FinalizeNotificationSent fails or
+	// the process crashes before that TX commits, the intent stays PROCESSING
+	// with no durable "provider accepted" marker. Stale recovery may still
+	// re-Send. There is no distributed transaction with the provider; exactly-once
+	// is not guaranteed. Closing that gap needs a dedicated durable-ack follow-up.
 	if _, e := w.svc.FinalizeNotificationSent(intent.ID, adap.ProviderName(), pmid); e != nil {
 		w.log.Error("notification_finalize_sent", "intentId", intent.ID, "error", e.Error())
 	}
 }
 
+// notificationAmbiguousDeliveryReason is the privacy-safe attempt error persisted
+// for ErrAmbiguousDelivery (no recipient, body, clinical content, or provider payload).
+const notificationAmbiguousDeliveryReason = "delivery outcome ambiguous"
+
 func (w *NotificationWorker) finalizeSendError(intentID uint, provider string, sendErr error, now time.Time) {
+	// Ambiguous before context: a transport may wrap ErrAmbiguousDelivery around a
+	// deadline/cancel after dispatch. That must be terminal FAILED, not leave-PROCESSING.
+	if errors.Is(sendErr, email.ErrAmbiguousDelivery) {
+		msg := notificationAmbiguousDeliveryReason
+		_, e := w.svc.FinalizeNotificationFailedTerminal(intentID, provider, nil, &msg)
+		if e != nil {
+			w.log.Error("notification_finalize_failure", "intentId", intentID, "error", e.Error())
+		}
+		return
+	}
 	if errors.Is(sendErr, context.Canceled) || errors.Is(sendErr, context.DeadlineExceeded) {
 		// Leave PROCESSING; stale lease recovery will reclaim.
+		// Generic context failures are NOT auto-promoted to ambiguous (LOT 26H-2):
+		// pre-dispatch cancel must not become systematic message loss.
 		return
 	}
 	msg := sendErr.Error()

@@ -3,6 +3,7 @@ package email_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lallene/medcore-his/backend/internal/shared/email"
@@ -67,6 +68,8 @@ func TestErrorClassification(t *testing.T) {
 		{"transient_nil", email.Transient(nil), email.ErrTransient},
 		{"permanent", email.Permanent(cause), email.ErrPermanent},
 		{"permanent_nil", email.Permanent(nil), email.ErrPermanent},
+		{"ambiguous", email.AmbiguousDelivery(cause), email.ErrAmbiguousDelivery},
+		{"ambiguous_nil", email.AmbiguousDelivery(nil), email.ErrAmbiguousDelivery},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,6 +91,19 @@ func TestErrorClassification(t *testing.T) {
 	}
 	if errors.Is(email.ErrNotConfigured, email.ErrTransient) {
 		t.Fatal("not configured must not match transient")
+	}
+	if errors.Is(email.AmbiguousDelivery(cause), email.ErrTransient) {
+		t.Fatal("ambiguous must not match transient")
+	}
+	if errors.Is(email.Transient(cause), email.ErrAmbiguousDelivery) {
+		t.Fatal("transient must not match ambiguous")
+	}
+	if errors.Is(email.AmbiguousDelivery(cause), email.ErrPermanent) {
+		t.Fatal("ambiguous must not match permanent")
+	}
+	if strings.Contains(strings.ToLower(email.ErrAmbiguousDelivery.Error()), "patient") ||
+		strings.Contains(email.ErrAmbiguousDelivery.Error(), "@") {
+		t.Fatalf("sentinel must stay privacy-safe: %q", email.ErrAmbiguousDelivery.Error())
 	}
 }
 

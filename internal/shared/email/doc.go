@@ -18,7 +18,9 @@
 //   - 26E: Microsoft 365 (or other) Transport implementation
 //   - 26F: wire EMAIL channel into the durable notification worker
 //   - 26G: templates and PHI/privacy policy for outbound copy
-//   - 26H: retry / idempotence / crash-after-send hardening
+//   - 26H: reliability — at-least-once external delivery; ErrAmbiguousDelivery is
+//     terminal (no blind retry). IdempotencyKey is correlation only; Graph sendMail
+//     has no provider idempotency primitive (LOT 26H-1).
 //
 // IdempotencyKey is correlation/deduplication hint only. It does not guarantee
 // exactly-once delivery.

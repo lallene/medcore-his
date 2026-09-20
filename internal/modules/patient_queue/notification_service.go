@@ -427,7 +427,8 @@ func (s *Service) FinalizeNotificationFailure(intentID uint, provider string, pr
 }
 
 // FinalizeNotificationFailedTerminal inserts a failed attempt and PROCESSING → FAILED
-// immediately (no retry/backoff). Used for permanent/invalid/not-configured delivery errors.
+// immediately (no retry/backoff). Used for permanent/invalid/not-configured/
+// ambiguous-delivery errors (LOT 26H-2).
 func (s *Service) FinalizeNotificationFailedTerminal(intentID uint, provider string, providerMessageID, errMsg *string) (*AppointmentNotificationAttempt, error) {
 	return s.finalizeProcessingDelivery(intentID, provider, providerMessageID, errMsg, func(tx *gorm.DB, parent *AppointmentNotificationIntent, _ int, ts time.Time) error {
 		return applyProcessingTerminalTx(tx, parent.ID, NotifStatusFailed, ts, nil)

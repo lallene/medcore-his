@@ -19,6 +19,14 @@ var (
 	// without changing inputs (invalid recipient, rejected content policy, etc.).
 	ErrPermanent = errors.New("email: permanent failure")
 
+	// ErrAmbiguousDelivery means MedCore cannot establish whether the provider
+	// already accepted the outbound message (e.g. timeout after dispatch may
+	// have reached the provider). Unlike ErrTransient, automatic retry risks
+	// duplicate patient email and must be treated as terminal by the worker
+	// (LOT 26H-2). This is not provider idempotency and does not imply
+	// exactly-once delivery.
+	ErrAmbiguousDelivery = errors.New("email: delivery outcome ambiguous")
+
 	// ErrInvalidMessage means Message failed structural Validate().
 	ErrInvalidMessage = errors.New("email: invalid message")
 )
@@ -37,6 +45,15 @@ func Permanent(cause error) error {
 		return ErrPermanent
 	}
 	return fmt.Errorf("%w: %w", ErrPermanent, cause)
+}
+
+// AmbiguousDelivery wraps cause as a classified ambiguous-delivery failure.
+// Callers must not treat this as ErrTransient.
+func AmbiguousDelivery(cause error) error {
+	if cause == nil {
+		return ErrAmbiguousDelivery
+	}
+	return fmt.Errorf("%w: %w", ErrAmbiguousDelivery, cause)
 }
 
 // NotConfigured wraps an optional cause as ErrNotConfigured.
