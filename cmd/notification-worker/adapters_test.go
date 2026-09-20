@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 	"gorm.io/driver/sqlite"
@@ -44,7 +45,7 @@ func TestBuildAdaptersEmailDisabledIgnoresM365(t *testing.T) {
 	t.Setenv(envM365TenantID, "!!!not-a-tenant!!!")
 	t.Setenv(envM365Sender, "not an addr")
 
-	adapters, err := buildNotificationDeliveryAdapters(false, nil, slog.Default())
+	adapters, err := buildNotificationDeliveryAdapters(false, nil, slog.Default(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +70,7 @@ func TestBuildAdaptersEmailDisabledIgnoresM365(t *testing.T) {
 
 func TestBuildAdaptersEmailEnabledValid(t *testing.T) {
 	setValidM365Env(t, "dummy-client-secret")
-	adapters, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default())
+	adapters, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +87,17 @@ func TestBuildAdaptersEmailEnabledValid(t *testing.T) {
 	// Worker registry sorts alphabetically: EMAIL, LOG
 	if len(ch) != 2 || ch[0] != patient_queue.NotifChannelEmail || ch[1] != patient_queue.NotifChannelLog {
 		t.Fatalf("SupportedChannels=%v want [EMAIL LOG]", ch)
+	}
+}
+
+func TestBuildAdaptersEmailEnabledNilBusinessLocation(t *testing.T) {
+	setValidM365Env(t, "dummy-client-secret")
+	_, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), nil)
+	if err == nil {
+		t.Fatal("expected error when business location is nil")
+	}
+	if !strings.Contains(err.Error(), "business location") {
+		t.Fatalf("error=%v", err)
 	}
 }
 
@@ -112,7 +124,7 @@ func TestBuildAdaptersEmailEnabledMissingFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			base(t)
 			tc.mut(t)
-			_, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default())
+			_, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), time.UTC)
 			if err == nil {
 				t.Fatal("expected error")
 			}

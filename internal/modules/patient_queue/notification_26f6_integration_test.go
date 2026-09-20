@@ -51,7 +51,11 @@ func f6ReloadIntent(t *testing.T, db *gorm.DB, id uint) AppointmentNotificationI
 func f6Worker(t *testing.T, svc *Service, fake *email.Fake) *NotificationWorker {
 	t.Helper()
 	logAd := NewLogDeliveryAdapter(NotifChannelLog, nil)
-	emailAd := NewEmailDeliveryAdapter(fake, NewGormPatientEmailReader(svc.db))
+	emailAd := NewEmailDeliveryAdapter(
+		fake,
+		NewGormPatientEmailReader(svc.db),
+		NewAppointmentEmailRenderer(time.UTC),
+	)
 	return mustNotificationWorker(t, svc, NotificationWorkerConfig{
 		Adapters: notificationAdapters(logAd, emailAd),
 	})
@@ -179,8 +183,22 @@ func TestNotification26F6BookedEmailDeliveredEndToEnd(t *testing.T) {
 	if msg.IdempotencyKey != wantKey {
 		t.Fatalf("IdempotencyKey=%q want %q", msg.IdempotencyKey, wantKey)
 	}
-	if strings.TrimSpace(msg.Subject) == "" || strings.TrimSpace(msg.TextBody) == "" {
-		t.Fatal("subject and body must be non-empty")
+	if msg.HTMLBody != "" {
+		t.Fatalf("HTMLBody must stay empty, got %q", msg.HTMLBody)
+	}
+	if msg.Subject != "MedCore — Rendez-vous confirmé" {
+		t.Fatalf("Subject=%q want French booked subject", msg.Subject)
+	}
+	if !strings.Contains(msg.TextBody, "Votre rendez-vous est confirmé.") {
+		t.Fatalf("TextBody missing French booked copy: %q", msg.TextBody)
+	}
+	if strings.Contains(msg.TextBody, "Scheduled at:") || strings.Contains(msg.Subject, "Appointment booked") {
+		t.Fatal("legacy English adapter copy must not be used")
+	}
+	// Appointment start is Monday 10:00 UTC; renderer uses UTC in this fixture.
+	localWhen := appt.ScheduledAt.UTC().Format("15:04")
+	if !strings.Contains(msg.TextBody, "à "+localWhen) {
+		t.Fatalf("TextBody missing business-local time %q: %q", localWhen, msg.TextBody)
 	}
 	blob := strings.ToLower(msg.Subject + "\n" + msg.TextBody)
 	for _, bad := range []string{strings.ToLower(addr), "diagnosis", "prescription", "motif"} {

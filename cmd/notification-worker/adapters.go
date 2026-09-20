@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 	"github.com/lallene/medcore-his/backend/internal/shared/email/microsoft365"
@@ -53,10 +54,12 @@ func loadWorkerMicrosoft365Config() (microsoft365.Config, error) {
 // buildNotificationDeliveryAdapters constructs the worker adapter registry.
 // When emailEnabled is false, M365 env is ignored and only LOG is registered.
 // When emailEnabled is true, full M365 config is required; construction fails closed (no LOG-only fallback).
+// businessLoc is the established 26B business timezone used by AppointmentEmailRenderer.
 func buildNotificationDeliveryAdapters(
 	emailEnabled bool,
 	db *gorm.DB,
 	log *slog.Logger,
+	businessLoc *time.Location,
 ) (map[string]patient_queue.NotificationDeliveryAdapter, error) {
 	if log == nil {
 		log = slog.Default()
@@ -70,6 +73,9 @@ func buildNotificationDeliveryAdapters(
 	if db == nil {
 		return nil, fmt.Errorf("database required for email delivery adapter")
 	}
+	if businessLoc == nil {
+		return nil, fmt.Errorf("business location required for email renderer")
+	}
 	m365Cfg, err := loadWorkerMicrosoft365Config()
 	if err != nil {
 		return nil, err
@@ -79,6 +85,7 @@ func buildNotificationDeliveryAdapters(
 		return nil, err
 	}
 	reader := patient_queue.NewGormPatientEmailReader(db)
-	adapters[patient_queue.NotifChannelEmail] = patient_queue.NewEmailDeliveryAdapter(transport, reader)
+	renderer := patient_queue.NewAppointmentEmailRenderer(businessLoc)
+	adapters[patient_queue.NotifChannelEmail] = patient_queue.NewEmailDeliveryAdapter(transport, reader, renderer)
 	return adapters, nil
 }

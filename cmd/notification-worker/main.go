@@ -35,7 +35,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	adapters, err := buildNotificationDeliveryAdapters(cfg.NotificationEmailEnabled, db, log)
+	adapters, err := buildNotificationDeliveryAdapters(
+		cfg.NotificationEmailEnabled,
+		db,
+		log,
+		cfg.BusinessLocation(),
+	)
 	if err != nil {
 		log.Error("notification worker adapters", "error", err)
 		os.Exit(1)

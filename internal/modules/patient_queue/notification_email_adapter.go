@@ -15,20 +15,29 @@ const NotifSkipReasonRecipientUnavailable = "recipient unavailable"
 
 // EmailDeliveryAdapter delivers appointment notification intents over email.Transport.
 // Recipient is resolved at Send time from patients.email via PatientEmailReader.
+// Appointment email copy is owned by NotificationEmailRenderer (not this adapter).
 type EmailDeliveryAdapter struct {
 	transport email.Transport
 	patients  PatientEmailReader
+	renderer  NotificationEmailRenderer
 }
 
-// NewEmailDeliveryAdapter wires a provider-neutral transport and patient email reader.
-func NewEmailDeliveryAdapter(transport email.Transport, patients PatientEmailReader) *EmailDeliveryAdapter {
+// NewEmailDeliveryAdapter wires transport, patient email reader, and content renderer.
+func NewEmailDeliveryAdapter(
+	transport email.Transport,
+	patients PatientEmailReader,
+	renderer NotificationEmailRenderer,
+) *EmailDeliveryAdapter {
 	if transport == nil {
 		panic("email delivery adapter: transport required")
 	}
 	if patients == nil {
 		panic("email delivery adapter: patient email reader required")
 	}
-	return &EmailDeliveryAdapter{transport: transport, patients: patients}
+	if renderer == nil {
+		panic("email delivery adapter: notification email renderer required")
+	}
+	return &EmailDeliveryAdapter{transport: transport, patients: patients, renderer: renderer}
 }
 
 func (a *EmailDeliveryAdapter) Channel() string { return NotifChannelEmail }
@@ -37,8 +46,8 @@ func (a *EmailDeliveryAdapter) ProviderName() string {
 	return a.transport.ProviderName()
 }
 
-// Send resolves the patient recipient, builds a minimal scheduling message, and calls Transport.Send.
-// Missing/invalid recipients return Skipped without calling the transport.
+// Send resolves the patient recipient, renders appointment copy, and calls Transport.Send.
+// Missing/invalid recipients return Skipped without calling the renderer or transport.
 func (a *EmailDeliveryAdapter) Send(ctx context.Context, intent *AppointmentNotificationIntent, payload NotificationPayload) (DeliveryResult, error) {
 	if intent == nil {
 		return DeliveryResult{Skipped: true, SkipReason: NotifSkipReasonRecipientUnavailable}, nil
@@ -58,10 +67,17 @@ func (a *EmailDeliveryAdapter) Send(ctx context.Context, intent *AppointmentNoti
 		return DeliveryResult{Skipped: true, SkipReason: NotifSkipReasonRecipientUnavailable}, nil
 	}
 
+	rendered, err := a.renderer.Render(intent.Kind, payload)
+	if err != nil {
+		// Preserve renderer error identity (e.g. email.ErrInvalidMessage → terminal).
+		return DeliveryResult{}, err
+	}
+
 	msg := email.Message{
 		To:             email.Address{Address: to},
-		Subject:        emailSubjectForKind(intent.Kind),
-		TextBody:       emailTextBody(payload),
+		Subject:        rendered.Subject,
+		TextBody:       rendered.TextBody,
+		HTMLBody:       "",
 		IdempotencyKey: fmt.Sprintf("notification-intent:%d", intent.ID),
 	}
 
@@ -81,42 +97,4 @@ func emailRecipientAddrSpecOK(addr string) bool {
 		TextBody: ".",
 	}
 	return probe.Validate() == nil
-}
-
-func emailSubjectForKind(kind string) string {
-	switch kind {
-	case NotifKindBooked:
-		return "MedCore — Appointment booked"
-	case NotifKindRescheduled:
-		return "MedCore — Appointment updated"
-	case NotifKindCancelled:
-		return "MedCore — Appointment cancelled"
-	case NotifKindReminderT24H:
-		return "MedCore — Appointment reminder"
-	default:
-		return "MedCore — Appointment notification"
-	}
-}
-
-func emailTextBody(payload NotificationPayload) string {
-	var b strings.Builder
-	b.WriteString("Scheduled at: ")
-	b.WriteString(strings.TrimSpace(payload.ScheduledAt))
-	b.WriteByte('\n')
-	if v := strings.TrimSpace(payload.AppointmentTypeName); v != "" {
-		b.WriteString("Type: ")
-		b.WriteString(v)
-		b.WriteByte('\n')
-	}
-	if v := strings.TrimSpace(payload.ServiceName); v != "" {
-		b.WriteString("Service: ")
-		b.WriteString(v)
-		b.WriteByte('\n')
-	}
-	if v := strings.TrimSpace(payload.ClinicLabel); v != "" {
-		b.WriteString("Clinic: ")
-		b.WriteString(v)
-		b.WriteByte('\n')
-	}
-	return b.String()
 }
