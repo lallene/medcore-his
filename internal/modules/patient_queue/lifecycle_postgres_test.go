@@ -18,12 +18,16 @@ func lifeSetup(t *testing.T) (*gorm.DB, *Service, Access, uint, uint, *Appointme
 	_ = EnsureAppointmentIndexes(db)
 	_ = EnsureTicketIndexes(db)
 
-	_ = db.Exec(`INSERT INTO users(id, name) VALUES (900,'DrLife'),(901,'DrLife2'),(902,'LifeActor') ON CONFLICT DO NOTHING`)
-	_ = db.Exec(`INSERT INTO staff_profiles(id, user_id, active, primary_service_id) VALUES
-		(200,900,true,10),(201,901,true,10),(202,902,true,10) ON CONFLICT DO NOTHING`)
-	_ = db.Exec(`INSERT INTO staff_service_assignments(profile_id, service_id, active) VALUES
-		(200,10,true),(201,10,true),(202,10,true) ON CONFLICT DO NOTHING`)
-	_ = db.Exec(`INSERT INTO patients(id, code_patient, nom, prenoms) VALUES
+	mustExecSQL(t, db, `INSERT INTO users(id, name, email) VALUES
+		(900,'DrLife','drlife@pq-test.invalid'),
+		(901,'DrLife2','drlife2@pq-test.invalid'),
+		(902,'LifeActor','lifeactor@pq-test.invalid') ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO staff_profiles(id, user_id, active, primary_service_id, employee_code) VALUES
+		(200,900,true,10,'PQ-LIFE-200'),(201,901,true,10,'PQ-LIFE-201'),(202,902,true,10,'PQ-LIFE-202')
+		ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO staff_service_assignments(profile_id, service_id, active, created_by) VALUES
+		(200,10,true,902),(201,10,true,902),(202,10,true,902) ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO patients(id, code_patient, nom, prenoms) VALUES
 		(901,'PLF1','Life','One'),(902,'PLF2','Life','Two'),(903,'PLF3','Life','Three'),
 		(904,'PLF4','Life','Four'),(905,'PLF5','Life','Five') ON CONFLICT DO NOTHING`)
 

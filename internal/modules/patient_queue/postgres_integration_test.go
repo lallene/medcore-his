@@ -1,21 +1,42 @@
 package patient_queue
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
+// queuePostgresIsolationConfigError is returned (via t.Fatal) when TEST_DATABASE_URL
+// uses a connection mode that cannot preserve session search_path across concurrent
+// physical connections (typical of transaction-mode poolers).
+const queuePostgresIsolationConfigError = "TEST_DATABASE_URL connection mode cannot preserve session search_path for patient_queue PG isolation; use a direct/session-mode PostgreSQL endpoint"
+
+// queuePostgres opens an ephemeral schema for patient_queue PG tests.
+//
+// Isolation contract (no DSN hostname rewriting):
+//  1. Create schema pq_<nanos> via an admin connection.
+//  2. Open the test pool with pgx RuntimeParams["search_path"] so every new
+//     physical connection starts in the ephemeral schema. Transaction-mode
+//     poolers reject this startup parameter → fail-fast config error.
+//  3. Also apply AfterConnect SET search_path as belt-and-suspenders on
+//     session-mode endpoints.
+//  4. Fail-fast assert current_schema() / current_schemas(false) on the GORM path.
+//  5. Fail-fast concurrent multi-statement probe against an ephemeral-only marker
+//     table so drift to public cannot silently continue.
+//
+// Never prints DSN / host / credentials.
 func queuePostgres(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -30,21 +51,54 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	if e = admin.Exec(`CREATE SCHEMA "` + schema + `"`).Error; e != nil {
 		t.Fatal(e)
 	}
-	sep := "?"
-	if strings.Contains(dsn, "?") {
-		sep = "&"
+
+	pgConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
 	}
-	db, e := gorm.Open(postgres.Open(dsn+sep+"search_path="+url.QueryEscape(schema)), &gorm.Config{})
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	if pgConfig.RuntimeParams == nil {
+		pgConfig.RuntimeParams = map[string]string{}
+	}
+	// Startup search_path is the reliable session-scoped mechanism. Providers that
+	// run transaction-mode pooling reject it — that is an explicit configuration
+	// failure for this harness (do not rewrite hostnames).
+	pgConfig.RuntimeParams["search_path"] = schemaIdent
+
+	sqlDB := stdlib.OpenDB(*pgConfig, stdlib.OptionAfterConnect(func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET search_path TO "+schemaIdent)
+		return err
+	}))
+	// Test-harness pool only (not production). Concurrent PG tests need enough
+	// connections for intentional parallelism. CheckInWalkIn holds a transaction
+	// connection then calls EvaluateFinance on s.db (second checkout) — so
+	// TestPostgresTicketReferenceUniqueness (10 workers) needs ~20 simultaneous
+	// connections. Highest explicit fan-out found is 12 (attempt concurrency).
+	// Cap well above that so the harness never invents a pool deadlock.
+	const queuePostgresMaxOpenConns = 32
+	sqlDB.SetMaxOpenConns(queuePostgresMaxOpenConns)
+	sqlDB.SetMaxIdleConns(queuePostgresMaxOpenConns)
+
+	pingCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`)
+		msg := err.Error()
+		if strings.Contains(msg, "unsupported startup parameter") || strings.Contains(strings.ToLower(msg), "search_path") {
+			t.Fatal(queuePostgresIsolationConfigError)
+		}
+		t.Fatal(err)
+	}
+
+	db, e := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
 	if e != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`)
 		t.Fatal(e)
 	}
 
 	adminSQL, err := admin.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sqlDB, err := db.DB()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,83 +108,210 @@ func queuePostgres(t *testing.T) *gorm.DB {
 		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
 		_ = adminSQL.Close()
 	})
+
+	assertQueuePostgresIsolation(t, db, schema)
+	// Marker table exists only in the ephemeral schema. Concurrent multi-statement
+	// probes must resolve it; endpoints that drop session search_path fail here.
+	mustExecSQL(t, db, `CREATE TABLE _pq_isolation_probe (
+		id INT PRIMARY KEY,
+		observed_schema TEXT NOT NULL
+	)`)
+	assertQueuePostgresIsolationConcurrent(t, db, schema)
+
 	if e = db.AutoMigrate(&AppointmentType{}, &AppointmentSeries{}, &Appointment{}, &AppointmentHistory{}, &Ticket{}, &History{},
 		&StaffWorkingSchedule{}, &ScheduleException{}, &ScheduleAuditEvent{},
 		&AppointmentNotificationIntent{}, &AppointmentNotificationAttempt{}); e != nil {
 		t.Fatal(e)
 	}
-	_ = EnsureAppointmentIndexes(db)
-	_ = EnsureScheduleIndexes(db)
-	_ = EnsureTicketIndexes(db)
+	if err := EnsureAppointmentIndexes(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureScheduleIndexes(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureTicketIndexes(db); err != nil {
+		t.Fatal(err)
+	}
 	if err := EnsureNotificationIndexes(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := EnsureAppointmentSeriesIndexes(db); err != nil {
 		t.Fatal(err)
 	}
-	// Minimal patients / services / users for FK-less raw lookups
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS patients (
-		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT, prenoms TEXT,
+
+	// Minimal FK-less stubs aligned with current NOT NULL columns used by fixtures.
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS organization_departments (
+		id BIGSERIAL PRIMARY KEY, code TEXT NOT NULL, name TEXT NOT NULL,
+		active BOOLEAN NOT NULL DEFAULT true,
+		created_by BIGINT NOT NULL DEFAULT 1, updated_by BIGINT NOT NULL DEFAULT 1
+	)`)
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS patients (
+		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT NOT NULL DEFAULT '', prenoms TEXT,
 		sexe TEXT, date_naissance DATE, telephone TEXT,
 		email VARCHAR(150) NOT NULL DEFAULT '',
 		deleted_at TIMESTAMPTZ
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS organization_services (
-		id BIGSERIAL PRIMARY KEY, name TEXT, code TEXT, active BOOLEAN NOT NULL DEFAULT true
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS organization_services (
+		id BIGSERIAL PRIMARY KEY, department_id BIGINT NOT NULL DEFAULT 1,
+		name TEXT, code TEXT, active BOOLEAN NOT NULL DEFAULT true,
+		service_type TEXT NOT NULL DEFAULT 'CLINICAL',
+		created_by BIGINT NOT NULL DEFAULT 1, updated_by BIGINT NOT NULL DEFAULT 1
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS users (
-		id BIGSERIAL PRIMARY KEY, name TEXT
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS users (
+		id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL,
+		email TEXT NOT NULL DEFAULT '',
+		password_hash TEXT NOT NULL DEFAULT 'test-only-hash',
+		is_active BOOLEAN NOT NULL DEFAULT true
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS billing_invoices (
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS billing_invoices (
 		id BIGSERIAL PRIMARY KEY, patient_id BIGINT, patient_amount BIGINT, status TEXT, coverage_pending BOOLEAN DEFAULT false
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS billing_payments (
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS billing_payments (
 		id BIGSERIAL PRIMARY KEY, invoice_id BIGINT, amount BIGINT
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS vital_signs (
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS vital_signs (
 		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT NOT NULL,
 		consultation_id BIGINT, comment TEXT,
 		temperature_c DOUBLE PRECISION, systolic_bp INT, diastolic_bp INT, heart_rate INT,
 		oxygen_saturation DOUBLE PRECISION, weight_kg DOUBLE PRECISION, height_cm DOUBLE PRECISION,
 		measured_at TIMESTAMPTZ, updated_at TIMESTAMPTZ DEFAULT NOW()
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS allergies (
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS allergies (
 		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT,
 		allergen_type TEXT, allergen_name TEXT, reaction TEXT, severity TEXT,
 		comment TEXT, is_active BOOLEAN DEFAULT true, created_by BIGINT,
 		created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS medical_histories (
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS medical_histories (
 		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT,
 		type TEXT, title TEXT, description TEXT, status TEXT DEFAULT 'active',
 		severity TEXT, comment TEXT, created_by BIGINT,
 		created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS staff_profiles (
-		id BIGSERIAL PRIMARY KEY, user_id BIGINT, active BOOLEAN DEFAULT true, primary_service_id BIGINT
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS staff_profiles (
+		id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, active BOOLEAN NOT NULL DEFAULT true,
+		primary_service_id BIGINT, employee_code TEXT NOT NULL DEFAULT ''
 	)`)
-	_ = db.Exec(`CREATE TABLE IF NOT EXISTS staff_service_assignments (
-		id BIGSERIAL PRIMARY KEY, profile_id BIGINT, service_id BIGINT, active BOOLEAN DEFAULT true
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS staff_service_assignments (
+		id BIGSERIAL PRIMARY KEY, profile_id BIGINT NOT NULL, service_id BIGINT NOT NULL,
+		active BOOLEAN NOT NULL DEFAULT true, is_primary BOOLEAN NOT NULL DEFAULT false,
+		created_by BIGINT NOT NULL DEFAULT 1
 	)`)
-	_ = db.Exec(`INSERT INTO patients(id, code_patient, nom, prenoms, sexe, telephone) VALUES
+
+	mustExecSQL(t, db, `INSERT INTO organization_departments(id, code, name, active, created_by, updated_by) VALUES
+		(1,'PQ-TEST','Patient Queue Test Dept',true,1,1) ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO patients(id, code_patient, nom, prenoms, sexe, telephone) VALUES
 		(1,'P-Q-1','Dupont','Alice','F','0600000001'),
 		(2,'P-Q-2','Martin','Bob','M','0600000002') ON CONFLICT DO NOTHING`)
-	_ = db.Exec(`INSERT INTO organization_services(id, name, code, active) VALUES (10,'Urgences','URG',true),(11,'Médecine','MED',true) ON CONFLICT DO NOTHING`)
-	_ = db.Exec(`INSERT INTO users(id, name) VALUES (100,'Accueil'),(101,'Infirmier'),(102,'Médecin') ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO organization_services(id, department_id, name, code, active) VALUES
+		(10,1,'Urgences','URG',true),(11,1,'Médecine','MED',true) ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO users(id, name, email) VALUES
+		(100,'Accueil','accueil@pq-test.invalid'),
+		(101,'Infirmier','infirmier@pq-test.invalid'),
+		(102,'Médecin','medecin@pq-test.invalid') ON CONFLICT DO NOTHING`)
+
+	// Re-assert after DDL/DML: still on the same GORM pool path.
+	assertQueuePostgresIsolation(t, db, schema)
+	assertQueuePostgresIsolationConcurrent(t, db, schema)
 	return db
+}
+
+// assertQueuePostgresIsolation verifies the GORM/pool path resolves unqualified
+// names into the ephemeral schema — not public.
+func assertQueuePostgresIsolation(t *testing.T, db *gorm.DB, schema string) {
+	t.Helper()
+	var currentSchema string
+	if err := db.Raw("SELECT current_schema()").Scan(&currentSchema).Error; err != nil {
+		t.Fatalf("isolation assert current_schema: %v", err)
+	}
+	if currentSchema != schema {
+		t.Fatalf("queuePostgres isolation failed: current_schema=%q want=%q (queries would hit the wrong schema)", currentSchema, schema)
+	}
+	var schemas []string
+	if err := db.Raw("SELECT unnest(current_schemas(false))").Scan(&schemas).Error; err != nil {
+		t.Fatalf("isolation assert current_schemas: %v", err)
+	}
+	if len(schemas) == 0 || schemas[0] != schema {
+		t.Fatalf("queuePostgres isolation failed: current_schemas(false) effective first=%v want %q first", schemas, schema)
+	}
+}
+
+// assertQueuePostgresIsolationConcurrent forces multiple physical connections and
+// verifies each can resolve an ephemeral-only table through multi-statement GORM
+// work. Transaction-mode poolers that discard session SET between statements fail.
+func assertQueuePostgresIsolationConcurrent(t *testing.T, db *gorm.DB, schema string) {
+	t.Helper()
+	const workers = 8
+	start := make(chan struct{})
+	errs := make(chan string, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			<-start
+			var currentSchema string
+			if err := db.Raw("SELECT current_schema()").Scan(&currentSchema).Error; err != nil {
+				errs <- "current_schema: " + err.Error()
+				return
+			}
+			if currentSchema != schema {
+				errs <- fmt.Sprintf("current_schema=%q want=%q", currentSchema, schema)
+				return
+			}
+			// Separate statement on likely-different pool checkout — must still see marker.
+			if err := db.Exec(
+				`INSERT INTO _pq_isolation_probe(id, observed_schema) VALUES (?, current_schema())
+				 ON CONFLICT (id) DO UPDATE SET observed_schema = EXCLUDED.observed_schema`,
+				id,
+			).Error; err != nil {
+				errs <- "ephemeral marker insert: " + err.Error()
+				return
+			}
+			var observed string
+			if err := db.Raw(`SELECT observed_schema FROM _pq_isolation_probe WHERE id = ?`, id).Scan(&observed).Error; err != nil {
+				errs <- "ephemeral marker select: " + err.Error()
+				return
+			}
+			if observed != schema {
+				errs <- fmt.Sprintf("marker observed_schema=%q want=%q", observed, schema)
+			}
+		}(i + 1)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	var failed []string
+	for e := range errs {
+		failed = append(failed, e)
+	}
+	if len(failed) > 0 {
+		t.Fatalf("%s (%d/%d concurrent probes failed; first=%s)", queuePostgresIsolationConfigError, len(failed), workers, failed[0])
+	}
+	var n int64
+	if err := db.Raw(`SELECT COUNT(*) FROM _pq_isolation_probe`).Scan(&n).Error; err != nil {
+		t.Fatalf("isolation probe count: %v", err)
+	}
+	if n != workers {
+		t.Fatalf("%s (probe row count=%d want=%d)", queuePostgresIsolationConfigError, n, workers)
+	}
+}
+
+func mustExecSQL(t *testing.T, db *gorm.DB, sql string, args ...any) {
+	t.Helper()
+	if err := db.Exec(sql, args...).Error; err != nil {
+		t.Fatalf("fixture SQL failed: %v", err)
+	}
 }
 
 // seedPractitionerForService wires staff assignment used by booking/create fixtures.
 func seedPractitionerForService(t *testing.T, db *gorm.DB, profileID, userID, serviceID uint) {
 	t.Helper()
-	if err := db.Exec(`INSERT INTO staff_profiles(id, user_id, active, primary_service_id) VALUES (?,?,true,?) ON CONFLICT DO NOTHING`,
-		profileID, userID, serviceID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`INSERT INTO staff_service_assignments(profile_id, service_id, active) VALUES (?,?,true) ON CONFLICT DO NOTHING`,
-		profileID, serviceID).Error; err != nil {
-		t.Fatal(err)
-	}
+	code := fmt.Sprintf("PQ-EMP-%d", profileID)
+	mustExecSQL(t, db, `INSERT INTO staff_profiles(id, user_id, active, primary_service_id, employee_code) VALUES (?,?,true,?,?) ON CONFLICT DO NOTHING`,
+		profileID, userID, serviceID, code)
+	mustExecSQL(t, db, `INSERT INTO staff_service_assignments(profile_id, service_id, active, created_by) VALUES (?,?,true,?) ON CONFLICT DO NOTHING`,
+		profileID, serviceID, userID)
 }
 
 // seedAllDaySchedules makes practitioner bookable for CreateAppointment fixtures (LOT 23D).
@@ -815,7 +996,7 @@ func TestPostgresDoctorWorklistOnlyAfterTriage(t *testing.T) {
 	}
 	// second doctor cannot silently take
 	docB := scopedAccess(103, 10, "queue.doctor.read", "queue.doctor.take")
-	_ = db.Exec(`INSERT INTO users(id, name) VALUES (103,'Médecin B') ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO users(id, name, email) VALUES (103,'Médecin B','medecin-b@pq-test.invalid') ON CONFLICT DO NOTHING`)
 	if _, e := svc.TakeDoctor(tk.ID, TakeDoctorRequest{}, docB); statusOf(e) != 409 {
 		t.Fatalf("concurrent take want 409 got %d (%v)", statusOf(e), e)
 	}
@@ -969,7 +1150,7 @@ func TestPostgresClinicalFlowDoctorBOtherCannotComplete(t *testing.T) {
 	svc := NewService(db)
 	taken := clinicalFlowReadyTicket(t, db, svc)
 	docB := scopedAccess(103, 10, "queue.doctor.read", "queue.doctor.take")
-	_ = db.Exec(`INSERT INTO users(id, name) VALUES (103,'Médecin B') ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO users(id, name, email) VALUES (103,'Médecin B','medecin-b@pq-test.invalid') ON CONFLICT DO NOTHING`)
 	if _, e := svc.Complete(taken.ID, CompleteRequest{}, docB); statusOf(e) != 403 {
 		t.Fatalf("other doctor complete want 403 got %d (%v)", statusOf(e), e)
 	}
@@ -1168,7 +1349,7 @@ func TestPostgresClinicalFlowTakeDoctorRejectsDifferentDoctorAssignment(t *testi
 	db := queuePostgres(t)
 	svc := NewService(db)
 	migrateClinicalFlowTables(db)
-	_ = db.Exec(`INSERT INTO users(id, name) VALUES (103,'Médecin B') ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO users(id, name, email) VALUES (103,'Médecin B','medecin-b@pq-test.invalid') ON CONFLICT DO NOTHING`)
 	doc := scopedAccess(102, 10, "queue.doctor.read", "queue.doctor.take")
 	otherUID := uint(103)
 	_ = db.Exec(`INSERT INTO consultations(id, patient_id, doctor_name, doctor_user_id, service, service_id, status, diagnosis)

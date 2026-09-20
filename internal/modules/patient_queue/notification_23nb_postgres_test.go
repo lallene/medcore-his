@@ -317,7 +317,7 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 		t.Fatalf("stale recovery must record exactly 1 attempt, got %d", staleAtt)
 	}
 
-	_ = db.Exec(`INSERT INTO patients(id) VALUES (9) ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO patients(id, code_patient, nom, prenoms) VALUES (9,'P-Q-9','Test','Nine') ON CONFLICT DO NOTHING`)
 	appt := Appointment{
 		PatientID: 9, ServiceID: 10, ScheduledAt: start2, Status: ApptCancelled,
 		CreatedBy: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
@@ -348,7 +348,7 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 func TestPostgresNotificationCompletedReminderSkipped23NB(t *testing.T) {
 	db, svc := notificationTestDB(t)
 	start := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
-	_ = db.Exec(`INSERT INTO patients(id) VALUES (910) ON CONFLICT DO NOTHING`)
+	mustExecSQL(t, db, `INSERT INTO patients(id, code_patient, nom, prenoms) VALUES (910,'P-Q-910','Test','Completed') ON CONFLICT DO NOTHING`)
 	appt := Appointment{
 		PatientID: 910, ServiceID: 10, ScheduledAt: start, Status: ApptCompleted,
 		CreatedBy: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
