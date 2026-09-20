@@ -71,7 +71,9 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	// Minimal patients / services / users for FK-less raw lookups
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS patients (
 		id BIGSERIAL PRIMARY KEY, code_patient TEXT, nom TEXT, prenoms TEXT,
-		sexe TEXT, date_naissance DATE, telephone TEXT
+		sexe TEXT, date_naissance DATE, telephone TEXT,
+		email VARCHAR(150) NOT NULL DEFAULT '',
+		deleted_at TIMESTAMPTZ
 	)`)
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS organization_services (
 		id BIGSERIAL PRIMARY KEY, name TEXT, code TEXT, active BOOLEAN NOT NULL DEFAULT true
