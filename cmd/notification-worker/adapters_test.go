@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/config"
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -98,6 +99,54 @@ func TestBuildAdaptersEmailEnabledNilBusinessLocation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "business location") {
 		t.Fatalf("error=%v", err)
+	}
+}
+
+// TestBuildAdaptersEmailEnabledUsesConfigBusinessLocation proves the production
+// composition seam receives config.BusinessLocation() (non-UTC) and registers EMAIL.
+// Wall-clock projection for that same *time.Location is asserted via the renderer
+// contract (identical to adapters.go: NewAppointmentEmailRenderer(businessLoc)).
+// Full Send through the composed M365 transport is intentionally not exercised (no Graph).
+func TestBuildAdaptersEmailEnabledUsesConfigBusinessLocation(t *testing.T) {
+	setValidM365Env(t, "dummy-client-secret")
+	cfg := config.Config{
+		DatabaseURL:      "postgres://u:p@localhost:5432/db?sslmode=disable",
+		Timezone:         "UTC",
+		BusinessTimezone: "Europe/Paris",
+		AppEnv:           "development",
+		JWTSecret:        "x",
+		CORSOrigin:       "http://localhost",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	loc := cfg.BusinessLocation()
+	if loc == nil || loc.String() != "Europe/Paris" {
+		t.Fatalf("BusinessLocation=%v", loc)
+	}
+
+	adapters, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapters[patient_queue.NotifChannelEmail] == nil {
+		t.Fatal("EMAIL adapter missing when BusinessLocation is injected")
+	}
+
+	// Same location object path as worker composition → AppointmentEmailRenderer.
+	r := patient_queue.NewAppointmentEmailRenderer(loc)
+	got, err := r.Render(patient_queue.NotifKindBooked, patient_queue.NotificationPayload{
+		AppointmentID: 1,
+		ScheduledAt:   "2026-09-21T12:00:00Z", // → 14:00 Europe/Paris (CEST)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Subject != "MedCore — Rendez-vous confirmé" {
+		t.Fatalf("subject=%q", got.Subject)
+	}
+	if !strings.Contains(got.TextBody, "lundi 21 septembre 2026 à 14:00") {
+		t.Fatalf("BusinessLocation projection missing in body: %q", got.TextBody)
 	}
 }
 

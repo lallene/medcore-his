@@ -497,6 +497,74 @@ func TestEmailDeliveryAdapterContextCanceled(t *testing.T) {
 	}
 }
 
+func TestEmailDeliveryAdapterRecipientNotInSubjectOrBody(t *testing.T) {
+	t.Parallel()
+	fake := email.NewFake()
+	reader := newMapPatientEmailReader()
+	const addr = "unique.recipient.zz9@example.test"
+	reader.set(1, addr)
+	paris, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ad := NewEmailDeliveryAdapter(fake, reader, NewAppointmentEmailRenderer(paris))
+
+	payload := NotificationPayload{
+		AppointmentID:       1,
+		ScheduledAt:         "2026-09-21T12:00:00Z",
+		AppointmentTypeName: "TYPE_SENTINEL_ADAPTER_ZZ9",
+		ServiceName:         "SERVICE_SENTINEL_ADAPTER_ZZ9",
+		ClinicLabel:         "CLINIC_SENTINEL_ADAPTER_ZZ9",
+	}
+	if _, err := ad.Send(context.Background(), testEmailIntent(1, NotifKindBooked), payload); err != nil {
+		t.Fatal(err)
+	}
+	msg := fake.Sent()[0]
+	if msg.To.Address != addr {
+		t.Fatalf("To=%q", msg.To.Address)
+	}
+	blob := msg.Subject + "\n" + msg.TextBody + "\n" + msg.HTMLBody
+	if strings.Contains(blob, addr) {
+		t.Fatalf("recipient leaked into copy: %q", blob)
+	}
+	for _, s := range []string{"TYPE_SENTINEL_ADAPTER_ZZ9", "SERVICE_SENTINEL_ADAPTER_ZZ9", "CLINIC_SENTINEL_ADAPTER_ZZ9"} {
+		if strings.Contains(blob, s) {
+			t.Fatalf("optional label leaked into copy: %q", blob)
+		}
+	}
+	if !strings.Contains(msg.TextBody, "lundi 21 septembre 2026 à 14:00") {
+		t.Fatalf("expected Paris projection in body: %q", msg.TextBody)
+	}
+	if msg.IdempotencyKey != "notification-intent:42" {
+		t.Fatalf("idempotency=%q", msg.IdempotencyKey)
+	}
+}
+
+func TestEmailDeliveryAdapterRealRendererInvalidScheduledAtTerminal(t *testing.T) {
+	t.Parallel()
+	fake := email.NewFake()
+	reader := newMapPatientEmailReader()
+	reader.set(1, "ok@example.com")
+	ad := newTestEmailAdapter(fake, reader)
+
+	_, err := ad.Send(context.Background(), testEmailIntent(1, NotifKindBooked), NotificationPayload{
+		AppointmentID: 1,
+		ScheduledAt:   "bogus",
+		ClinicLabel:   "SHOULD_NOT_APPEAR_IN_ERROR",
+	})
+	if !errors.Is(err, email.ErrInvalidMessage) {
+		t.Fatalf("got %v, want ErrInvalidMessage", err)
+	}
+	if len(fake.Sent()) != 0 {
+		t.Fatal("transport must not be called")
+	}
+	if strings.Contains(err.Error(), "ok@example.com") ||
+		strings.Contains(err.Error(), "bogus") ||
+		strings.Contains(err.Error(), "SHOULD_NOT_APPEAR_IN_ERROR") {
+		t.Fatalf("error leaked privacy-sensitive data: %v", err)
+	}
+}
+
 func TestEmailDeliveryAdapterPrivacyNoClinicalOrContactLeak(t *testing.T) {
 	t.Parallel()
 	fake := email.NewFake()
