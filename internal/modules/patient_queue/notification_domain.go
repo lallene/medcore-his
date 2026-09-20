@@ -169,6 +169,20 @@ func NotificationRetryBackoff(failedAttemptNo int) (time.Duration, bool) {
 	}
 }
 
+// NotificationEffectiveRetryDelay returns max(MedCore backoff, providerFloor).
+// Provider floor never shortens MedCore policy (LOT 26H-4). attemptNo is 1-based.
+// Returns ok=false when the attempt is terminal (no retry).
+func NotificationEffectiveRetryDelay(failedAttemptNo int, providerFloor time.Duration) (time.Duration, bool) {
+	base, ok := NotificationRetryBackoff(failedAttemptNo)
+	if !ok {
+		return 0, false
+	}
+	if providerFloor > base {
+		return providerFloor, true
+	}
+	return base, true
+}
+
 // NotificationPayload is the only allowed persisted template data for intents.
 //
 // Explicitly prohibited (structurally absent):

@@ -3,6 +3,7 @@ package email
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Sentinel classifications for provider-neutral transport failures.
@@ -62,4 +63,43 @@ func NotConfigured(cause error) error {
 		return ErrNotConfigured
 	}
 	return fmt.Errorf("%w: %w", ErrNotConfigured, cause)
+}
+
+// TransientRetryAfter wraps a transient failure with an optional provider retry
+// delay floor (LOT 26H-4). The delay is a hint for the worker: do not retry
+// sooner than this duration. It does not replace MedCore backoff policy.
+// after <= 0 yields a plain Transient error (no hint).
+func TransientRetryAfter(cause error, after time.Duration) error {
+	base := Transient(cause)
+	if after <= 0 {
+		return base
+	}
+	return &retryAfterError{err: base, after: after}
+}
+
+type retryAfterError struct {
+	err   error
+	after time.Duration
+}
+
+func (e *retryAfterError) Error() string { return e.err.Error() }
+func (e *retryAfterError) Unwrap() error { return e.err }
+func (e *retryAfterError) RetryAfter() time.Duration {
+	if e == nil {
+		return 0
+	}
+	return e.after
+}
+
+// RetryAfter extracts a positive provider retry-delay hint from err, if present.
+func RetryAfter(err error) (time.Duration, bool) {
+	var ra interface{ RetryAfter() time.Duration }
+	if !errors.As(err, &ra) {
+		return 0, false
+	}
+	d := ra.RetryAfter()
+	if d <= 0 {
+		return 0, false
+	}
+	return d, true
 }

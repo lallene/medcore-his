@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/lallene/medcore-his/backend/internal/shared/email"
@@ -63,7 +65,7 @@ func classifyTokenHTTP(status int, body []byte) error {
 	}
 }
 
-func classifyGraphHTTP(status int, body []byte, requestID string) error {
+func classifyGraphHTTP(status int, body []byte, requestID, retryAfterHeader string) error {
 	detail := formatProviderError("graph", status, parseGraphErrorCode(body))
 	if rid := safeRequestID(requestID); rid != "" {
 		detail = detail + " request-id=" + rid
@@ -71,7 +73,14 @@ func classifyGraphHTTP(status int, body []byte, requestID string) error {
 	switch status {
 	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict:
 		return email.Permanent(fmt.Errorf("%s", detail))
-	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+	case http.StatusRequestTimeout:
+		return email.Transient(fmt.Errorf("%s", detail))
+	case http.StatusTooManyRequests:
+		// Retry-After floor applies only to confirmed 429 (LOT 26H-4).
+		// delay-seconds only; HTTP-date intentionally unsupported.
+		if d, ok := parseRetryAfterDelaySeconds(retryAfterHeader); ok {
+			return email.TransientRetryAfter(fmt.Errorf("%s", detail), d)
+		}
 		return email.Transient(fmt.Errorf("%s", detail))
 	default:
 		if status >= 500 {
@@ -82,6 +91,35 @@ func classifyGraphHTTP(status int, body []byte, requestID string) error {
 		}
 		return email.Permanent(fmt.Errorf("%s", detail))
 	}
+}
+
+// parseRetryAfterDelaySeconds parses Graph/HTTP Retry-After as delay-seconds only.
+// Malformed, zero, negative, overflow, and HTTP-date forms yield ok=false (ignore).
+func parseRetryAfterDelaySeconds(raw string) (time.Duration, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return 0, false
+	}
+	// Reject HTTP-date and any non-digit form; Graph throttling uses delay-seconds.
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	secs, err := strconv.ParseUint(s, 10, 32)
+	if err != nil || secs == 0 {
+		return 0, false
+	}
+	// Guard Duration multiply overflow even though uint32 seconds fit on amd64/arm64.
+	const maxSecs = uint64(time.Duration(^uint64(0)>>1) / time.Second) // MaxInt64 / Second
+	if secs > maxSecs {
+		return 0, false
+	}
+	d := time.Duration(secs) * time.Second
+	if d <= 0 {
+		return 0, false
+	}
+	return d, true
 }
 
 func parseGraphErrorCode(body []byte) string {

@@ -148,7 +148,7 @@ func TestPostgresWorkerAmbiguousDelivery26H2(t *testing.T) {
 		// Simulate two prior failed attempts while still PROCESSING.
 		for i := 0; i < 2; i++ {
 			msg := "prior transient"
-			if err := svc.failOrRetryAfterAttempt(row.ID, "m365", nil, &msg, asOf); err != nil {
+			if err := svc.failOrRetryAfterAttempt(row.ID, "m365", nil, &msg, asOf, 0); err != nil {
 				t.Fatal(err)
 			}
 			// Re-claim into PROCESSING for the next simulated attempt.

@@ -3,8 +3,10 @@ package email_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/shared/email"
 )
@@ -104,6 +106,61 @@ func TestErrorClassification(t *testing.T) {
 	if strings.Contains(strings.ToLower(email.ErrAmbiguousDelivery.Error()), "patient") ||
 		strings.Contains(email.ErrAmbiguousDelivery.Error(), "@") {
 		t.Fatalf("sentinel must stay privacy-safe: %q", email.ErrAmbiguousDelivery.Error())
+	}
+}
+
+func TestTransientRetryAfterContract26H4(t *testing.T) {
+	cause := errors.New("throttle")
+	err := email.TransientRetryAfter(cause, 2*time.Minute)
+	if !errors.Is(err, email.ErrTransient) {
+		t.Fatalf("want ErrTransient, got %v", err)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatal("cause must unwrap")
+	}
+	if errors.Is(err, email.ErrAmbiguousDelivery) {
+		t.Fatal("retry-after must not be ambiguous")
+	}
+	d, ok := email.RetryAfter(err)
+	if !ok || d != 2*time.Minute {
+		t.Fatalf("RetryAfter=%v ok=%v", d, ok)
+	}
+	if strings.Contains(err.Error(), "Retry-After") || strings.Contains(err.Error(), "120") {
+		t.Fatalf("error text must not dump retry header: %q", err.Error())
+	}
+
+	plain := email.Transient(cause)
+	if _, ok := email.RetryAfter(plain); ok {
+		t.Fatal("plain transient must have no hint")
+	}
+	if _, ok := email.RetryAfter(email.TransientRetryAfter(cause, 0)); ok {
+		t.Fatal("zero hint must be absent")
+	}
+	if _, ok := email.RetryAfter(email.TransientRetryAfter(cause, -time.Second)); ok {
+		t.Fatal("negative hint must be absent")
+	}
+	if _, ok := email.RetryAfter(email.AmbiguousDelivery(nil)); ok {
+		t.Fatal("ambiguous must have no retry hint")
+	}
+
+	nilCause := email.TransientRetryAfter(nil, time.Minute)
+	if !errors.Is(nilCause, email.ErrTransient) {
+		t.Fatalf("nil cause must remain ErrTransient: %v", nilCause)
+	}
+	if d, ok := email.RetryAfter(nilCause); !ok || d != time.Minute {
+		t.Fatalf("nil-cause hint=%v ok=%v", d, ok)
+	}
+	if nilCause == nil {
+		t.Fatal("TransientRetryAfter must not return nil")
+	}
+
+	wrapped := fmt.Errorf("outer: %w", email.TransientRetryAfter(cause, 90*time.Second))
+	if !errors.Is(wrapped, email.ErrTransient) {
+		t.Fatal("wrapped must remain transient")
+	}
+	d, ok = email.RetryAfter(wrapped)
+	if !ok || d != 90*time.Second {
+		t.Fatalf("wrapped RetryAfter=%v ok=%v", d, ok)
 	}
 }
 

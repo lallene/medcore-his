@@ -700,7 +700,7 @@ func TestPostgresNotificationAtomicFinalization23NB(t *testing.T) {
 	// 5) failure → PENDING + backoff atomic
 	retryRow := mkProcessing(3205, "fin-retry")
 	failMsg := "adapter boom"
-	att, err = svc.FinalizeNotificationFailure(retryRow.ID, "fail", nil, &failMsg, asOf)
+	att, err = svc.FinalizeNotificationFailure(retryRow.ID, "fail", nil, &failMsg, asOf, 0)
 	if err != nil || att.AttemptNo != 1 {
 		t.Fatalf("retry finalize att=%+v err=%v", att, err)
 	}
@@ -725,7 +725,7 @@ func TestPostgresNotificationAtomicFinalization23NB(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	att, err = svc.FinalizeNotificationFailure(maxRow.ID, "fail", nil, &failMsg, asOf)
+	att, err = svc.FinalizeNotificationFailure(maxRow.ID, "fail", nil, &failMsg, asOf, 0)
 	if err != nil || att.AttemptNo != NotificationMaxAttempts {
 		t.Fatalf("max finalize att=%+v err=%v", att, err)
 	}

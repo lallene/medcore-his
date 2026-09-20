@@ -122,7 +122,7 @@ func (t *Transport) Send(ctx context.Context, msg email.Message) (email.Result, 
 		if res.StatusCode == http.StatusAccepted {
 			return email.Result{ProviderMessageID: ""}, nil
 		}
-		return email.Result{}, classifyGraphHTTP(res.StatusCode, nil, graphRequestID)
+		return email.Result{}, classifyGraphHTTP(res.StatusCode, nil, graphRequestID, res.Header.Get("Retry-After"))
 	}
 
 	if res.StatusCode == http.StatusAccepted {
@@ -130,7 +130,7 @@ func (t *Transport) Send(ctx context.Context, msg email.Message) (email.Result, 
 		// Do not invent ProviderMessageID from request-id / client-request-id.
 		return email.Result{ProviderMessageID: ""}, nil
 	}
-	return email.Result{}, classifyGraphHTTP(res.StatusCode, body, graphRequestID)
+	return email.Result{}, classifyGraphHTTP(res.StatusCode, body, graphRequestID, res.Header.Get("Retry-After"))
 }
 
 var _ email.Transport = (*Transport)(nil)

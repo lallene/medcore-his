@@ -13,7 +13,7 @@
 //     notification-intent:<id> IdempotencyKey (observability only)
 //   - Per-attempt client-request-id UUID; response request-id for ops correlation
 //   - Post-dispatch uncertain Do errors → email.ErrAmbiguousDelivery (LOT 26H-3)
+//   - Confirmed HTTP 429 may carry TransientRetryAfter delay-seconds floor (LOT 26H-4)
 //
-// This package does not wire the notification worker (LOT 26F), templates (26G),
-// or Retry-After scheduling (26H-4).
+// This package does not wire the notification worker (LOT 26F) or templates (26G).
 package microsoft365

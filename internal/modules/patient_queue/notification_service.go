@@ -320,7 +320,7 @@ func (s *Service) RecoverStaleProcessingClaims(asOf time.Time, batch int) (int, 
 		if e != nil || cur.Status != NotifStatusProcessing {
 			continue
 		}
-		if e := s.failOrRetryAfterAttempt(id, "worker", nil, &msg, recoveryNow); e != nil {
+		if e := s.failOrRetryAfterAttempt(id, "worker", nil, &msg, recoveryNow, 0); e != nil {
 			return recovered, e
 		}
 		recovered++
@@ -371,8 +371,10 @@ func (s *Service) acquireStaleProcessingLeases(recoveryNow, cutoff time.Time, ba
 
 // failOrRetryAfterAttempt atomically records a failed attempt and transitions
 // PROCESSING → PENDING (backoff) or PROCESSING → FAILED (max attempts) in one TX.
-func (s *Service) failOrRetryAfterAttempt(intentID uint, provider string, providerMessageID, errMsg *string, now time.Time) error {
-	_, err := s.FinalizeNotificationFailure(intentID, provider, providerMessageID, errMsg, now)
+// providerRetryFloor is an optional delay floor from a provider Retry-After hint
+// (LOT 26H-4); zero means use MedCore backoff only.
+func (s *Service) failOrRetryAfterAttempt(intentID uint, provider string, providerMessageID, errMsg *string, now time.Time, providerRetryFloor time.Duration) error {
+	_, err := s.FinalizeNotificationFailure(intentID, provider, providerMessageID, errMsg, now, providerRetryFloor)
 	return err
 }
 
@@ -393,7 +395,9 @@ func (s *Service) FinalizeNotificationSkipped(intentID uint, provider string, er
 
 // FinalizeNotificationFailure atomically inserts a failed attempt and either
 // PROCESSING → PENDING with backoff, or PROCESSING → FAILED at max attempts.
-func (s *Service) FinalizeNotificationFailure(intentID uint, provider string, providerMessageID, errMsg *string, now time.Time) (*AppointmentNotificationAttempt, error) {
+// providerRetryFloor raises SendAfter when larger than NotificationRetryBackoff
+// (LOT 26H-4); it never shortens MedCore policy and never bypasses max attempts.
+func (s *Service) FinalizeNotificationFailure(intentID uint, provider string, providerMessageID, errMsg *string, now time.Time, providerRetryFloor time.Duration) (*AppointmentNotificationAttempt, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -401,7 +405,7 @@ func (s *Service) FinalizeNotificationFailure(intentID uint, provider string, pr
 		if attemptNo >= NotificationMaxAttempts {
 			return applyProcessingTerminalTx(tx, parent.ID, NotifStatusFailed, ts, nil)
 		}
-		backoff, ok := NotificationRetryBackoff(attemptNo)
+		backoff, ok := NotificationEffectiveRetryDelay(attemptNo, providerRetryFloor)
 		if !ok {
 			return applyProcessingTerminalTx(tx, parent.ID, NotifStatusFailed, ts, nil)
 		}

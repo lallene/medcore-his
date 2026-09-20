@@ -104,8 +104,23 @@ func TestReminderT24HEligible(t *testing.T) {
 }
 
 func TestNotificationRetryBackoff(t *testing.T) {
-	if d, ok := NotificationRetryBackoff(1); !ok || d != time.Minute {
-		t.Fatalf("1: %v %v", d, ok)
+	if NotificationMaxAttempts != 5 {
+		t.Fatalf("MaxAttempts=%d", NotificationMaxAttempts)
+	}
+	if NotificationStaleProcessing != 15*time.Minute {
+		t.Fatalf("Stale=%s", NotificationStaleProcessing)
+	}
+	want := map[int]time.Duration{
+		1: time.Minute,
+		2: 5 * time.Minute,
+		3: 15 * time.Minute,
+		4: time.Hour,
+	}
+	for attempt, d := range want {
+		got, ok := NotificationRetryBackoff(attempt)
+		if !ok || got != d {
+			t.Fatalf("attempt %d: got %v/%v want %v/true", attempt, got, ok, d)
+		}
 	}
 	if _, ok := NotificationRetryBackoff(5); ok {
 		t.Fatal("attempt 5 must be terminal")

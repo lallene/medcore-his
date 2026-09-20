@@ -131,7 +131,7 @@ func (w *NotificationWorker) processClaimed(ctx context.Context, intent *Appoint
 	adap, ok := w.adapters[intent.Channel]
 	if !ok {
 		msg := "adapter unavailable"
-		if e := w.svc.failOrRetryAfterAttempt(intent.ID, "worker", nil, &msg, now); e != nil {
+		if e := w.svc.failOrRetryAfterAttempt(intent.ID, "worker", nil, &msg, now, 0); e != nil {
 			w.log.Error("notification_finalize_failure", "intentId", intent.ID, "error", e.Error())
 		}
 		return
@@ -140,7 +140,7 @@ func (w *NotificationWorker) processClaimed(ctx context.Context, intent *Appoint
 	payload, err := ParseNotificationPayload(intent.PayloadJSON)
 	if err != nil {
 		msg := "invalid payload"
-		if e := w.svc.failOrRetryAfterAttempt(intent.ID, adap.ProviderName(), nil, &msg, now); e != nil {
+		if e := w.svc.failOrRetryAfterAttempt(intent.ID, adap.ProviderName(), nil, &msg, now, 0); e != nil {
 			w.log.Error("notification_finalize_failure", "intentId", intent.ID, "error", e.Error())
 		}
 		return
@@ -223,7 +223,9 @@ func (w *NotificationWorker) finalizeSendError(intentID uint, provider string, s
 		_, e = w.svc.FinalizeNotificationFailedTerminal(intentID, provider, nil, &msg)
 	} else {
 		// Transient, unknown, and ErrTransient → existing retry/backoff.
-		e = w.svc.failOrRetryAfterAttempt(intentID, provider, nil, &msg, now)
+		// Provider Retry-After (if any) is a floor only (LOT 26H-4).
+		hint, _ := email.RetryAfter(sendErr)
+		e = w.svc.failOrRetryAfterAttempt(intentID, provider, nil, &msg, now, hint)
 	}
 	if e != nil {
 		w.log.Error("notification_finalize_failure", "intentId", intentID, "error", e.Error())
