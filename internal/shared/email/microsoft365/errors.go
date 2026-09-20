@@ -13,9 +13,23 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/shared/email"
 )
 
-func mapTransportError(err error) error {
+// mapDoError classifies client.Do failures.
+//
+// requestWritten means httptrace.WroteRequest fired with Err==nil: the request
+// bytes may have reached Graph. Those outcomes are ErrAmbiguousDelivery —
+// automatic retry risks a duplicate patient email (LOT 26H-3). This is not
+// proof of provider acceptance.
+//
+// Failures before a successful write remain ordinary transient / bare context errors.
+func mapDoError(err error, requestWritten bool) error {
 	if err == nil {
 		return email.Transient(nil)
+	}
+	if requestWritten {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return email.AmbiguousDelivery(err)
+		}
+		return email.AmbiguousDelivery(fmt.Errorf("graph request outcome unknown"))
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
@@ -25,6 +39,12 @@ func mapTransportError(err error) error {
 		return email.Transient(fmt.Errorf("network error"))
 	}
 	return email.Transient(fmt.Errorf("transport error"))
+}
+
+// mapTransportError classifies pre-dispatch / token HTTP client failures
+// (never sendMail ambiguous — Graph mail was not attempted).
+func mapTransportError(err error) error {
+	return mapDoError(err, false)
 }
 
 func classifyTokenHTTP(status int, body []byte) error {
@@ -43,8 +63,11 @@ func classifyTokenHTTP(status int, body []byte) error {
 	}
 }
 
-func classifyGraphHTTP(status int, body []byte) error {
+func classifyGraphHTTP(status int, body []byte, requestID string) error {
 	detail := formatProviderError("graph", status, parseGraphErrorCode(body))
+	if rid := safeRequestID(requestID); rid != "" {
+		detail = detail + " request-id=" + rid
+	}
 	switch status {
 	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict:
 		return email.Permanent(fmt.Errorf("%s", detail))
@@ -100,4 +123,20 @@ func safeProviderCode(code string) string {
 		return ""
 	}
 	return code
+}
+
+// safeRequestID accepts opaque Graph request-id / client-request-id echo values
+// (GUID-like). Rejects anything that could embed tokens or free text.
+func safeRequestID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || len(id) > 80 {
+		return ""
+	}
+	for _, r := range id {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return ""
+	}
+	return id
 }

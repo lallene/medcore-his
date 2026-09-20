@@ -255,6 +255,9 @@ func TestTransportNetworkErrorTransient(t *testing.T) {
 	if !errors.Is(err, email.ErrTransient) {
 		t.Fatalf("err=%v", err)
 	}
+	if errors.Is(err, email.ErrAmbiguousDelivery) {
+		t.Fatal("connect refusal before request write must not be ambiguous")
+	}
 }
 
 func TestTransportSenderAddrSpecAccepted(t *testing.T) {

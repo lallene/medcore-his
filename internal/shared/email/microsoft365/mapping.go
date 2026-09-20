@@ -13,9 +13,15 @@ type graphSendMailRequest struct {
 }
 
 type graphMessage struct {
-	Subject      string           `json:"subject"`
-	Body         graphItemBody    `json:"body"`
-	ToRecipients []graphRecipient `json:"toRecipients"`
+	Subject                string                       `json:"subject"`
+	Body                   graphItemBody                `json:"body"`
+	ToRecipients           []graphRecipient             `json:"toRecipients"`
+	InternetMessageHeaders []graphInternetMessageHeader `json:"internetMessageHeaders,omitempty"`
+}
+
+type graphInternetMessageHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type graphItemBody struct {
@@ -50,13 +56,19 @@ func mapMessage(msg email.Message) ([]byte, error) {
 		body.Content = msg.TextBody
 	}
 
-	payload := graphSendMailRequest{
-		Message: graphMessage{
-			Subject:      msg.Subject,
-			Body:         body,
-			ToRecipients: []graphRecipient{rec},
-		},
+	gm := graphMessage{
+		Subject:      msg.Subject,
+		Body:         body,
+		ToRecipients: []graphRecipient{rec},
 	}
+	if intentID, ok := parseNotificationIntentID(msg.IdempotencyKey); ok {
+		gm.InternetMessageHeaders = []graphInternetMessageHeader{{
+			Name:  notificationIntentHeaderName,
+			Value: intentID,
+		}}
+	}
+
+	payload := graphSendMailRequest{Message: gm}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return nil, email.Permanent(fmt.Errorf("graph payload marshal failed"))
