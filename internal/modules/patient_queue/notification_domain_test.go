@@ -219,21 +219,21 @@ func TestParseNotificationPayloadRejectsProhibitedKeys(t *testing.T) {
 
 func TestLogAdapterDoesNotLogContactPHI(t *testing.T) {
 	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	ad := NewLogDeliveryAdapter(NotifChannelLog, logger)
 	intent := &AppointmentNotificationIntent{ID: 9, AppointmentID: 3, Kind: NotifKindBooked, Channel: NotifChannelLog}
 	payload := NotificationPayload{AppointmentID: 3, ScheduledAt: "2026-01-01T10:00:00Z"}
-	if _, err := ad.Send(context.Background(), intent, payload); err != nil {
+	res, err := ad.Send(context.Background(), intent, payload)
+	if err != nil {
 		t.Fatal(err)
 	}
-	out := buf.String()
-	for _, bad := range []string{"telephone", "email", "+225", "@"} {
-		if strings.Contains(strings.ToLower(out), bad) {
-			t.Fatalf("log leaked %q: %s", bad, out)
-		}
+	if res.ProviderMessageID != "log" {
+		t.Fatalf("res=%+v", res)
 	}
-	if !strings.Contains(out, "intentId") || !strings.Contains(out, "appointmentId") {
-		t.Fatalf("expected safe metadata: %s", out)
+	out := buf.String()
+	// LOT 26I-5E: no per-delivery application log (metrics-first; no IDs/content).
+	if out != "" {
+		t.Fatalf("LogDeliveryAdapter must not emit application logs on Send, got %q", out)
 	}
 }
 

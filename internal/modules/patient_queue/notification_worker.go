@@ -146,7 +146,7 @@ func (w *NotificationWorker) Run(ctx context.Context) error {
 	defer ticker.Stop()
 	for {
 		if err := w.Tick(ctx); err != nil {
-			w.log.Error("notification_worker_tick", "error", err.Error())
+			w.logWorkerOpError(WorkerLogOpTick, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -197,7 +197,7 @@ func (w *NotificationWorker) refreshQueueSnapshot(ctx context.Context, asOf time
 	}
 	snap, err := w.queue.NotificationQueueSnapshot(ctx, asOf)
 	if err != nil {
-		w.log.Error("notification_queue_snapshot", "error", err.Error())
+		w.logWorkerOpError(WorkerLogOpQueueSnapshotRefresh, err)
 		return
 	}
 	w.queueObserver.ObserveQueueSnapshot(snap)
@@ -208,7 +208,7 @@ func (w *NotificationWorker) processClaimed(ctx context.Context, intent *Appoint
 	if !ok {
 		msg := "adapter unavailable"
 		if e := w.finalizer.failOrRetryAfterAttempt(intent.ID, "worker", nil, &msg, now, 0); e != nil {
-			w.log.Error("notification_finalize_failure", "intentId", intent.ID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeFailure, e, "channel", intent.Channel, "provider", "worker")
 		}
 		// Worker selected adapter_unavailable → retry path (finalize may still fail).
 		w.observeDelivery(intent.Channel, DeliveryOutcomeAdapterUnavailable)
@@ -219,21 +219,16 @@ func (w *NotificationWorker) processClaimed(ctx context.Context, intent *Appoint
 	if err != nil {
 		msg := "invalid payload"
 		if e := w.finalizer.failOrRetryAfterAttempt(intent.ID, adap.ProviderName(), nil, &msg, now, 0); e != nil {
-			w.log.Error("notification_finalize_failure", "intentId", intent.ID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeFailure, e, "channel", intent.Channel, "provider", adap.ProviderName())
 		}
 		w.observeDelivery(intent.Channel, DeliveryOutcomeInvalidPayload)
 		return
 	}
 	if skip, reason := w.shouldPreSendSkip(intent, payload); skip {
-		w.log.Info("appointment_notification_skip",
-			"intentId", intent.ID,
-			"appointmentId", intent.AppointmentID,
-			"kind", intent.Kind,
-			"reason", reason,
-		)
+		// Routine skip: metrics only (LOT 26I-5E) — no identifying INFO log.
 		msg := reason
 		if _, e := w.finalizer.FinalizeNotificationSkipped(intent.ID, adap.ProviderName(), &msg); e != nil {
-			w.log.Error("notification_finalize_skipped", "intentId", intent.ID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeSkipped, e, "channel", intent.Channel, "provider", adap.ProviderName())
 		}
 		// Outcome = skip branch selected (not proof finalize TX committed).
 		w.observeDelivery(intent.Channel, DeliveryOutcomeSkipped)
@@ -251,7 +246,7 @@ func (w *NotificationWorker) processClaimed(ctx context.Context, intent *Appoint
 			msg = "adapter skipped"
 		}
 		if _, e := w.finalizer.FinalizeNotificationSkipped(intent.ID, adap.ProviderName(), &msg); e != nil {
-			w.log.Error("notification_finalize_skipped", "intentId", intent.ID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeSkipped, e, "channel", intent.Channel, "provider", adap.ProviderName())
 		}
 		w.observeDelivery(intent.Channel, DeliveryOutcomeSkipped)
 		return
@@ -268,7 +263,7 @@ func (w *NotificationWorker) processClaimed(ctx context.Context, intent *Appoint
 	// re-Send. There is no distributed transaction with the provider; exactly-once
 	// is not guaranteed. Closing that gap needs a dedicated durable-ack follow-up.
 	if _, e := w.finalizer.FinalizeNotificationSent(intent.ID, adap.ProviderName(), pmid); e != nil {
-		w.log.Error("notification_finalize_sent", "intentId", intent.ID, "error", e.Error())
+		w.logWorkerOpError(WorkerLogOpFinalizeSent, e, "channel", intent.Channel, "provider", adap.ProviderName())
 		// Do not record outcome=sent when durable SENT transition failed.
 		return
 	}
@@ -303,7 +298,7 @@ func (w *NotificationWorker) finalizeSendError(domainChannel string, intentID ui
 		msg := notificationAmbiguousDeliveryReason
 		_, e := w.finalizer.FinalizeNotificationFailedTerminal(intentID, provider, nil, &msg)
 		if e != nil {
-			w.log.Error("notification_finalize_failure", "intentId", intentID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeFailure, e, "channel", domainChannel, "provider", provider)
 		}
 		w.observeDelivery(domainChannel, DeliveryOutcomeAmbiguous)
 		return
@@ -323,21 +318,21 @@ func (w *NotificationWorker) finalizeSendError(domainChannel string, intentID ui
 	case errors.Is(sendErr, email.ErrPermanent):
 		_, e := w.finalizer.FinalizeNotificationFailedTerminal(intentID, provider, nil, &msg)
 		if e != nil {
-			w.log.Error("notification_finalize_failure", "intentId", intentID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeFailure, e, "channel", domainChannel, "provider", provider)
 		}
 		w.observeDelivery(domainChannel, DeliveryOutcomePermanent)
 		return
 	case errors.Is(sendErr, email.ErrInvalidMessage):
 		_, e := w.finalizer.FinalizeNotificationFailedTerminal(intentID, provider, nil, &msg)
 		if e != nil {
-			w.log.Error("notification_finalize_failure", "intentId", intentID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeFailure, e, "channel", domainChannel, "provider", provider)
 		}
 		w.observeDelivery(domainChannel, DeliveryOutcomeInvalidMessage)
 		return
 	case errors.Is(sendErr, email.ErrNotConfigured):
 		_, e := w.finalizer.FinalizeNotificationFailedTerminal(intentID, provider, nil, &msg)
 		if e != nil {
-			w.log.Error("notification_finalize_failure", "intentId", intentID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeFailure, e, "channel", domainChannel, "provider", provider)
 		}
 		w.observeDelivery(domainChannel, DeliveryOutcomeNotConfigured)
 		return
@@ -347,7 +342,7 @@ func (w *NotificationWorker) finalizeSendError(domainChannel string, intentID ui
 		hint, _ := email.RetryAfter(sendErr)
 		e := w.finalizer.failOrRetryAfterAttempt(intentID, provider, nil, &msg, now, hint)
 		if e != nil {
-			w.log.Error("notification_finalize_failure", "intentId", intentID, "error", e.Error())
+			w.logWorkerOpError(WorkerLogOpFinalizeFailure, e, "channel", domainChannel, "provider", provider)
 		}
 		w.observeDelivery(domainChannel, DeliveryOutcomeTransient)
 	}

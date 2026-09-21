@@ -1132,7 +1132,7 @@ Notes:
 - `canceled` = bare context cancel/deadline that **leaves PROCESSING** (no attempt row).
 - EMAIL provider latency wraps **only** `email.Transport.Send` (not patient lookup or renderer). LOG latency wraps `LogDeliveryAdapter.Send`.
 - SMS is not a metric channel (no worker adapter).
-- Queue/backlog gauges remain 5D; dashboards/alerts remain 5F.
+- Dashboards/alerts remain 5F.
 
 #### Queue / backlog gauges (LOT 26I-5D)
 
@@ -1150,7 +1150,7 @@ Notes:
 
 - Domain channels `LOG`/`EMAIL`/`SMS` map to labels `log`/`email`/`sms`. Unknown persisted channels are **dropped** (no `other`).
 - On every **successful** snapshot apply, all five gauges are zero-filled for `log`/`email`/`sms`, then snapshot values are applied (so a drained backlog cannot leave stale non-zeros).
-- Snapshot refresh is **best-effort**: on failure the worker logs the error, does **not** call the queue observer, **retains** the last successful gauge values (does not zero), and does **not** fail `Tick` / increment `ticks_total{result="error"}` solely for snapshot failure.
+- Snapshot refresh is **best-effort**: on failure the worker logs a bounded ERROR (`operation=queue_snapshot_refresh`, `error_class`) without raw error text, does **not** call the queue observer, **retains** the last successful gauge values (does not zero), and does **not** fail `Tick` / increment `ticks_total{result="error"}` solely for snapshot failure.
 - SMS may normally be zero (no delivery adapter) but a non-zero SMS series reveals orphaned persisted work.
 - These gauges reflect **global DB queue state**. Every worker replica may expose approximately the same values. **DO NOT SUM** queue gauges across replicas. Prefer `max by (channel) (...)` or scraping one worker target. For oldest age, `max by (channel)` is operationally safe across slightly different snapshot times.
 - No migration / new index in 5D; existing `idx_appt_notif_intent_due(status, send_after)` is accepted.
@@ -1169,13 +1169,26 @@ Notes:
 | **Kubernetes** | liveness → `/healthz`; readiness → `/readyz` (target the configured container health port) |
 | **Docker** `HEALTHCHECK` | `/readyz` on `http://127.0.0.1:${NOTIFICATION_WORKER_HEALTH_PORT}/readyz` (Docker has a single health state; a worker that cannot reach DB is not operationally useful) |
 
-Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Ops logging privacy cleanup belongs to **26I-5E**; dashboards/alerts to **26I-5F**.
+Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Dashboards/alerts belong to **26I-5F**.
 
 **Shutdown:** SIGINT/SIGTERM → mark shutting-down (readiness false immediately) → cancel worker context → existing Run cancellation semantics → graceful health HTTP `Shutdown` → exit.
 
 **Multi-replica:** health state is **per-process only**. No DB heartbeat rows, leader election, or distributed health locks. `ClaimDue` `SKIP LOCKED` semantics are unchanged. Queue gauges are global DB snapshots — **never sum** them across replicas (see 26I-5D).
 
-Deferred (later 26I slices): ops logging privacy cleanup (26I-5E), dashboards/alerts (26I-5F), production M365 auth posture (26I-6).
+#### Application logging privacy (LOT 26I-5E)
+
+Notification-worker application logs use structured `log/slog` via `internal/core/logger` (JSON at Info in production).
+
+Contract:
+
+- Production INFO is for **lifecycle** / safe bounded runtime state (`poll`, `channels`, `emailEnabled`, `healthPort`) — not per-notification events.
+- Routine delivery outcomes (sent / skipped / transient / …) are observed via **5C metrics** (and durable attempts), not INFO application logs.
+- `LogDeliveryAdapter` remains a successful LOG-channel delivery adapter (`ProviderName=log`) but does **not** emit identifying application logs (no intent/appointment/patient IDs, `scheduledAt`, payload, subject/body).
+- Abnormal operational failures (Tick, queue snapshot refresh, finalization TX) log **ERROR** with bounded fields only: `operation`, `error_class`, and optionally `channel` / `provider`.
+- Application logs must **not** emit: patient/appointment/intent/attempt IDs, recipient/email, subject/body/payload, clinical content, DSN/credentials/tokens, Graph bodies, raw SQL, or raw `err.Error()`.
+- Secrets and clinical content remain forbidden even at Debug.
+
+Deferred: dashboards/alerts (**26I-5F**), production M365 auth posture (**26I-6**).
 
 ### PHI
 

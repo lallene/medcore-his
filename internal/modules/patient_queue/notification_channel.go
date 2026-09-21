@@ -41,7 +41,9 @@ func (a *NoopDeliveryAdapter) Send(_ context.Context, intent *AppointmentNotific
 	return DeliveryResult{Skipped: true}, nil
 }
 
-// LogDeliveryAdapter logs non-PHI metadata only (id, kind, channel, scheduledAt from payload).
+// LogDeliveryAdapter acknowledges LOG-channel delivery without emitting identifying
+// application logs (LOT 26I-5E). Routine outcomes are observed via 5C metrics.
+// Never logs telephone, email, reason, payload JSON, intent/appointment IDs, or scheduledAt.
 type LogDeliveryAdapter struct {
 	channel string
 	logger  *slog.Logger
@@ -61,13 +63,9 @@ func (a *LogDeliveryAdapter) Channel() string      { return a.channel }
 func (a *LogDeliveryAdapter) ProviderName() string { return "log" }
 
 func (a *LogDeliveryAdapter) Send(_ context.Context, intent *AppointmentNotificationIntent, payload NotificationPayload) (DeliveryResult, error) {
-	// Never log telephone, email, reason, or full payload JSON.
-	a.logger.Info("appointment_notification_intent",
-		"intentId", intent.ID,
-		"appointmentId", intent.AppointmentID,
-		"kind", intent.Kind,
-		"channel", intent.Channel,
-		"scheduledAt", payload.ScheduledAt,
-	)
+	// Business success for LOG channel; no per-delivery application Info (metrics-first).
+	_ = intent
+	_ = payload
+	_ = a.logger
 	return DeliveryResult{ProviderMessageID: "log"}, nil
 }
