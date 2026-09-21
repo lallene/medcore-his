@@ -1090,7 +1090,7 @@ Contract for 5A (still in force):
 - No Go/process collectors.
 - Scrape performs **no** database queries and does **not** affect `/healthz` / `/readyz`.
 - Exposition must not contain patient-specific labels/data; future metrics may only use bounded enum labels (`channel`, `kind`, `outcome_class`, `provider`, `operation`) after explicit validation.
-- Unauthenticated, same network surface as health probes — intended for infrastructure-network scraping (NetworkPolicy / hardening guidance primarily LOT 26I-6).
+- Unauthenticated, same network surface as health probes — intended for infrastructure-network scraping (see also [M365_EMAIL_PRODUCTION.md](./M365_EMAIL_PRODUCTION.md) / platform network controls).
 
 #### Worker loop metrics (LOT 26I-5B)
 
@@ -1190,7 +1190,7 @@ Contract:
 
 Production scrape / dashboard PromQL / alerts / runbooks: [NOTIFICATION_WORKER_OPERATIONS.md](./NOTIFICATION_WORKER_OPERATIONS.md) (LOT **26I-5F**).
 
-Deferred: production M365 auth posture (**26I-6**).
+Production Microsoft 365 email security / provisioning / operator runbooks: [M365_EMAIL_PRODUCTION.md](./M365_EMAIL_PRODUCTION.md) (LOT **26I-6**).
 
 ### PHI
 

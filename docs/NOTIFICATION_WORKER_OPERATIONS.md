@@ -76,7 +76,9 @@ Production contract:
 - Do **not** expose `/healthz`, `/readyz`, or `/metrics` on the public internet
 - Enforce access with the platform’s usual controls (e.g. NetworkPolicy, security group / firewall, private service network, internal reverse proxy)
 
-Application-level metrics auth is **not** part of 5F. Broader production M365/auth posture is **26I-6**.
+Application-level metrics auth is **not** part of 5F. Production Microsoft 365
+email security, mailbox scoping, credential posture, and operator runbooks:
+[M365_EMAIL_PRODUCTION.md](./M365_EMAIL_PRODUCTION.md) (LOT **26I-6**).
 
 ### Recommended Prometheus job label
 
@@ -530,4 +532,4 @@ Allowed dimensions remain bounded enums (`channel`, `outcome`, `provider`,
 - Thresholds are initial tuning defaults, **not** SLAs
 - Known residual: 26H ambiguous send/finalize window (see runbook)
 - Separate debt: GORM expected-miss SQL logging; `database.Connect` stdlib logging; durable attempt diagnostic text
-- Production M365 security/runbook hardening is **26I-6**, not 5F
+- Production M365 security/runbook: [M365_EMAIL_PRODUCTION.md](./M365_EMAIL_PRODUCTION.md) (LOT **26I-6**)
