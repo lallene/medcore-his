@@ -9,10 +9,11 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/database"
 )
 
-// Proves production Connect configures pgx RuntimeParams["timezone"] on the shared
-// ConnConfig used by database/sql's pool. Holds MaxOpenConns distinct pooled
-// connections concurrently via sql.DB.Conn and checks current_setting('TimeZone')
-// on each — without a post-hoc SET TIME ZONE on the assertion handle.
+// Proves production Connect enforces business timezone on every physical pooled
+// connection (RuntimeParams + AfterConnect set_config). Holds MaxOpenConns
+// distinct pooled connections concurrently via sql.DB.Conn and checks
+// current_setting('TimeZone') on each — without a post-hoc SET TIME ZONE on
+// the assertion handle.
 func TestConnectAppliesBusinessTimezoneToPooledConnections(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

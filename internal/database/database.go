@@ -31,9 +31,11 @@ func ParseDatabaseURL(databaseURL string) (*pgx.ConnConfig, error) {
 }
 
 // Connect opens PostgreSQL via the GORM postgres/pgx stack and applies
-// businessTimezone as a pgx RuntimeParams["timezone"] session default on every
-// pooled connection (startup parameter), matching gorm.io/driver/postgres
-// TimeZone handling — not a one-shot SET TIME ZONE on a single borrowed conn.
+// businessTimezone on every physical pooled connection:
+//  1. RuntimeParams["timezone"] startup default (honored by direct Postgres),
+//  2. AfterConnect session set_config('TimeZone', …, false) so endpoints that
+//     discard startup parameters still enforce the business timezone.
+// Does not mutate search_path. Timestamp ScanLocation matches gorm TimeZone codec.
 func Connect(databaseURL, businessTimezone string) *gorm.DB {
 	pgConfig, err := ParseDatabaseURL(databaseURL)
 	if err != nil {
@@ -57,6 +59,10 @@ func Connect(databaseURL, businessTimezone string) *gorm.DB {
 			OID:   pgtype.TimestampOID,
 			Codec: &pgtype.TimestampCodec{ScanLocation: loc},
 		})
+		// Parameterized session default (is_local=false). Avoids SQL concatenation of the IANA name.
+		if _, err := conn.Exec(ctx, "SELECT set_config('TimeZone', $1, false)", businessTimezone); err != nil {
+			return fmt.Errorf("enforce business TimeZone: %w", err)
+		}
 		return nil
 	}))
 
