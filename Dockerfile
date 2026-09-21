@@ -51,11 +51,27 @@ FROM alpine:latest AS notification-worker
 WORKDIR /app
 
 # ca-certificates for TLS; tzdata for IANA zones (MEDCORE_*_TIMEZONE).
-RUN apk add --no-cache ca-certificates tzdata
+# wget: minimal HEALTHCHECK probe for GET /readyz (LOT 26I-4).
+RUN apk add --no-cache ca-certificates tzdata wget
 
 COPY --from=builder /app/medcore-notification-worker .
 
-# No HTTP port. SIGINT/SIGTERM handled by cmd/notification-worker.
+# Health HTTP (stdlib): GET /healthz (liveness), GET /readyz (readiness).
+# Same env drives process listener and Docker HEALTHCHECK (LOT 26I-4 Option B).
+ENV NOTIFICATION_WORKER_HEALTH_PORT=8081
+
+# EXPOSE is image metadata for the default port only; runtime may use another
+# NOTIFICATION_WORKER_HEALTH_PORT. Publish (-p) still required for host access.
+EXPOSE 8081
+
+# Docker has a single health state; probe /readyz (worker started + DB reachable).
+# Shell form so ${NOTIFICATION_WORKER_HEALTH_PORT} expands at probe time.
+# Kubernetes should use liveness=/healthz and readiness=/readyz separately.
+# Conservative timings: do not tie liveness to the default 2s poll interval.
+HEALTHCHECK --interval=10s --timeout=2s --start-period=20s --retries=3 \
+	CMD wget -qO- http://127.0.0.1:${NOTIFICATION_WORKER_HEALTH_PORT}/readyz || exit 1
+
+# SIGINT/SIGTERM handled by cmd/notification-worker.
 CMD ["./medcore-notification-worker"]
 
 # ---- API runtime (final / default stage) -----------------------------------

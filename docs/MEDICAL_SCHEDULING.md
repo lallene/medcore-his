@@ -992,7 +992,7 @@ Dedicated process: `cmd/notification-worker` (not started inside the API).
 - Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Permanent/invalid/not-configured email errors fail immediately. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
 - **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for external providers. A provider may accept a message and the process may crash before finalization commits. EMAIL adapters should use provider idempotency keys where available.
 
-### Worker container + schema ownership (LOT 26I-1 / 26I-2 / 26I-3)
+### Worker container + schema ownership (LOT 26I-1 / 26I-2 / 26I-3 / 26I-4)
 
 API, notification-worker, and migrate are **separate processes** and **separate image targets** in `backend/Dockerfile`. The worker is never started inside the API.
 
@@ -1044,6 +1044,8 @@ docker run --rm \
   -e MEDCORE_BUSINESS_TIMEZONE=UTC \
   -e MEDCORE_NOTIFICATION_EMAIL_ENABLED=false \
   -e NOTIFICATION_WORKER_POLL=2s \
+  -e NOTIFICATION_WORKER_HEALTH_PORT=8081 \
+  -p 8081:8081 \
   medcore-his-notification-worker:local
 ```
 
@@ -1062,7 +1064,41 @@ Contract:
 - `NOTIFICATION_WORKER_POLL` unset/blank/whitespace → **2s**. Explicit malformed or non-positive values → **worker startup failure** (no silent fallback).
 - Multiple API/worker replicas are safe from DDL races because they do **not** own schema mutation. Test harnesses may still AutoMigrate ephemeral schemas independently.
 
-Deferred (later 26I slices): worker health probes, richer ops logging, production M365 auth posture.
+#### Worker health & readiness (LOT 26I-4)
+
+The notification-worker process exposes a dedicated **stdlib `net/http`** health server (no Gin) on `0.0.0.0:<port>`:
+
+| Env | Default | Notes |
+|-----|---------|--------|
+| `NOTIFICATION_WORKER_HEALTH_PORT` | `8081` | Unset/blank/whitespace → 8081 (process). Worker image also sets `ENV NOTIFICATION_WORKER_HEALTH_PORT=8081`. Explicit invalid (`<=0`, `>65535`, non-numeric) → **startup failure**. |
+
+| Endpoint | Meaning | Success body |
+|----------|---------|--------------|
+| `GET /healthz` | Process / run-loop **liveness** | `ok` (200) |
+| `GET /readyz` | Worker started + **DB** reachable + not shutting down | `ready` (200) |
+
+Failure responses are always generic `unavailable` (503). Probe responses intentionally expose **no** diagnostics (no DB/Graph errors, DSN, tokens, PHI, queue contents).
+
+**Liveness (`/healthz`) succeeds when** the worker Run loop has started, shutdown has not begun, and Run has not unexpectedly returned. It does **not** depend on DB availability, Microsoft Graph, M365 token acquisition, delivery success, queue depth, last Tick, or Tick duration. A long legitimate Tick alone must not fail liveness (avoids restart storms).
+
+**Readiness (`/readyz`) succeeds when** the worker has started, shutdown has not begun, and a bounded `sql.DB.PingContext` (≈1s) succeeds. It does **not** require Graph reachable, token acquisition at probe time, successful delivery, empty queue, or a recent Tick. Temporary provider/network failure is **not** worker unready. DB unavailable after startup **is** unready. Invalid M365 configuration when EMAIL is enabled still fails at **startup** (unchanged).
+
+**One health-port contract:** the process listener and the Docker `HEALTHCHECK` both use `NOTIFICATION_WORKER_HEALTH_PORT`. Overriding that env changes both automatically; do **not** separately override the image healthcheck for a port change. `EXPOSE 8081` is default-port metadata only and does not block another runtime port.
+
+**Orchestration:**
+
+| Platform | Probe |
+|----------|--------|
+| **Kubernetes** | liveness → `/healthz`; readiness → `/readyz` (target the configured container health port) |
+| **Docker** `HEALTHCHECK` | `/readyz` on `http://127.0.0.1:${NOTIFICATION_WORKER_HEALTH_PORT}/readyz` (Docker has a single health state; a worker that cannot reach DB is not operationally useful) |
+
+Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Detailed operational telemetry belongs to **26I-5**.
+
+**Shutdown:** SIGINT/SIGTERM → mark shutting-down (readiness false immediately) → cancel worker context → existing Run cancellation semantics → graceful health HTTP `Shutdown` → exit.
+
+**Multi-replica:** health state is **per-process only**. No DB heartbeat rows, leader election, or distributed health locks. `ClaimDue` `SKIP LOCKED` semantics are unchanged.
+
+Deferred (later 26I slices): richer ops logging / metrics (26I-5), production M365 auth posture.
 
 ### PHI
 

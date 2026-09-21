@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -16,13 +15,11 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 )
 
-// EnvNotificationWorkerPoll is the worker-only poll interval (Go duration).
-const EnvNotificationWorkerPoll = "NOTIFICATION_WORKER_POLL"
-
 // Dedicated appointment notification worker (LOG always; EMAIL when feature flag + M365 configured).
 // Does not start inside the API process. Graceful SIGINT/SIGTERM shutdown.
 // Graph client secret is worker-only (never required by the API).
 // Schema ownership is cmd/migrate only (LOT 26I-3) — no AutoMigrate / Ensure* at startup.
+// Health/readiness: GET /healthz and GET /readyz on NOTIFICATION_WORKER_HEALTH_PORT (LOT 26I-4).
 func main() {
 	cfg := config.Load()
 	logger.Init(cfg.AppEnv)
@@ -34,7 +31,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	healthPort, err := ParseNotificationWorkerHealthPort(os.Getenv(EnvNotificationWorkerHealthPort))
+	if err != nil {
+		log.Error("notification worker config", "error", err)
+		os.Exit(1)
+	}
+
 	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Error("notification worker database", "error", "sql handle unavailable")
+		os.Exit(1)
+	}
 
 	adapters, err := buildNotificationDeliveryAdapters(
 		cfg.NotificationEmailEnabled,
@@ -59,35 +67,76 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	healthState := &HealthState{}
+	healthAddr := fmt.Sprintf("0.0.0.0:%d", healthPort)
+	healthSrv := NewHealthServer(healthAddr, healthState, PingFromSQLDB(sqlDB))
+	ln, err := healthSrv.Listen()
+	if err != nil {
+		log.Error("notification worker health listen", "error", err)
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	healthErrCh := make(chan error, 1)
+	go func() {
+		serveErr := healthSrv.Serve(ln)
+		healthErrCh <- serveErr
+		// Fail closed if the health server dies while the worker is still running.
+		if serveErr != nil {
+			healthState.MarkShuttingDown()
+			cancel()
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	go func() {
+		select {
+		case <-sigCh:
+			// Readiness fails immediately on signal; then cancel worker context.
+			healthState.MarkShuttingDown()
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
 	log.Info("notification worker started",
 		"poll", poll.String(),
 		"channels", worker.SupportedChannels(),
 		"emailEnabled", cfg.NotificationEmailEnabled,
+		"healthPort", healthPort,
 	)
-	if err := worker.Run(ctx); err != nil && err != context.Canceled {
-		log.Error("notification worker stopped", "error", err)
+
+	healthState.MarkStarted()
+	runErr := worker.Run(ctx)
+	healthState.MarkStopped()
+	healthState.MarkShuttingDown()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := healthSrv.Shutdown(shutdownCtx); err != nil {
+		log.Error("notification worker health shutdown", "error", err)
+	}
+
+	var healthServeErr error
+	select {
+	case healthServeErr = <-healthErrCh:
+	case <-time.After(5 * time.Second):
+		log.Error("notification worker health server", "error", "shutdown timeout")
+		os.Exit(1)
+	}
+	if healthServeErr != nil {
+		log.Error("notification worker health server", "error", healthServeErr)
+		os.Exit(1)
+	}
+
+	if runErr != nil && runErr != context.Canceled {
+		log.Error("notification worker stopped", "error", runErr)
 		os.Exit(1)
 	}
 	log.Info("notification worker shutdown complete")
-}
-
-// ParseNotificationWorkerPoll interprets NOTIFICATION_WORKER_POLL.
-// Unset/empty/whitespace → fallback (typically 2s). Explicit malformed or
-// non-positive values return an error (fail closed; never silent fallback).
-func ParseNotificationWorkerPoll(raw string, fallback time.Duration) (time.Duration, error) {
-	s := strings.TrimSpace(raw)
-	if s == "" {
-		return fallback, nil
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("%s: valeur invalide (durée Go positive attendue, ex. 2s)", EnvNotificationWorkerPoll)
-	}
-	if d <= 0 {
-		return 0, fmt.Errorf("%s: durée non positive (durée Go positive attendue, ex. 2s)", EnvNotificationWorkerPoll)
-	}
-	return d, nil
 }
