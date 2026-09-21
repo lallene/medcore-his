@@ -992,6 +992,48 @@ Dedicated process: `cmd/notification-worker` (not started inside the API).
 - Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Permanent/invalid/not-configured email errors fail immediately. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
 - **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for external providers. A provider may accept a message and the process may crash before finalization commits. EMAIL adapters should use provider idempotency keys where available.
 
+### Worker container (LOT 26I-1)
+
+API and worker are **separate processes** and **separate image targets** in `backend/Dockerfile`. The worker is never started inside the API.
+
+| Target | Binary / CMD | GHCR tag (CI on `main`) |
+|--------|--------------|-------------------------|
+| `api` (default) | `./medcore-api` | `ghcr.io/lallene/medcore-his-api:latest` |
+| `notification-worker` | `./medcore-notification-worker` | `ghcr.io/lallene/medcore-his-notification-worker:latest` |
+
+Build locally (from `backend/`):
+
+```bash
+docker build --target api -t medcore-his-api:local .
+docker build --target notification-worker -t medcore-his-notification-worker:local .
+```
+
+Run worker (inject secrets at runtime — never bake them into the image):
+
+```bash
+docker run --rm \
+  -e DATABASE_URL \
+  -e MEDCORE_BUSINESS_TIMEZONE=UTC \
+  -e MEDCORE_NOTIFICATION_EMAIL_ENABLED=false \
+  -e NOTIFICATION_WORKER_POLL=2s \
+  medcore-his-notification-worker:local
+```
+
+When `MEDCORE_NOTIFICATION_EMAIL_ENABLED=true`, also supply:
+
+- `MEDCORE_M365_TENANT_ID`
+- `MEDCORE_M365_CLIENT_ID`
+- `MEDCORE_M365_CLIENT_SECRET`
+- `MEDCORE_M365_SENDER`
+
+Contract:
+
+- `MEDCORE_NOTIFICATION_EMAIL_ENABLED=false` → LOG-only worker (M365 env ignored).
+- `MEDCORE_NOTIFICATION_EMAIL_ENABLED=true` → full M365 config required (startup fails closed).
+- Keep the same enablement flag on API and worker; drift leaves EMAIL intents `PENDING`.
+
+Deferred (later 26I slices): container timezone data, migration ownership, worker health probes, richer ops logging, production M365 auth posture.
+
 ### PHI
 
 Lifecycle payloads use `BuildNotificationPayload` only — no reason, diagnosis, telephone, email, or full Patient/Appointment objects. Adapters receive typed `NotificationPayload`; workers do not log `payload_json`.
