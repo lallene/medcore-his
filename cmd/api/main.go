@@ -4,8 +4,8 @@ import (
 	_ "github.com/lallene/medcore-his/backend/docs"
 
 	"github.com/lallene/medcore-his/backend/internal/core/application"
-	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/access"
+	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
@@ -64,9 +64,7 @@ func main() {
 	app.RegisterModule(qa.Module{})
 	app.RegisterModule(ticketing.Module{})
 	app.RegisterModule(patient_queue.Module{})
-	if err := organization.BackfillLegacy(app.DB, 1); err != nil {
-		panic(err)
-	}
+	// Schema + organization.BackfillLegacy owned by cmd/migrate (LOT 26I-3).
 
 	app.Run()
 }

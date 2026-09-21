@@ -10,19 +10,7 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "pharmacy")
-
-	app.MustMigrate(
-		&MedicationFamily{},
-		&Medication{},
-		&MedicationPresentation{},
-		&PharmacyStock{},
-		&PharmacyBatch{},
-		&StockMovement{},
-		&PharmacyDispensation{},
-		&PharmacyDispensationItem{},
-		&PharmacyVoucher{},
-		&PharmacyVoucherLine{},
-	)
+	// Schema owned by cmd/migrate (LOT 26I-3).
 
 	repository := NewRepository(app.DB)
 	service := NewService(repository)

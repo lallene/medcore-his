@@ -14,7 +14,6 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/container"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
 	"github.com/lallene/medcore-his/backend/internal/core/scheduling"
-	"github.com/lallene/medcore-his/backend/internal/core/workflow"
 	"github.com/lallene/medcore-his/backend/internal/database"
 	"github.com/lallene/medcore-his/backend/internal/middleware"
 )
@@ -67,7 +66,6 @@ func New() *Application {
 
 	app.registerCoreRoutes()
 	app.registerCoreAudit()
-	app.MustMigrate(&workflow.History{})
 
 	return app
 }
@@ -112,7 +110,7 @@ func (a *Application) registerCoreRoutes() {
 }
 
 func (a *Application) registerCoreAudit() {
-	a.MustMigrate(&audit.AuditLog{})
+	// Schema for audit_logs is owned by cmd/migrate (LOT 26I-3).
 	audit.Register(a.DB)
 }
 
@@ -147,11 +145,4 @@ func Make[T any](app *Application) T {
 
 func (a *Application) API() *gin.RouterGroup {
 	return a.Router.Group("/api")
-}
-
-func (a *Application) MustMigrate(models ...any) {
-	if err := a.DB.AutoMigrate(models...); err != nil {
-		logger.Error("Erreur migration", "error", err)
-		panic(err)
-	}
 }

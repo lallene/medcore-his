@@ -10,7 +10,6 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "laboratory")
-	app.MustMigrate(&Order{}, &Sample{}, &Result{})
 	h := NewHandler(NewService(NewRepository(app.DB)))
 	p := app.API()
 	p.Use(auth.Middleware(app.Config.JWTSecret, app.DB))

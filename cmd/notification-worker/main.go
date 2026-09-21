@@ -22,6 +22,7 @@ const EnvNotificationWorkerPoll = "NOTIFICATION_WORKER_POLL"
 // Dedicated appointment notification worker (LOG always; EMAIL when feature flag + M365 configured).
 // Does not start inside the API process. Graceful SIGINT/SIGTERM shutdown.
 // Graph client secret is worker-only (never required by the API).
+// Schema ownership is cmd/migrate only (LOT 26I-3) — no AutoMigrate / Ensure* at startup.
 func main() {
 	cfg := config.Load()
 	logger.Init(cfg.AppEnv)
@@ -34,17 +35,6 @@ func main() {
 	}
 
 	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
-	if err := db.AutoMigrate(
-		&patient_queue.AppointmentNotificationIntent{},
-		&patient_queue.AppointmentNotificationAttempt{},
-	); err != nil {
-		log.Error("notification worker migrate", "error", err)
-		os.Exit(1)
-	}
-	if err := patient_queue.EnsureNotificationIndexes(db); err != nil {
-		log.Error("notification worker indexes", "error", err)
-		os.Exit(1)
-	}
 
 	adapters, err := buildNotificationDeliveryAdapters(
 		cfg.NotificationEmailEnabled,

@@ -13,7 +13,6 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "access")
-	app.MustMigrate(&PermissionOverride{}, &MatrixOverride{}, &AccessAuditEvent{})
 	svc := NewService(app.DB)
 	SetRuntime(svc)
 	auth.EffectivePermissionsHook = func(db *gorm.DB, userID uint, role string, functions, specialties []string) ([]string, error) {

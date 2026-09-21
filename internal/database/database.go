@@ -13,23 +13,37 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrInvalidDatabaseURL is returned when DATABASE_URL cannot be parsed.
+// The error string never includes the raw DSN, password, or parse-error fragments.
+var ErrInvalidDatabaseURL = fmt.Errorf("invalid DATABASE_URL configuration")
+
+// ParseDatabaseURL parses a PostgreSQL connection URL without exposing DSN details
+// in the returned error. Empty input yields a distinct missing-URL error.
+func ParseDatabaseURL(databaseURL string) (*pgx.ConnConfig, error) {
+	if databaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL manquante")
+	}
+	cfg, err := pgx.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, ErrInvalidDatabaseURL
+	}
+	return cfg, nil
+}
+
 // Connect opens PostgreSQL via the GORM postgres/pgx stack and applies
 // businessTimezone as a pgx RuntimeParams["timezone"] session default on every
 // pooled connection (startup parameter), matching gorm.io/driver/postgres
 // TimeZone handling — not a one-shot SET TIME ZONE on a single borrowed conn.
 func Connect(databaseURL, businessTimezone string) *gorm.DB {
-	if databaseURL == "" {
-		log.Fatal("DATABASE_URL manquante")
+	pgConfig, err := ParseDatabaseURL(databaseURL)
+	if err != nil {
+		log.Fatal(err)
 	}
 	loc, err := time.LoadLocation(businessTimezone)
 	if err != nil {
 		log.Fatalf("MEDCORE_BUSINESS_TIMEZONE invalide %q: %v", businessTimezone, err)
 	}
 
-	pgConfig, err := pgx.ParseConfig(databaseURL)
-	if err != nil {
-		log.Fatal("DATABASE_URL invalide:", err)
-	}
 	if pgConfig.RuntimeParams == nil {
 		pgConfig.RuntimeParams = map[string]string{}
 	}
@@ -48,7 +62,8 @@ func Connect(databaseURL, businessTimezone string) *gorm.DB {
 
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
 	if err != nil {
-		log.Fatal("Erreur connexion PostgreSQL:", err)
+		// Do not wrap/log the underlying dial error (may embed host/user fragments).
+		log.Fatal("Erreur connexion PostgreSQL")
 	}
 	log.Printf("Connexion PostgreSQL OK (business_timezone=%s)", businessTimezone)
 	return db

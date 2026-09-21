@@ -10,8 +10,10 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "ticketing")
-	app.MustMigrate(&Category{}, &SLA{}, &Ticket{}, &Comment{}, &Attachment{}, &Assignment{}, &History{}, &Notification{})
+	// Schema owned by cmd/migrate (LOT 26I-3).
 	s := NewService(app.DB)
+	// Idempotent reference SLA/categories (data bootstrap, not DDL). Deferred
+	// seed-ownership redesign; keep production bootstrap on API for now.
 	if e := s.SeedDefaults(1); e != nil {
 		panic(e)
 	}

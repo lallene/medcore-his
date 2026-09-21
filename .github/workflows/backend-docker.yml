@@ -46,3 +46,13 @@ jobs:
           target: notification-worker
           push: true
           tags: ghcr.io/lallene/medcore-his-notification-worker:latest
+
+      # Sole production schema owner (LOT 26I-3). Run once before API/worker rollout.
+      - name: Build and push migrate image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: migrate
+          push: true
+          tags: ghcr.io/lallene/medcore-his-migrate:latest

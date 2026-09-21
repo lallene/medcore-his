@@ -11,8 +11,7 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "patients")
-
-	app.MustMigrate(&Patient{})
+	// Schema owned by cmd/migrate (LOT 26I-3).
 
 	Provider{}.Register(app)
 

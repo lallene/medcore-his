@@ -375,7 +375,7 @@ Optional `idempotencyKey` body field or `Idempotency-Key` header.
 
 **Partial unique index:** `ux_pq_appt_idempotency_caller ON (created_by, idempotency_key) WHERE idempotency_key IS NOT NULL`.
 
-Startup/`cmd/migrate` drop obsolete global `ux_pq_appt_idempotency` if present, then create the caller-scoped index.
+`cmd/migrate` (sole schema owner) drops obsolete global `ux_pq_appt_idempotency` if present, then creates the caller-scoped index.
 
 **Same semantic booking request** (exact match required for reuse):
 
@@ -538,7 +538,7 @@ Partial unique index `ux_pq_tickets_appointment` on `patient_queue_tickets(appoi
 
 Orphan / incomplete link (e.g. `SCHEDULED` + ticket.`appointment_id` set, no `queue_ticket_id`) or any mismatch → **409** Conflict — no soft success, no auto-repair.
 
-`EnsureTicketIndexes` is a **hard** API startup invariant (`Module.Register` panics on failure; `cmd/migrate` fatals). Duplicate historical `appointment_id` values fail clearly without silent repair.
+`EnsureTicketIndexes` is a **hard** migrate invariant (`cmd/migrate` fatals). Duplicate historical `appointment_id` values fail clearly without silent repair. API startup does not create this index (LOT 26I-3).
 
 Same gate as walk-in. Booking does **not** bypass finance. Failure creates no ticket and does not mark `CHECKED_IN`.
 
@@ -895,7 +895,7 @@ Unique `(appointment_id, kind, channel, occurrence_key)`.
 
 `appointment_notification_attempts.intent_id` → `appointment_notification_intents(id)` with **ON UPDATE CASCADE** and **ON DELETE RESTRICT** (preserve delivery audit; no orphan attempts; no cascade wipe).
 
-Startup/migrate verifies the exact contract via PostgreSQL catalogs (`pg_constraint` / `pg_class` / `pg_attribute`): source column, referenced table/column, update action `CASCADE` (`confupdtype='c'`), and delete action either `RESTRICT` (`'r'`) or non-deferrable `NO ACTION` (`confdeltype='a'` and `condeferrable=false`). Deferrable `NO ACTION` is not equivalent (checks can be postponed). Constraint name may be GORM-generated or `fk_appt_notif_attempt_intent`.
+`cmd/migrate` verifies the exact contract via PostgreSQL catalogs (`pg_constraint` / `pg_class` / `pg_attribute`): source column, referenced table/column, update action `CASCADE` (`confupdtype='c'`), and delete action either `RESTRICT` (`'r'`) or non-deferrable `NO ACTION` (`confdeltype='a'` and `condeferrable=false`). Deferrable `NO ACTION` is not equivalent (checks can be postponed). Constraint name may be GORM-generated or `fk_appt_notif_attempt_intent`.
 
 ### Channels
 
@@ -992,27 +992,53 @@ Dedicated process: `cmd/notification-worker` (not started inside the API).
 - Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Permanent/invalid/not-configured email errors fail immediately. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
 - **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for external providers. A provider may accept a message and the process may crash before finalization commits. EMAIL adapters should use provider idempotency keys where available.
 
-### Worker container (LOT 26I-1 / 26I-2)
+### Worker container + schema ownership (LOT 26I-1 / 26I-2 / 26I-3)
 
-API and worker are **separate processes** and **separate image targets** in `backend/Dockerfile`. The worker is never started inside the API.
+API, notification-worker, and migrate are **separate processes** and **separate image targets** in `backend/Dockerfile`. The worker is never started inside the API.
 
-Both runtime images install Alpine **`tzdata`** so `MEDCORE_BUSINESS_TIMEZONE` and `MEDCORE_TIMEZONE` can use real IANA zones (e.g. `Europe/Paris`, `Africa/Abidjan`) inside the container. Do not set a global `TZ` env in the image; timezone contracts remain explicit config values.
+**`cmd/migrate` is the sole production schema owner.** API and worker do **not** AutoMigrate, Ensure\* indexes, or otherwise mutate schema at startup. Exactly **one** migration execution must succeed per release **before** API/worker replicas start.
+
+Both runtime images (and the migrate image) install Alpine **`tzdata`** so `MEDCORE_BUSINESS_TIMEZONE` and `MEDCORE_TIMEZONE` can use real IANA zones (e.g. `Europe/Paris`, `Africa/Abidjan`) inside the container. Do not set a global `TZ` env in the image; timezone contracts remain explicit config values.
 
 | Target | Binary / CMD | GHCR tag (CI on `main`) |
 |--------|--------------|-------------------------|
+| `migrate` | `./medcore-migrate` | `ghcr.io/lallene/medcore-his-migrate:latest` |
 | `api` (default) | `./medcore-api` | `ghcr.io/lallene/medcore-his-api:latest` |
 | `notification-worker` | `./medcore-notification-worker` | `ghcr.io/lallene/medcore-his-notification-worker:latest` |
 
-Build locally (from `backend/`):
+**Production rollout order:**
+
+1. Provide runtime configuration / secrets (never bake into images).
+2. Run the migrate artifact once (`cmd/migrate` / `medcore-his-migrate`).
+3. Require migration success (fail closed).
+4. Start API replicas.
+5. Start notification-worker replicas.
+
+**Local development** (from `backend/`):
 
 ```bash
+go run ./cmd/migrate
+go run ./cmd/api
+# when worker is required:
+go run ./cmd/notification-worker
+```
+
+Build locally:
+
+```bash
+docker build --target migrate -t medcore-his-migrate:local .
 docker build --target api -t medcore-his-api:local .
 docker build --target notification-worker -t medcore-his-notification-worker:local .
 ```
 
-Run worker (inject secrets at runtime — never bake them into the image):
+Run migrate then worker (inject secrets at runtime — never bake them into the image):
 
 ```bash
+docker run --rm \
+  -e DATABASE_URL \
+  -e MEDCORE_BUSINESS_TIMEZONE=UTC \
+  medcore-his-migrate:local
+
 docker run --rm \
   -e DATABASE_URL \
   -e MEDCORE_BUSINESS_TIMEZONE=UTC \
@@ -1034,8 +1060,9 @@ Contract:
 - `MEDCORE_NOTIFICATION_EMAIL_ENABLED=true` → full M365 config required (startup fails closed).
 - Keep the same enablement flag on API and worker; drift leaves EMAIL intents `PENDING`.
 - `NOTIFICATION_WORKER_POLL` unset/blank/whitespace → **2s**. Explicit malformed or non-positive values → **worker startup failure** (no silent fallback).
+- Multiple API/worker replicas are safe from DDL races because they do **not** own schema mutation. Test harnesses may still AutoMigrate ephemeral schemas independently.
 
-Deferred (later 26I slices): migration ownership, worker health probes, richer ops logging, production M365 auth posture.
+Deferred (later 26I slices): worker health probes, richer ops logging, production M365 auth posture.
 
 ### PHI
 

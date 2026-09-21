@@ -11,25 +11,8 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "consultations")
-
-	app.MustMigrate(
-		&Consultation{},
-		&ConsultationReason{},
-		&MedicalExam{},
-		&ConsultationVitals{},
-		&ConsultationExamRequest{},
-		&ConsultationPrescription{},
-		&ConsultationAntecedent{},
-		&PhysicalExamArea{},
-		&ConsultationPhysicalExam{},
-		&ConsultationPhysicalExam{},
-		&ConsultationAdministeredTreatment{},
-		&ConsultationPreviousMedication{},
-		&ConsultationSurgicalHistory{},
-		&ConsultationGynecoObstetricHistory{},
-		&ConsultationSOAP{},
-		&ConsultationSpecialtyData{},
-	)
+	// Schema owned by cmd/migrate (LOT 26I-3).
+	// Reference seed data retained on API (not DDL); seed ownership redesign deferred.
 
 	SeedConsultationReferences(app.DB)
 	SeedPhysicalExamAreas(app.DB)

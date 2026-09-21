@@ -256,22 +256,30 @@ func TestEnsureTicketIndexesDuplicateFailsNoRepair23F(t *testing.T) {
 	}
 }
 
-func TestModuleRegisterPanicsOnTicketIndexFailureContract23F(t *testing.T) {
+// TestModuleRegisterDoesNotOwnTicketIndexDDL26I3 guards the LOT 26I-3 ownership
+// split: ticket unique-index DDL lives in cmd/migrate (EnsureTicketIndexes via
+// applyMigrations, fail-closed). API Module.Register must not reintroduce it.
+// Behavioral 23F guarantees remain in TestEnsureTicketIndexesInstallsAndVerifies23F
+// and check-in/uniqueness tests below/above.
+func TestModuleRegisterDoesNotOwnTicketIndexDDL26I3(t *testing.T) {
 	src, err := os.ReadFile("module.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(src)
-	if !strings.Contains(body, "EnsureTicketIndexes(app.DB)") {
-		t.Fatal("Module.Register must call EnsureTicketIndexes")
-	}
-	idx := strings.Index(body, "EnsureTicketIndexes(app.DB)")
-	window := body[idx:]
-	if i := strings.Index(window, "RegisterRoutes"); i > 0 {
-		window = window[:i]
-	}
-	if !strings.Contains(window, "panic(err)") {
-		t.Fatal("EnsureTicketIndexes failure must panic in Module.Register (not swallow)")
+	for _, forbidden := range []string{
+		"EnsureTicketIndexes",
+		"EnsureAppointmentIndexes",
+		"EnsureScheduleIndexes",
+		"EnsureAppointmentSeriesIndexes",
+		"EnsureNotificationIndexes",
+		"AutoMigrate",
+		"CREATE UNIQUE INDEX",
+		"CREATE INDEX",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("Module.Register must not own schema DDL %q (cmd/migrate only)", forbidden)
+		}
 	}
 }
 

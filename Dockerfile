@@ -1,13 +1,15 @@
-# MedCore HIS backend images (LOT 26I-1).
+# MedCore HIS backend images (LOT 26I-1 / 26I-3).
 #
 # Named BuildKit targets:
 #   api                   — HTTP API (binary: medcore-api)
 #   notification-worker   — appointment notification worker
 #                           (binary: medcore-notification-worker)
+#   migrate               — schema owner only (binary: medcore-migrate)
 #
 # The final stage is `api`, so `docker build` without --target continues to
 # produce the API image (backward compatible with this repository's history).
 #
+# Production rollout: run migrate successfully once, then start API and worker.
 # Do not bake secrets or runtime env into the image. Configure at container start.
 
 FROM golang:1.26-alpine AS builder
@@ -27,7 +29,21 @@ RUN go clean -modcache && go mod download -x
 COPY . .
 
 RUN go build -o medcore-api ./cmd/api \
-	&& go build -o medcore-notification-worker ./cmd/notification-worker
+	&& go build -o medcore-notification-worker ./cmd/notification-worker \
+	&& go build -o medcore-migrate ./cmd/migrate
+
+# ---- Schema migration (LOT 26I-3 sole schema owner) ------------------------
+FROM alpine:latest AS migrate
+
+WORKDIR /app
+
+# ca-certificates for TLS; tzdata for IANA zones (MEDCORE_*_TIMEZONE).
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /app/medcore-migrate .
+
+# No HTTP port. Exit after schema apply (fail closed).
+CMD ["./medcore-migrate"]
 
 # ---- Notification worker runtime -------------------------------------------
 FROM alpine:latest AS notification-worker

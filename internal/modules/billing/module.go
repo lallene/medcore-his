@@ -10,12 +10,7 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "billing")
-	app.MustMigrate(&Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{})
-	for _, sql := range []string{"CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active = true"} {
-		if e := app.DB.Exec(sql).Error; e != nil {
-			panic(e)
-		}
-	}
+	// Schema + partial unique indexes owned by cmd/migrate (LOT 26I-3).
 	h := NewHandler(NewService(app.DB))
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))

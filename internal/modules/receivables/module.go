@@ -10,7 +10,6 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "receivables")
-	app.MustMigrate(&Metadata{}, &FollowUp{})
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 	RegisterRoutes(g, NewHandler(NewService(app.DB, app.BusinessLocation)))

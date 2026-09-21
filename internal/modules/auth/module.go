@@ -9,10 +9,6 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "auth")
-
-	app.MustMigrate(&User{})
-
 	handler := NewHandler(app.DB, app.Config.JWTSecret)
-
 	RegisterRoutes(app.API(), handler)
 }
