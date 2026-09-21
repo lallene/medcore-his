@@ -1076,7 +1076,7 @@ The notification-worker process exposes a dedicated **stdlib `net/http`** health
 |----------|---------|--------------|
 | `GET /healthz` | Process / run-loop **liveness** | `ok` (200) |
 | `GET /readyz` | Worker started + **DB** reachable + not shutting down | `ready` (200) |
-| `GET /metrics` | Prometheus exposition (LOT **26I-5A** foundation + **26I-5B** worker loop metrics) | Prometheus text (200) |
+| `GET /metrics` | Prometheus exposition (LOT **26I-5A** foundation + **26I-5B** worker loop + **26I-5C** delivery/provider + **26I-5D** queue gauges) | Prometheus text (200) |
 
 Failure responses for health/readiness are always generic `unavailable` (503). Probe responses intentionally expose **no** diagnostics (no DB/Graph errors, DSN, tokens, PHI, queue contents).
 
@@ -1134,6 +1134,28 @@ Notes:
 - SMS is not a metric channel (no worker adapter).
 - Queue/backlog gauges remain 5D; dashboards/alerts remain 5F.
 
+#### Queue / backlog gauges (LOT 26I-5D)
+
+Same private registry. Domain package stays Prometheus-free. Queue gauges are a **cached in-memory snapshot** refreshed once per worker `Tick` after recover / claim / process (same explicit `asOf`). `GET /metrics` never calls `NotificationQueueSnapshot`, never pings the DB, and never runs GORM.
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `medcore_notification_queue_pending` | Gauge | `channel` ∈ {`log`,`email`,`sms`} | Count of `PENDING` intents |
+| `medcore_notification_queue_due` | Gauge | `channel` | `PENDING` with `send_after <= asOf` |
+| `medcore_notification_queue_processing` | Gauge | `channel` | Count of `PROCESSING` intents |
+| `medcore_notification_queue_stale_processing` | Gauge | `channel` | `PROCESSING` with `processing_started_at < asOf - NotificationStaleProcessing` (same `<` cutoff as recovery) |
+| `medcore_notification_queue_oldest_due_age_seconds` | Gauge | `channel` | `asOf - min(send_after)` among due rows; `0` when none / clamped ≥ 0 |
+
+Notes:
+
+- Domain channels `LOG`/`EMAIL`/`SMS` map to labels `log`/`email`/`sms`. Unknown persisted channels are **dropped** (no `other`).
+- On every **successful** snapshot apply, all five gauges are zero-filled for `log`/`email`/`sms`, then snapshot values are applied (so a drained backlog cannot leave stale non-zeros).
+- Snapshot refresh is **best-effort**: on failure the worker logs the error, does **not** call the queue observer, **retains** the last successful gauge values (does not zero), and does **not** fail `Tick` / increment `ticks_total{result="error"}` solely for snapshot failure.
+- SMS may normally be zero (no delivery adapter) but a non-zero SMS series reveals orphaned persisted work.
+- These gauges reflect **global DB queue state**. Every worker replica may expose approximately the same values. **DO NOT SUM** queue gauges across replicas. Prefer `max by (channel) (...)` or scraping one worker target. For oldest age, `max by (channel)` is operationally safe across slightly different snapshot times.
+- No migration / new index in 5D; existing `idx_appt_notif_intent_due(status, send_after)` is accepted.
+- Dashboards and alert rules are **not** shipped in 5D (26I-5F later).
+
 **Liveness (`/healthz`) succeeds when** the worker Run loop has started, shutdown has not begun, and Run has not unexpectedly returned. It does **not** depend on DB availability, Microsoft Graph, M365 token acquisition, delivery success, queue depth, last Tick, or Tick duration. A long legitimate Tick alone must not fail liveness (avoids restart storms).
 
 **Readiness (`/readyz`) succeeds when** the worker has started, shutdown has not begun, and a bounded `sql.DB.PingContext` (≈1s) succeeds. It does **not** require Graph reachable, token acquisition at probe time, successful delivery, empty queue, or a recent Tick. Temporary provider/network failure is **not** worker unready. DB unavailable after startup **is** unready. Invalid M365 configuration when EMAIL is enabled still fails at **startup** (unchanged). Metric scrape failures do **not** make the worker unready.
@@ -1147,13 +1169,13 @@ Notes:
 | **Kubernetes** | liveness → `/healthz`; readiness → `/readyz` (target the configured container health port) |
 | **Docker** `HEALTHCHECK` | `/readyz` on `http://127.0.0.1:${NOTIFICATION_WORKER_HEALTH_PORT}/readyz` (Docker has a single health state; a worker that cannot reach DB is not operationally useful) |
 
-Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Queue gauges and dashboards belong to later **26I-5** slices.
+Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Ops logging privacy cleanup belongs to **26I-5E**; dashboards/alerts to **26I-5F**.
 
 **Shutdown:** SIGINT/SIGTERM → mark shutting-down (readiness false immediately) → cancel worker context → existing Run cancellation semantics → graceful health HTTP `Shutdown` → exit.
 
-**Multi-replica:** health state is **per-process only**. No DB heartbeat rows, leader election, or distributed health locks. `ClaimDue` `SKIP LOCKED` semantics are unchanged.
+**Multi-replica:** health state is **per-process only**. No DB heartbeat rows, leader election, or distributed health locks. `ClaimDue` `SKIP LOCKED` semantics are unchanged. Queue gauges are global DB snapshots — **never sum** them across replicas (see 26I-5D).
 
-Deferred (later 26I slices): queue gauges (26I-5D), ops logging privacy cleanup (26I-5E), dashboards/alerts (26I-5F), production M365 auth posture (26I-6).
+Deferred (later 26I slices): ops logging privacy cleanup (26I-5E), dashboards/alerts (26I-5F), production M365 auth posture (26I-6).
 
 ### PHI
 

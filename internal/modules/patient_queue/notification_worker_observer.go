@@ -2,13 +2,13 @@ package patient_queue
 
 import "time"
 
-// MetricChannel is a bounded Prometheus channel label (LOT 26I-5C).
-// Only log/email are emitted; unknown domain channels drop observation.
+// MetricChannel is a bounded Prometheus channel label (LOT 26I-5C / 5D).
 type MetricChannel string
 
 const (
 	MetricChannelLog   MetricChannel = "log"
 	MetricChannelEmail MetricChannel = "email"
+	MetricChannelSMS   MetricChannel = "sms"
 )
 
 // MetricProvider is a bounded Prometheus provider label (LOT 26I-5C).
@@ -36,14 +36,29 @@ const (
 	DeliveryOutcomeAdapterUnavailable DeliveryOutcome = "adapter_unavailable"
 )
 
-// MetricChannelFromDomain maps domain channel constants to metric labels.
-// Unknown values (including SMS) return ok=false — callers must drop observation.
+// MetricChannelFromDomain maps domain channels for delivery/provider metrics (LOT 26I-5C).
+// SMS is excluded (no delivery adapter). Unknown → ok=false (drop).
 func MetricChannelFromDomain(domainChannel string) (MetricChannel, bool) {
 	switch domainChannel {
 	case NotifChannelLog:
 		return MetricChannelLog, true
 	case NotifChannelEmail:
 		return MetricChannelEmail, true
+	default:
+		return "", false
+	}
+}
+
+// QueueMetricChannelFromDomain maps domain channels for queue gauges (LOT 26I-5D).
+// Allows LOG/EMAIL/SMS. Unknown → ok=false (drop).
+func QueueMetricChannelFromDomain(domainChannel string) (MetricChannel, bool) {
+	switch domainChannel {
+	case NotifChannelLog:
+		return MetricChannelLog, true
+	case NotifChannelEmail:
+		return MetricChannelEmail, true
+	case NotifChannelSMS:
+		return MetricChannelSMS, true
 	default:
 		return "", false
 	}

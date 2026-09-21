@@ -1,6 +1,7 @@
 package patient_queue
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -581,4 +582,66 @@ func truncatePtr(s *string, max int) *string {
 		v = v[:max]
 	}
 	return &v
+}
+
+// notificationQueueAggRow is the scan target for NotificationQueueSnapshot (LOT 26I-5D).
+type notificationQueueAggRow struct {
+	Channel            string     `gorm:"column:channel"`
+	Pending            int64      `gorm:"column:pending"`
+	Due                int64      `gorm:"column:due"`
+	Processing         int64      `gorm:"column:processing"`
+	StaleProcessing    int64      `gorm:"column:stale_processing"`
+	OldestDueSendAfter *time.Time `gorm:"column:oldest_due_send_after"`
+}
+
+// NotificationQueueSnapshot returns a read-only PENDING/PROCESSING aggregate at asOf (LOT 26I-5D).
+// No row locks, mutations, claims, or recovery. Uses NotificationStaleProcessing for stale cutoff.
+func (s *Service) NotificationQueueSnapshot(ctx context.Context, asOf time.Time) (NotificationQueueSnapshot, error) {
+	if s == nil || s.db == nil {
+		return NotificationQueueSnapshot{}, coreerrors.Internal("notification queue snapshot: database unavailable")
+	}
+	asOf = asOf.UTC()
+	staleCutoff := asOf.Add(-NotificationStaleProcessing)
+
+	var rows []notificationQueueAggRow
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT
+			channel,
+			COUNT(*) FILTER (WHERE status = ?) AS pending,
+			COUNT(*) FILTER (WHERE status = ? AND send_after <= ?) AS due,
+			COUNT(*) FILTER (WHERE status = ?) AS processing,
+			COUNT(*) FILTER (
+				WHERE status = ?
+				  AND processing_started_at IS NOT NULL
+				  AND processing_started_at < ?
+			) AS stale_processing,
+			MIN(send_after) FILTER (WHERE status = ? AND send_after <= ?) AS oldest_due_send_after
+		FROM appointment_notification_intents
+		WHERE status IN (?, ?)
+		GROUP BY channel
+	`,
+		NotifStatusPending,
+		NotifStatusPending, asOf,
+		NotifStatusProcessing,
+		NotifStatusProcessing, staleCutoff,
+		NotifStatusPending, asOf,
+		NotifStatusPending, NotifStatusProcessing,
+	).Scan(&rows).Error
+	if err != nil {
+		return NotificationQueueSnapshot{}, coreerrors.Internal("notification queue snapshot: " + err.Error())
+	}
+
+	out := NotificationQueueSnapshot{AsOf: asOf, Channels: make([]NotificationQueueChannelSnapshot, 0, len(rows))}
+	for _, r := range rows {
+		ch := NotificationQueueChannelSnapshot{
+			Channel:         r.Channel,
+			Pending:         r.Pending,
+			Due:             r.Due,
+			Processing:      r.Processing,
+			StaleProcessing: r.StaleProcessing,
+		}
+		ch.OldestDueAge = oldestDueAgeFromSendAfter(asOf, r.OldestDueSendAfter)
+		out.Channels = append(out.Channels, ch)
+	}
+	return out, nil
 }

@@ -19,8 +19,10 @@ type NotificationWorkerConfig struct {
 	// Adapters maps channel → delivery adapter. Keys must equal adapter.Channel().
 	Adapters map[string]NotificationDeliveryAdapter
 	Logger   *slog.Logger
-	// Observer receives Tick/claim/stale signals (LOT 26I-5B). Nil → no-op.
+	// Observer receives Tick/claim/stale/delivery signals (LOT 26I-5B / 5C). Nil → no-op.
 	Observer WorkerLoopObserver
+	// QueueObserver receives successful queue snapshots (LOT 26I-5D). Nil → no-op.
+	QueueObserver NotificationQueueSnapshotObserver
 }
 
 // notificationLeaseStore is the recover+claim surface used by Tick (LOT 26I-5B tests).
@@ -28,6 +30,11 @@ type NotificationWorkerConfig struct {
 type notificationLeaseStore interface {
 	RecoverStaleProcessingClaims(asOf time.Time, batch int) (int, error)
 	ClaimDueNotificationIntents(asOf time.Time, batch int, channels []string) ([]AppointmentNotificationIntent, error)
+}
+
+// notificationQueueSnapshotter is the queue aggregate surface used by Tick (LOT 26I-5D tests).
+type notificationQueueSnapshotter interface {
+	NotificationQueueSnapshot(ctx context.Context, asOf time.Time) (NotificationQueueSnapshot, error)
 }
 
 // notificationDeliveryFinalizer is the finalize surface used by processClaimed (tests).
@@ -41,14 +48,16 @@ type notificationDeliveryFinalizer interface {
 
 // NotificationWorker processes claimed intents for registered channels only.
 type NotificationWorker struct {
-	svc       *Service
-	lease     notificationLeaseStore // defaults to svc; overridden in Tick unit tests only
-	finalizer notificationDeliveryFinalizer
-	cfg       NotificationWorkerConfig
-	log       *slog.Logger
-	adapters  map[string]NotificationDeliveryAdapter
-	channels  []string // sorted supported channels for claim
-	observer  WorkerLoopObserver
+	svc           *Service
+	lease         notificationLeaseStore // defaults to svc; overridden in Tick unit tests only
+	queue         notificationQueueSnapshotter
+	finalizer     notificationDeliveryFinalizer
+	cfg           NotificationWorkerConfig
+	log           *slog.Logger
+	adapters      map[string]NotificationDeliveryAdapter
+	channels      []string // sorted supported channels for claim
+	observer      WorkerLoopObserver
+	queueObserver NotificationQueueSnapshotObserver
 	// preSendCheck, when non-nil, replaces preSendShouldSkip (unit tests only).
 	preSendCheck func(intent *AppointmentNotificationIntent, payload NotificationPayload) (bool, string)
 }
@@ -69,20 +78,29 @@ func NewNotificationWorker(svc *Service, cfg NotificationWorkerConfig) (*Notific
 	if obs == nil {
 		obs = noopWorkerLoopObserver{}
 	}
+	qObs := cfg.QueueObserver
+	if qObs == nil {
+		qObs = noopQueueSnapshotObserver{}
+	}
 	registry, channels, err := validateNotificationAdapters(cfg.Adapters)
 	if err != nil {
 		return nil, err
 	}
-	return &NotificationWorker{
-		svc:       svc,
-		lease:     svc,
-		finalizer: svc,
-		cfg:       cfg,
-		log:       log,
-		adapters:  registry,
-		channels:  channels,
-		observer:  obs,
-	}, nil
+	w := &NotificationWorker{
+		svc:           svc,
+		cfg:           cfg,
+		log:           log,
+		adapters:      registry,
+		channels:      channels,
+		observer:      obs,
+		queueObserver: qObs,
+	}
+	if svc != nil {
+		w.lease = svc
+		w.queue = svc
+		w.finalizer = svc
+	}
+	return w, nil
 }
 
 func validateNotificationAdapters(adapters map[string]NotificationDeliveryAdapter) (map[string]NotificationDeliveryAdapter, []string, error) {
@@ -162,7 +180,27 @@ func (w *NotificationWorker) Tick(ctx context.Context) (err error) {
 		}
 		w.processClaimed(ctx, &claimed[i], now)
 	}
+	// LOT 26I-5D: one best-effort queue snapshot after primary Tick work (same asOf).
+	// Snapshot failure never becomes Tick error and never zeros gauges.
+	w.refreshQueueSnapshot(ctx, now)
 	return nil
+}
+
+// refreshQueueSnapshot updates queue gauges after recover/claim/process.
+// Skipped when ctx is already canceled. Errors are logged only.
+func (w *NotificationWorker) refreshQueueSnapshot(ctx context.Context, asOf time.Time) {
+	if ctx.Err() != nil {
+		return
+	}
+	if w.queue == nil {
+		return
+	}
+	snap, err := w.queue.NotificationQueueSnapshot(ctx, asOf)
+	if err != nil {
+		w.log.Error("notification_queue_snapshot", "error", err.Error())
+		return
+	}
+	w.queueObserver.ObserveQueueSnapshot(snap)
 }
 
 func (w *NotificationWorker) processClaimed(ctx context.Context, intent *AppointmentNotificationIntent, now time.Time) {

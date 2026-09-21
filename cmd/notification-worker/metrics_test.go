@@ -338,9 +338,174 @@ func TestWorkerMetricsNoDefaultRegistryLeak(t *testing.T) {
 		name := mf.GetName()
 		if name == metricTicksTotal || name == metricTickDurationSeconds ||
 			name == metricClaimedTotal || name == metricStaleRecoveredTotal ||
-			name == metricDeliveryAttemptsTotal || name == metricProviderDurationSeconds {
+			name == metricDeliveryAttemptsTotal || name == metricProviderDurationSeconds ||
+			name == metricQueuePending || name == metricQueueDue ||
+			name == metricQueueProcessing || name == metricQueueStaleProcessing ||
+			name == metricQueueOldestDueAgeSecs {
 			t.Fatalf("worker metric %s leaked into DefaultGatherer", name)
 		}
 	}
 	_ = before
+}
+
+func TestApplyQueueSnapshotZeroFillAndChannels(t *testing.T) {
+	t.Parallel()
+	reg := NewWorkerMetricsRegistry()
+	wm, err := NewWorkerMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wm.ApplyQueueSnapshot(patient_queue.NotificationQueueSnapshot{
+		Channels: []patient_queue.NotificationQueueChannelSnapshot{
+			{
+				Channel: patient_queue.NotifChannelLog,
+				Pending: 3, Due: 2, Processing: 1, StaleProcessing: 1,
+				OldestDueAge: 90 * time.Second,
+			},
+			{
+				Channel: patient_queue.NotifChannelEmail,
+				Pending: 5, Due: 4, Processing: 0, StaleProcessing: 0,
+				OldestDueAge: 30 * time.Second,
+			},
+			{
+				Channel: patient_queue.NotifChannelSMS,
+				Pending: 1, Due: 1, Processing: 0, StaleProcessing: 0,
+				OldestDueAge: 10 * time.Second,
+			},
+			{Channel: "FAX", Pending: 99, Due: 99}, // dropped
+			{Channel: "other", Pending: 7},         // dropped — no "other" label
+		},
+	})
+
+	assertGauge := func(name string, g *prometheus.GaugeVec, ch string, want float64) {
+		t.Helper()
+		if got := testutil.ToFloat64(g.WithLabelValues(ch)); got != want {
+			t.Fatalf("%s{%s}=%v want %v", name, ch, got, want)
+		}
+	}
+	assertGauge(metricQueuePending, wm.queuePending, "log", 3)
+	assertGauge(metricQueueDue, wm.queueDue, "log", 2)
+	assertGauge(metricQueueProcessing, wm.queueProcessing, "log", 1)
+	assertGauge(metricQueueStaleProcessing, wm.queueStale, "log", 1)
+	assertGauge(metricQueueOldestDueAgeSecs, wm.queueOldestAge, "log", 90)
+
+	assertGauge(metricQueuePending, wm.queuePending, "email", 5)
+	assertGauge(metricQueueDue, wm.queueDue, "email", 4)
+	assertGauge(metricQueueOldestDueAgeSecs, wm.queueOldestAge, "email", 30)
+
+	assertGauge(metricQueuePending, wm.queuePending, "sms", 1)
+	assertGauge(metricQueueDue, wm.queueDue, "sms", 1)
+	assertGauge(metricQueueOldestDueAgeSecs, wm.queueOldestAge, "sms", 10)
+
+	// Empty successful snapshot → all channels zero (drain).
+	wm.ApplyQueueSnapshot(patient_queue.NotificationQueueSnapshot{})
+	for _, ch := range []string{"log", "email", "sms"} {
+		assertGauge(metricQueuePending, wm.queuePending, ch, 0)
+		assertGauge(metricQueueDue, wm.queueDue, ch, 0)
+		assertGauge(metricQueueProcessing, wm.queueProcessing, ch, 0)
+		assertGauge(metricQueueStaleProcessing, wm.queueStale, ch, 0)
+		assertGauge(metricQueueOldestDueAgeSecs, wm.queueOldestAge, ch, 0)
+	}
+
+	body := gatherMetricsBody(t, reg)
+	if strings.Contains(body, `channel="other"`) || strings.Contains(body, `channel="FAX"`) {
+		t.Fatal("unknown channels must not appear as labels")
+	}
+	for _, name := range []string{
+		metricQueuePending, metricQueueDue, metricQueueProcessing,
+		metricQueueStaleProcessing, metricQueueOldestDueAgeSecs,
+	} {
+		if !strings.Contains(body, name) {
+			t.Fatalf("missing family %s", name)
+		}
+	}
+	// 5B/5C untouched by ApplyQueueSnapshot.
+	if strings.Contains(body, `result="success"`) {
+		t.Fatal("ApplyQueueSnapshot must not mutate tick counters")
+	}
+}
+
+func TestQueueSnapshotRefreshFailureRetainsGauges(t *testing.T) {
+	t.Parallel()
+	reg := NewWorkerMetricsRegistry()
+	wm, err := NewWorkerMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wm.ApplyQueueSnapshot(patient_queue.NotificationQueueSnapshot{
+		Channels: []patient_queue.NotificationQueueChannelSnapshot{
+			{Channel: patient_queue.NotifChannelLog, Pending: 11, Due: 7, OldestDueAge: 42 * time.Second},
+		},
+	})
+	if got := testutil.ToFloat64(wm.queuePending.WithLabelValues("log")); got != 11 {
+		t.Fatalf("pending=%v", got)
+	}
+
+	// Simulate worker best-effort: snapshot fails → ObserveQueueSnapshot / Apply not called.
+	// Gauges must retain previous values (not zeroed).
+	if got := testutil.ToFloat64(wm.queuePending.WithLabelValues("log")); got != 11 {
+		t.Fatalf("retained pending=%v want 11", got)
+	}
+	if got := testutil.ToFloat64(wm.queueDue.WithLabelValues("log")); got != 7 {
+		t.Fatalf("retained due=%v want 7", got)
+	}
+	if got := testutil.ToFloat64(wm.queueOldestAge.WithLabelValues("log")); got != 42 {
+		t.Fatalf("retained age=%v want 42", got)
+	}
+}
+
+func TestMetricsScrapeDoesNotCallQueueSnapshot(t *testing.T) {
+	t.Parallel()
+	state := &HealthState{}
+	state.MarkStarted()
+	var pings atomic.Int32
+	ping := func(context.Context) error {
+		pings.Add(1)
+		return nil
+	}
+	reg := NewWorkerMetricsRegistry()
+	wm, err := NewWorkerMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wm.ApplyQueueSnapshot(patient_queue.NotificationQueueSnapshot{
+		Channels: []patient_queue.NotificationQueueChannelSnapshot{
+			{Channel: patient_queue.NotifChannelEmail, Pending: 2},
+		},
+	})
+	hs := NewHealthServer("127.0.0.1:0", state, ping, NewMetricsHandler(reg))
+
+	rec := httptest.NewRecorder()
+	hs.server.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	if pings.Load() != 0 {
+		t.Fatal("GET /metrics must not ping DB")
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, metricQueuePending) {
+		t.Fatal("expected queue gauge in scrape")
+	}
+	if !strings.Contains(body, `channel="email"`) {
+		t.Fatal("expected cached email series")
+	}
+	// No PHI / IDs / error strings.
+	for _, m := range []string{"patient_id", "appointment_id", "intent_id", "FAX", `channel="other"`} {
+		if strings.Contains(body, m) {
+			t.Fatalf("leaked %q", m)
+		}
+	}
+}
+
+func gatherMetricsBody(t *testing.T, reg *prometheus.Registry) string {
+	t.Helper()
+	hs := NewHealthServer("127.0.0.1:0", &HealthState{}, nil, NewMetricsHandler(reg))
+	rec := httptest.NewRecorder()
+	hs.server.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	return rec.Body.String()
 }
