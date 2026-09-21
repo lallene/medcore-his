@@ -166,6 +166,10 @@ func TestBuildAdaptersEmailEnabledMissingFields(t *testing.T) {
 		{"missing_client_id", func(t *testing.T) { t.Setenv(envM365ClientID, "") }, envM365ClientID},
 		{"missing_secret", func(t *testing.T) { t.Setenv(envM365ClientSecret, "") }, envM365ClientSecret},
 		{"missing_sender", func(t *testing.T) { t.Setenv(envM365Sender, "") }, envM365Sender},
+		{"whitespace_tenant", func(t *testing.T) { t.Setenv(envM365TenantID, "   ") }, envM365TenantID},
+		{"whitespace_client_id", func(t *testing.T) { t.Setenv(envM365ClientID, "   ") }, envM365ClientID},
+		{"whitespace_secret", func(t *testing.T) { t.Setenv(envM365ClientSecret, "   ") }, envM365ClientSecret},
+		{"whitespace_sender", func(t *testing.T) { t.Setenv(envM365Sender, "   ") }, envM365Sender},
 		{"invalid_tenant", func(t *testing.T) { t.Setenv(envM365TenantID, "not a tenant") }, ""},
 		{"invalid_sender", func(t *testing.T) { t.Setenv(envM365Sender, "Display Name <a@b.co>") }, ""},
 	}

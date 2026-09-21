@@ -992,9 +992,11 @@ Dedicated process: `cmd/notification-worker` (not started inside the API).
 - Bounded retry: max **5** attempts; backoff 1m / 5m / 15m / 1h then `FAILED`. Permanent/invalid/not-configured email errors fail immediately. Stale `PROCESSING` (lease older than **15m**) recovery: acquire with `FOR UPDATE SKIP LOCKED`, **refresh `processing_started_at` in the same TX**, then record exactly one attempt (counts toward max) and `PENDING`+backoff or `FAILED`.
 - **Exactly-once boundary:** MedCore does **not** claim exactly-once delivery for external providers. A provider may accept a message and the process may crash before finalization commits. EMAIL adapters should use provider idempotency keys where available.
 
-### Worker container (LOT 26I-1)
+### Worker container (LOT 26I-1 / 26I-2)
 
 API and worker are **separate processes** and **separate image targets** in `backend/Dockerfile`. The worker is never started inside the API.
+
+Both runtime images install Alpine **`tzdata`** so `MEDCORE_BUSINESS_TIMEZONE` and `MEDCORE_TIMEZONE` can use real IANA zones (e.g. `Europe/Paris`, `Africa/Abidjan`) inside the container. Do not set a global `TZ` env in the image; timezone contracts remain explicit config values.
 
 | Target | Binary / CMD | GHCR tag (CI on `main`) |
 |--------|--------------|-------------------------|
@@ -1031,8 +1033,9 @@ Contract:
 - `MEDCORE_NOTIFICATION_EMAIL_ENABLED=false` → LOG-only worker (M365 env ignored).
 - `MEDCORE_NOTIFICATION_EMAIL_ENABLED=true` → full M365 config required (startup fails closed).
 - Keep the same enablement flag on API and worker; drift leaves EMAIL intents `PENDING`.
+- `NOTIFICATION_WORKER_POLL` unset/blank/whitespace → **2s**. Explicit malformed or non-positive values → **worker startup failure** (no silent fallback).
 
-Deferred (later 26I slices): container timezone data, migration ownership, worker health probes, richer ops logging, production M365 auth posture.
+Deferred (later 26I slices): migration ownership, worker health probes, richer ops logging, production M365 auth posture.
 
 ### PHI
 

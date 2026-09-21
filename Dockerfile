@@ -34,7 +34,8 @@ FROM alpine:latest AS notification-worker
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates
+# ca-certificates for TLS; tzdata for IANA zones (MEDCORE_*_TIMEZONE).
+RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /app/medcore-notification-worker .
 
@@ -46,7 +47,8 @@ FROM alpine:latest AS api
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates
+# ca-certificates for TLS; tzdata for IANA zones (MEDCORE_*_TIMEZONE).
+RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /app/medcore-api .
 

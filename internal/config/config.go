@@ -54,8 +54,8 @@ func Load() Config {
 		DatabaseURL:              getEnv("DATABASE_URL", ""),
 		JWTSecret:                getEnv("JWT_SECRET", "change_me"),
 		CORSOrigin:               getEnv("CORS_ORIGIN", "http://localhost:5173"),
-		Timezone:                 getEnv("MEDCORE_TIMEZONE", DefaultSchedulingTimezone),
-		BusinessTimezone:         getEnv("MEDCORE_BUSINESS_TIMEZONE", DefaultBusinessTimezone),
+		Timezone:                 NormalizeTimezoneEnv(os.Getenv("MEDCORE_TIMEZONE"), DefaultSchedulingTimezone),
+		BusinessTimezone:         NormalizeTimezoneEnv(os.Getenv("MEDCORE_BUSINESS_TIMEZONE"), DefaultBusinessTimezone),
 		NotificationEmailEnabled: emailEnabled,
 	}
 
@@ -64,6 +64,17 @@ func Load() Config {
 	}
 
 	return cfg
+}
+
+// NormalizeTimezoneEnv trims an IANA timezone env value.
+// Unset, empty, or whitespace-only → fallback (typically UTC).
+// Non-empty values are trimmed; LoadLocation validation is separate.
+func NormalizeTimezoneEnv(raw, fallback string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // ParseNotificationEmailEnabled interprets MEDCORE_NOTIFICATION_EMAIL_ENABLED.
@@ -89,17 +100,20 @@ func (c Config) Validate() error {
 		return fmt.Errorf("DATABASE_URL est obligatoire")
 	}
 
-	if strings.TrimSpace(c.Timezone) != "" {
-		if _, err := time.LoadLocation(c.Timezone); err != nil {
-			return fmt.Errorf("MEDCORE_TIMEZONE invalide %q: %w", c.Timezone, err)
-		}
+	schedulingTZ := strings.TrimSpace(c.Timezone)
+	if schedulingTZ == "" {
+		schedulingTZ = DefaultSchedulingTimezone
+	}
+	if _, err := time.LoadLocation(schedulingTZ); err != nil {
+		return fmt.Errorf("MEDCORE_TIMEZONE invalide %q: %w", schedulingTZ, err)
 	}
 
-	if strings.TrimSpace(c.BusinessTimezone) == "" {
-		return fmt.Errorf("MEDCORE_BUSINESS_TIMEZONE est obligatoire")
+	businessTZ := strings.TrimSpace(c.BusinessTimezone)
+	if businessTZ == "" {
+		businessTZ = DefaultBusinessTimezone
 	}
-	if _, err := time.LoadLocation(c.BusinessTimezone); err != nil {
-		return fmt.Errorf("MEDCORE_BUSINESS_TIMEZONE invalide %q: %w", c.BusinessTimezone, err)
+	if _, err := time.LoadLocation(businessTZ); err != nil {
+		return fmt.Errorf("MEDCORE_BUSINESS_TIMEZONE invalide %q: %w", businessTZ, err)
 	}
 
 	if strings.EqualFold(strings.TrimSpace(c.AppEnv), "production") {
@@ -119,7 +133,11 @@ func (c Config) Validate() error {
 
 // BusinessLocation returns the validated business IANA location.
 func (c Config) BusinessLocation() *time.Location {
-	loc, err := time.LoadLocation(c.BusinessTimezone)
+	name := strings.TrimSpace(c.BusinessTimezone)
+	if name == "" {
+		name = DefaultBusinessTimezone
+	}
+	loc, err := time.LoadLocation(name)
 	if err != nil {
 		// Validate() already rejected invalid names; fall back to UTC if raced.
 		return time.UTC
