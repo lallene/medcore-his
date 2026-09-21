@@ -19,15 +19,26 @@ type NotificationWorkerConfig struct {
 	// Adapters maps channel → delivery adapter. Keys must equal adapter.Channel().
 	Adapters map[string]NotificationDeliveryAdapter
 	Logger   *slog.Logger
+	// Observer receives Tick/claim/stale signals (LOT 26I-5B). Nil → no-op.
+	Observer WorkerLoopObserver
+}
+
+// notificationLeaseStore is the recover+claim surface used by Tick (LOT 26I-5B tests).
+// Production uses *Service; signatures match RecoverStaleProcessingClaims / ClaimDueNotificationIntents.
+type notificationLeaseStore interface {
+	RecoverStaleProcessingClaims(asOf time.Time, batch int) (int, error)
+	ClaimDueNotificationIntents(asOf time.Time, batch int, channels []string) ([]AppointmentNotificationIntent, error)
 }
 
 // NotificationWorker processes claimed intents for registered channels only.
 type NotificationWorker struct {
 	svc      *Service
+	lease    notificationLeaseStore // defaults to svc; overridden in Tick unit tests only
 	cfg      NotificationWorkerConfig
 	log      *slog.Logger
 	adapters map[string]NotificationDeliveryAdapter
 	channels []string // sorted supported channels for claim
+	observer WorkerLoopObserver
 }
 
 // NewNotificationWorker validates the adapter registry and returns a worker.
@@ -42,16 +53,22 @@ func NewNotificationWorker(svc *Service, cfg NotificationWorkerConfig) (*Notific
 	if log == nil {
 		log = slog.Default()
 	}
+	obs := cfg.Observer
+	if obs == nil {
+		obs = noopWorkerLoopObserver{}
+	}
 	registry, channels, err := validateNotificationAdapters(cfg.Adapters)
 	if err != nil {
 		return nil, err
 	}
 	return &NotificationWorker{
 		svc:      svc,
+		lease:    svc,
 		cfg:      cfg,
 		log:      log,
 		adapters: registry,
 		channels: channels,
+		observer: obs,
 	}, nil
 }
 
@@ -109,15 +126,23 @@ func (w *NotificationWorker) Run(ctx context.Context) error {
 }
 
 // Tick runs one recovery + claim + deliver cycle (exported for tests).
-func (w *NotificationWorker) Tick(ctx context.Context) error {
+func (w *NotificationWorker) Tick(ctx context.Context) (err error) {
+	start := time.Now()
+	defer func() {
+		w.observer.ObserveTick(time.Since(start), err)
+	}()
+
 	now := time.Now().UTC()
-	if _, err := w.svc.RecoverStaleProcessingClaims(now, w.cfg.BatchSize); err != nil {
-		return err
-	}
-	claimed, err := w.svc.ClaimDueNotificationIntents(now, w.cfg.BatchSize, w.channels)
+	recovered, err := w.lease.RecoverStaleProcessingClaims(now, w.cfg.BatchSize)
+	w.observer.ObserveStaleRecovered(recovered)
 	if err != nil {
 		return err
 	}
+	claimed, err := w.lease.ClaimDueNotificationIntents(now, w.cfg.BatchSize, w.channels)
+	if err != nil {
+		return err
+	}
+	w.observer.ObserveClaimed(len(claimed))
 	for i := range claimed {
 		if ctx.Err() != nil {
 			return ctx.Err()

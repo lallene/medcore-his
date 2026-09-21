@@ -1076,7 +1076,7 @@ The notification-worker process exposes a dedicated **stdlib `net/http`** health
 |----------|---------|--------------|
 | `GET /healthz` | Process / run-loop **liveness** | `ok` (200) |
 | `GET /readyz` | Worker started + **DB** reachable + not shutting down | `ready` (200) |
-| `GET /metrics` | Prometheus exposition (LOT **26I-5A** foundation) | Prometheus text (200) |
+| `GET /metrics` | Prometheus exposition (LOT **26I-5A** foundation + **26I-5B** worker loop metrics) | Prometheus text (200) |
 
 Failure responses for health/readiness are always generic `unavailable` (503). Probe responses intentionally expose **no** diagnostics (no DB/Graph errors, DSN, tokens, PHI, queue contents).
 
@@ -1084,19 +1084,35 @@ Failure responses for health/readiness are always generic `unavailable` (503). P
 
 `GET /metrics` shares `NOTIFICATION_WORKER_HEALTH_PORT` with `/healthz` and `/readyz` (no extra port, EXPOSE, or Docker HEALTHCHECK change).
 
-Contract for 5A:
+Contract for 5A (still in force):
 
 - Private Prometheus registry owned by the worker process (not the global default registry).
-- No Go/process collectors and **no notification business metrics** yet (later 26I-5 slices).
+- No Go/process collectors.
 - Scrape performs **no** database queries and does **not** affect `/healthz` / `/readyz`.
 - Exposition must not contain patient-specific labels/data; future metrics may only use bounded enum labels (`channel`, `kind`, `outcome_class`, `provider`, `operation`) after explicit validation.
 - Unauthenticated, same network surface as health probes — intended for infrastructure-network scraping (NetworkPolicy / hardening guidance primarily LOT 26I-6).
 
-Dashboards, alerts, tick/delivery/queue instrumentation are **not** implemented in 5A.
+#### Worker loop metrics (LOT 26I-5B)
+
+Business Tick/claim/stale signals are observed via a small `WorkerLoopObserver` in `patient_queue` (no Prometheus imports there). The Prometheus adapter lives in `cmd/notification-worker` and registers collectors on the same private registry as 5A.
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `medcore_notification_worker_ticks_total` | Counter | `result` ∈ {`success`,`error`} | One increment per `Tick` return (`nil` → success, non-nil → error) |
+| `medcore_notification_worker_tick_duration_seconds` | Histogram | *(none)* | Full wall-clock `Tick` duration (recover + claim + sequential `processClaimed`, may include provider I/O) |
+| `medcore_notification_worker_claimed_total` | Counter | *(none)* | Intents successfully claimed into `PROCESSING` (`len(claimed)` after successful claim; not delivery success) |
+| `medcore_notification_worker_stale_recovered_total` | Counter | *(none)* | Stale `PROCESSING` intents successfully recovered (includes partial `n` when recovery returns `(n, err)`) |
+
+Notes:
+
+- Delivery outcomes (SENT / FAILED / SKIPPED / retry / ambiguous), Graph/provider latency, and queue depth gauges are **not** in 5B (reserved for later 26I-5C / 5D).
+- Scrape remains in-memory only: **no** DB queries on `GET /metrics`.
+- Metrics are process-local; multi-replica aggregation is `sum` for counters and normal histogram aggregation. Do not encode pod/hostname into application labels.
+- Dashboards and alert rules are **not** shipped in 5B (26I-5F later).
 
 **Liveness (`/healthz`) succeeds when** the worker Run loop has started, shutdown has not begun, and Run has not unexpectedly returned. It does **not** depend on DB availability, Microsoft Graph, M365 token acquisition, delivery success, queue depth, last Tick, or Tick duration. A long legitimate Tick alone must not fail liveness (avoids restart storms).
 
-**Readiness (`/readyz`) succeeds when** the worker has started, shutdown has not begun, and a bounded `sql.DB.PingContext` (≈1s) succeeds. It does **not** require Graph reachable, token acquisition at probe time, successful delivery, empty queue, or a recent Tick. Temporary provider/network failure is **not** worker unready. DB unavailable after startup **is** unready. Invalid M365 configuration when EMAIL is enabled still fails at **startup** (unchanged).
+**Readiness (`/readyz`) succeeds when** the worker has started, shutdown has not begun, and a bounded `sql.DB.PingContext` (≈1s) succeeds. It does **not** require Graph reachable, token acquisition at probe time, successful delivery, empty queue, or a recent Tick. Temporary provider/network failure is **not** worker unready. DB unavailable after startup **is** unready. Invalid M365 configuration when EMAIL is enabled still fails at **startup** (unchanged). Metric scrape failures do **not** make the worker unready.
 
 **One health-port contract:** the process listener and the Docker `HEALTHCHECK` both use `NOTIFICATION_WORKER_HEALTH_PORT`. Overriding that env changes both automatically; do **not** separately override the image healthcheck for a port change. `EXPOSE 8081` is default-port metadata only and does not block another runtime port.
 
@@ -1107,13 +1123,13 @@ Dashboards, alerts, tick/delivery/queue instrumentation are **not** implemented 
 | **Kubernetes** | liveness → `/healthz`; readiness → `/readyz` (target the configured container health port) |
 | **Docker** `HEALTHCHECK` | `/readyz` on `http://127.0.0.1:${NOTIFICATION_WORKER_HEALTH_PORT}/readyz` (Docker has a single health state; a worker that cannot reach DB is not operationally useful) |
 
-Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Detailed operational telemetry belongs to **26I-5**.
+Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Delivery/provider metrics and dashboards belong to later **26I-5** slices.
 
 **Shutdown:** SIGINT/SIGTERM → mark shutting-down (readiness false immediately) → cancel worker context → existing Run cancellation semantics → graceful health HTTP `Shutdown` → exit.
 
 **Multi-replica:** health state is **per-process only**. No DB heartbeat rows, leader election, or distributed health locks. `ClaimDue` `SKIP LOCKED` semantics are unchanged.
 
-Deferred (later 26I slices): richer ops logging / metrics (26I-5), production M365 auth posture.
+Deferred (later 26I slices): delivery/provider metrics (26I-5C), queue gauges (26I-5D), ops logging privacy cleanup (26I-5E), dashboards/alerts (26I-5F), production M365 auth posture (26I-6).
 
 ### PHI
 

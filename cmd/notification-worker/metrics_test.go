@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestMetricsEndpointDoesNotPingDB(t *testing.T) {
@@ -22,6 +25,9 @@ func TestMetricsEndpointDoesNotPingDB(t *testing.T) {
 		return nil
 	}
 	reg := NewWorkerMetricsRegistry()
+	if _, err := NewWorkerMetrics(reg); err != nil {
+		t.Fatal(err)
+	}
 	hs := NewHealthServer("127.0.0.1:0", state, ping, NewMetricsHandler(reg))
 
 	rec := httptest.NewRecorder()
@@ -53,14 +59,12 @@ func TestMetricsPrivateRegistryIsolation(t *testing.T) {
 	state.MarkStarted()
 
 	regA := NewWorkerMetricsRegistry()
-	c := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "medcore_test_metric",
-		Help: "test-only counter for private registry isolation",
-	})
-	if err := regA.Register(c); err != nil {
+	wmA, err := NewWorkerMetrics(regA)
+	if err != nil {
 		t.Fatal(err)
 	}
-	c.Inc()
+	wmA.ObserveTick(10*time.Millisecond, nil)
+	wmA.ObserveClaimed(2)
 
 	hsA := NewHealthServer("127.0.0.1:0", state, nil, NewMetricsHandler(regA))
 	recA := httptest.NewRecorder()
@@ -69,26 +73,34 @@ func TestMetricsPrivateRegistryIsolation(t *testing.T) {
 		t.Fatalf("A code=%d", recA.Code)
 	}
 	bodyA := recA.Body.String()
-	if !strings.Contains(bodyA, "medcore_test_metric") {
-		t.Fatalf("expected medcore_test_metric in A exposition")
+	if !strings.Contains(bodyA, metricTicksTotal) {
+		t.Fatalf("expected %s in A exposition", metricTicksTotal)
+	}
+	if !strings.Contains(bodyA, `result="success"`) {
+		t.Fatal("expected result=success in A")
 	}
 
 	regB := NewWorkerMetricsRegistry()
+	if _, err := NewWorkerMetrics(regB); err != nil {
+		t.Fatal(err)
+	}
 	hsB := NewHealthServer("127.0.0.1:0", state, nil, NewMetricsHandler(regB))
 	recB := httptest.NewRecorder()
 	hsB.server.Handler.ServeHTTP(recB, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if recB.Code != http.StatusOK {
 		t.Fatalf("B code=%d", recB.Code)
 	}
-	if strings.Contains(recB.Body.String(), "medcore_test_metric") {
-		t.Fatal("private registry B must not expose A's test metric")
+	bodyB := recB.Body.String()
+	if strings.Contains(bodyB, `result="success"`) {
+		t.Fatal("private registry B must not inherit A's tick observations")
+	}
+	if strings.Contains(bodyB, metricClaimedTotal+" 2") {
+		t.Fatal("private registry B must not inherit A's claimed count")
 	}
 }
 
 func TestMetricsFoundationDoesNotExposeSyntheticSecrets(t *testing.T) {
 	t.Parallel()
-	// Production foundation registry is empty of business metrics and must not
-	// embed application/private markers in default exposition.
 	markers := []string{
 		"patient-SECRET-MARKER",
 		"patient@example.invalid",
@@ -96,8 +108,25 @@ func TestMetricsFoundationDoesNotExposeSyntheticSecrets(t *testing.T) {
 		"postgres://SECRET-MARKER",
 		"Bearer SECRET-MARKER",
 		"correlation-SECRET-MARKER",
+		"patient_id",
+		"appointment_id",
+		"intent_id",
+		"attempt_id",
+		"recipient",
+		"worker_id",
+		"hostname",
+		"correlation_id",
+		"request_id",
 	}
 	reg := NewWorkerMetricsRegistry()
+	wm, err := NewWorkerMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wm.ObserveTick(time.Millisecond, errors.New("should-not-appear-as-label"))
+	wm.ObserveClaimed(1)
+	wm.ObserveStaleRecovered(1)
+
 	hs := NewHealthServer("127.0.0.1:0", &HealthState{}, nil, NewMetricsHandler(reg))
 	rec := httptest.NewRecorder()
 	hs.server.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -109,6 +138,9 @@ func TestMetricsFoundationDoesNotExposeSyntheticSecrets(t *testing.T) {
 		if strings.Contains(body, m) {
 			t.Fatalf("metrics leaked marker %q", m)
 		}
+	}
+	if strings.Contains(body, "should-not-appear-as-label") {
+		t.Fatal("error string must not appear in exposition")
 	}
 }
 
@@ -157,6 +189,9 @@ func TestMetricsLiveServer(t *testing.T) {
 	state := &HealthState{}
 	state.MarkStarted()
 	reg := NewWorkerMetricsRegistry()
+	if _, err := NewWorkerMetrics(reg); err != nil {
+		t.Fatal(err)
+	}
 	hs := NewHealthServer("127.0.0.1:0", state, func(context.Context) error { return nil }, NewMetricsHandler(reg))
 	ln, err := hs.Listen()
 	if err != nil {
@@ -182,4 +217,108 @@ func TestMetricsLiveServer(t *testing.T) {
 	if !strings.Contains(ct, "text/plain") && !strings.Contains(ct, "openmetrics") {
 		t.Fatalf("Content-Type=%q", ct)
 	}
+}
+
+func TestWorkerMetricsObserveFamilies(t *testing.T) {
+	t.Parallel()
+	reg := NewWorkerMetricsRegistry()
+	wm, err := NewWorkerMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wm.ObserveTick(25*time.Millisecond, nil)
+	wm.ObserveTick(40*time.Millisecond, errors.New("boom"))
+	wm.ObserveClaimed(5)
+	wm.ObserveStaleRecovered(3)
+	wm.ObserveClaimed(0)        // no-op
+	wm.ObserveStaleRecovered(0) // no-op
+
+	if got := testutil.ToFloat64(wm.ticks.WithLabelValues(tickResultSuccess)); got != 1 {
+		t.Fatalf("success ticks=%v want 1", got)
+	}
+	if got := testutil.ToFloat64(wm.ticks.WithLabelValues(tickResultError)); got != 1 {
+		t.Fatalf("error ticks=%v want 1", got)
+	}
+	if got := testutil.CollectAndCount(wm.tickDuration); got != 1 {
+		t.Fatalf("histogram metric count=%d want 1", got)
+	}
+	// Histogram observation count via Gather
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var histCount uint64
+	var claimed, stale float64
+	for _, mf := range mfs {
+		switch mf.GetName() {
+		case metricTickDurationSeconds:
+			for _, m := range mf.GetMetric() {
+				histCount += m.GetHistogram().GetSampleCount()
+			}
+		case metricClaimedTotal:
+			for _, m := range mf.GetMetric() {
+				claimed = m.GetCounter().GetValue()
+			}
+		case metricStaleRecoveredTotal:
+			for _, m := range mf.GetMetric() {
+				stale = m.GetCounter().GetValue()
+			}
+		}
+	}
+	if histCount != 2 {
+		t.Fatalf("tick_duration sample_count=%d want 2", histCount)
+	}
+	if claimed != 5 {
+		t.Fatalf("claimed=%v want 5", claimed)
+	}
+	if stale != 3 {
+		t.Fatalf("stale=%v want 3", stale)
+	}
+}
+
+func TestWorkerMetricsRegistrationFailClosed(t *testing.T) {
+	t.Parallel()
+	reg := NewWorkerMetricsRegistry()
+	if _, err := NewWorkerMetrics(reg); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewWorkerMetrics(reg)
+	if err == nil {
+		t.Fatal("duplicate registration must fail closed")
+	}
+}
+
+func TestWorkerMetricsNilRegisterer(t *testing.T) {
+	t.Parallel()
+	_, err := NewWorkerMetrics(nil)
+	if err == nil {
+		t.Fatal("nil registerer must error")
+	}
+}
+
+func TestWorkerMetricsNoDefaultRegistryLeak(t *testing.T) {
+	t.Parallel()
+	before, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := NewWorkerMetricsRegistry()
+	wm, err := NewWorkerMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wm.ObserveTick(time.Millisecond, nil)
+	after, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mf := range after {
+		name := mf.GetName()
+		if name == metricTicksTotal || name == metricTickDurationSeconds ||
+			name == metricClaimedTotal || name == metricStaleRecoveredTotal {
+			t.Fatalf("5B metric %s leaked into DefaultGatherer", name)
+		}
+	}
+	_ = before
 }
