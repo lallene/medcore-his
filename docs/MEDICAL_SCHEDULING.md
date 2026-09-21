@@ -1169,7 +1169,7 @@ Notes:
 | **Kubernetes** | liveness → `/healthz`; readiness → `/readyz` (target the configured container health port) |
 | **Docker** `HEALTHCHECK` | `/readyz` on `http://127.0.0.1:${NOTIFICATION_WORKER_HEALTH_PORT}/readyz` (Docker has a single health state; a worker that cannot reach DB is not operationally useful) |
 
-Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Dashboards/alerts belong to **26I-5F**.
+Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Production dashboard PromQL, alerting recommendations, and operator runbooks: [NOTIFICATION_WORKER_OPERATIONS.md](./NOTIFICATION_WORKER_OPERATIONS.md) (LOT **26I-5F**).
 
 **Shutdown:** SIGINT/SIGTERM → mark shutting-down (readiness false immediately) → cancel worker context → existing Run cancellation semantics → graceful health HTTP `Shutdown` → exit.
 
@@ -1188,7 +1188,9 @@ Contract:
 - Application logs must **not** emit: patient/appointment/intent/attempt IDs, recipient/email, subject/body/payload, clinical content, DSN/credentials/tokens, Graph bodies, raw SQL, or raw `err.Error()`.
 - Secrets and clinical content remain forbidden even at Debug.
 
-Deferred: dashboards/alerts (**26I-5F**), production M365 auth posture (**26I-6**).
+Production scrape / dashboard PromQL / alerts / runbooks: [NOTIFICATION_WORKER_OPERATIONS.md](./NOTIFICATION_WORKER_OPERATIONS.md) (LOT **26I-5F**).
+
+Deferred: production M365 auth posture (**26I-6**).
 
 ### PHI
 
