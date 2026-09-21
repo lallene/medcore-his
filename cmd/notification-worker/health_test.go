@@ -63,7 +63,7 @@ func TestHealthzIndependentOfDB(t *testing.T) {
 		pings.Add(1)
 		return errors.New("sekrit-LEAK-TEST-XYZ-26I4 db down")
 	}
-	hs := NewHealthServer("127.0.0.1:0", state, ping)
+	hs := NewHealthServer("127.0.0.1:0", state, ping, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestReadyzRequiresStartAndDBPing(t *testing.T) {
 		}
 		return nil
 	}
-	hs := NewHealthServer("127.0.0.1:0", state, ping)
+	hs := NewHealthServer("127.0.0.1:0", state, ping, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
@@ -127,7 +127,7 @@ func TestShutdownFailsLiveAndReady(t *testing.T) {
 	t.Parallel()
 	state := &HealthState{}
 	state.MarkStarted()
-	hs := NewHealthServer("127.0.0.1:0", state, func(context.Context) error { return nil })
+	hs := NewHealthServer("127.0.0.1:0", state, func(context.Context) error { return nil }, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
@@ -154,7 +154,7 @@ func TestStoppedFailsLive(t *testing.T) {
 	state := &HealthState{}
 	state.MarkStarted()
 	state.MarkStopped()
-	hs := NewHealthServer("127.0.0.1:0", state, nil)
+	hs := NewHealthServer("127.0.0.1:0", state, nil, nil)
 	rec := httptest.NewRecorder()
 	hs.handleHealthz(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusServiceUnavailable {
@@ -165,7 +165,7 @@ func TestStoppedFailsLive(t *testing.T) {
 func TestHealthServerListenServeShutdown(t *testing.T) {
 	t.Parallel()
 	state := &HealthState{}
-	hs := NewHealthServer("127.0.0.1:0", state, func(context.Context) error { return nil })
+	hs := NewHealthServer("127.0.0.1:0", state, func(context.Context) error { return nil }, nil)
 	ln, err := hs.Listen()
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +221,7 @@ func TestHealthServerListenServeShutdown(t *testing.T) {
 
 func TestUnsupportedPath(t *testing.T) {
 	t.Parallel()
-	hs := NewHealthServer("127.0.0.1:0", &HealthState{}, nil)
+	hs := NewHealthServer("127.0.0.1:0", &HealthState{}, nil, nil)
 	rec := httptest.NewRecorder()
 	hs.server.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if rec.Code != http.StatusNotFound {
@@ -233,7 +233,7 @@ func TestNilPingReadyUnavailable(t *testing.T) {
 	t.Parallel()
 	state := &HealthState{}
 	state.MarkStarted()
-	hs := NewHealthServer("127.0.0.1:0", state, nil)
+	hs := NewHealthServer("127.0.0.1:0", state, nil, nil)
 	rec := httptest.NewRecorder()
 	hs.handleReadyz(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if rec.Code != http.StatusServiceUnavailable {

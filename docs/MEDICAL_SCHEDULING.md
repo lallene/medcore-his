@@ -1076,8 +1076,23 @@ The notification-worker process exposes a dedicated **stdlib `net/http`** health
 |----------|---------|--------------|
 | `GET /healthz` | Process / run-loop **liveness** | `ok` (200) |
 | `GET /readyz` | Worker started + **DB** reachable + not shutting down | `ready` (200) |
+| `GET /metrics` | Prometheus exposition (LOT **26I-5A** foundation) | Prometheus text (200) |
 
-Failure responses are always generic `unavailable` (503). Probe responses intentionally expose **no** diagnostics (no DB/Graph errors, DSN, tokens, PHI, queue contents).
+Failure responses for health/readiness are always generic `unavailable` (503). Probe responses intentionally expose **no** diagnostics (no DB/Graph errors, DSN, tokens, PHI, queue contents).
+
+#### Worker metrics foundation (LOT 26I-5A)
+
+`GET /metrics` shares `NOTIFICATION_WORKER_HEALTH_PORT` with `/healthz` and `/readyz` (no extra port, EXPOSE, or Docker HEALTHCHECK change).
+
+Contract for 5A:
+
+- Private Prometheus registry owned by the worker process (not the global default registry).
+- No Go/process collectors and **no notification business metrics** yet (later 26I-5 slices).
+- Scrape performs **no** database queries and does **not** affect `/healthz` / `/readyz`.
+- Exposition must not contain patient-specific labels/data; future metrics may only use bounded enum labels (`channel`, `kind`, `outcome_class`, `provider`, `operation`) after explicit validation.
+- Unauthenticated, same network surface as health probes — intended for infrastructure-network scraping (NetworkPolicy / hardening guidance primarily LOT 26I-6).
+
+Dashboards, alerts, tick/delivery/queue instrumentation are **not** implemented in 5A.
 
 **Liveness (`/healthz`) succeeds when** the worker Run loop has started, shutdown has not begun, and Run has not unexpectedly returned. It does **not** depend on DB availability, Microsoft Graph, M365 token acquisition, delivery success, queue depth, last Tick, or Tick duration. A long legitimate Tick alone must not fail liveness (avoids restart storms).
 

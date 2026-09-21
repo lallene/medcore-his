@@ -92,19 +92,25 @@ func PingFromSQLDB(db *sql.DB) dbPinger {
 	}
 }
 
-// HealthServer serves GET /healthz and GET /readyz only.
+// HealthServer serves GET /healthz, GET /readyz, and optionally GET /metrics.
 type HealthServer struct {
 	state  *HealthState
 	ping   dbPinger
 	server *http.Server
 }
 
-// NewHealthServer builds a dedicated health HTTP server (stdlib only).
-func NewHealthServer(addr string, state *HealthState, ping dbPinger) *HealthServer {
+// NewHealthServer builds a dedicated health HTTP server (stdlib net/http).
+// metricsHandler, when non-nil, is mounted at GET /metrics (LOT 26I-5A).
+// A nil metricsHandler leaves /metrics unregistered (404). Metrics must not
+// influence /healthz or /readyz and must not perform DB work.
+func NewHealthServer(addr string, state *HealthState, ping dbPinger, metricsHandler http.Handler) *HealthServer {
 	hs := &HealthServer{state: state, ping: ping}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", hs.handleHealthz)
 	mux.HandleFunc("GET /readyz", hs.handleReadyz)
+	if metricsHandler != nil {
+		mux.Handle("GET /metrics", metricsHandler)
+	}
 	hs.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,

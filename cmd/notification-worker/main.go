@@ -20,6 +20,7 @@ import (
 // Graph client secret is worker-only (never required by the API).
 // Schema ownership is cmd/migrate only (LOT 26I-3) — no AutoMigrate / Ensure* at startup.
 // Health/readiness: GET /healthz and GET /readyz on NOTIFICATION_WORKER_HEALTH_PORT (LOT 26I-4).
+// Metrics: GET /metrics on the same port (LOT 26I-5A foundation; no business metrics yet).
 func main() {
 	cfg := config.Load()
 	logger.Init(cfg.AppEnv)
@@ -68,8 +69,9 @@ func main() {
 	}
 
 	healthState := &HealthState{}
+	metricsReg := NewWorkerMetricsRegistry()
 	healthAddr := fmt.Sprintf("0.0.0.0:%d", healthPort)
-	healthSrv := NewHealthServer(healthAddr, healthState, PingFromSQLDB(sqlDB))
+	healthSrv := NewHealthServer(healthAddr, healthState, PingFromSQLDB(sqlDB), NewMetricsHandler(metricsReg))
 	ln, err := healthSrv.Listen()
 	if err != nil {
 		log.Error("notification worker health listen", "error", err)
