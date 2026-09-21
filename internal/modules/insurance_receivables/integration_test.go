@@ -1,14 +1,16 @@
 package insurance_receivables
 
 import (
+	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -28,6 +30,9 @@ type insCompany struct {
 
 func (insCompany) TableName() string { return "insurance_companies" }
 
+// Minimal stub: receivables tests only need authorization id/number/company/status.
+// PatientID is intentionally omitted — production NOT NULL is enforced under public
+// schema; this harness must isolate so the stub never touches public tables.
 type insAuthorization struct {
 	ID                  uint `gorm:"primaryKey"`
 	AuthorizationNumber string
@@ -38,16 +43,18 @@ type insAuthorization struct {
 
 func (insAuthorization) TableName() string { return "insurance_authorizations" }
 
-func insDSN(dsn, schema string) string {
-	if strings.Contains(dsn, "://") {
-		sep := "?"
-		if strings.Contains(dsn, "?") {
-			sep = "&"
-		}
-		return dsn + sep + "search_path=" + url.QueryEscape(schema)
-	}
-	return dsn + " search_path=" + schema
-}
+const insDBIsolationConfigError = "TEST_DATABASE_URL connection mode cannot preserve session search_path for insurance_receivables PG isolation; use a direct/session-mode PostgreSQL endpoint"
+
+// insDB opens an ephemeral schema for insurance_receivables PG tests.
+//
+// Isolation contract (aligned with patient_queue queuePostgres):
+//  1. Create schema insurance_receivables_<nanos> via an admin connection.
+//  2. Open the test pool with pgx RuntimeParams["search_path"].
+//  3. AfterConnect SET search_path (belt-and-suspenders for endpoints that
+//     discard startup parameters).
+//  4. Fail-fast assert current_schema() matches the ephemeral schema.
+//
+// Never prints DSN / host / credentials.
 func insDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -59,20 +66,81 @@ func insDB(t *testing.T) *gorm.DB {
 		t.Fatal(e)
 	}
 	schema := fmt.Sprintf("insurance_receivables_%d", time.Now().UnixNano())
-	if e = admin.Exec(`CREATE SCHEMA "` + schema + `"`).Error; e != nil {
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	if e = admin.Exec("CREATE SCHEMA " + schemaIdent).Error; e != nil {
 		t.Fatal(e)
 	}
-	db, e := gorm.Open(postgres.Open(insDSN(dsn, schema)), &gorm.Config{})
-	if e != nil {
-		t.Fatal(e)
+
+	pgConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(err)
 	}
-	sqlDB, _ := db.DB()
+	if pgConfig.RuntimeParams == nil {
+		pgConfig.RuntimeParams = map[string]string{}
+	}
+	pgConfig.RuntimeParams["search_path"] = schemaIdent
+
+	sqlDB := stdlib.OpenDB(*pgConfig, stdlib.OptionAfterConnect(func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET search_path TO "+schemaIdent)
+		return err
+	}))
 	sqlDB.SetMaxOpenConns(10)
-	t.Cleanup(func() { _ = sqlDB.Close(); _ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error })
+	sqlDB.SetMaxIdleConns(10)
+
+	pingCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		msg := err.Error()
+		if strings.Contains(msg, "unsupported startup parameter") || strings.Contains(strings.ToLower(msg), "search_path") {
+			t.Fatal(insDBIsolationConfigError)
+		}
+		t.Fatal(err)
+	}
+
+	db, e := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if e != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(e)
+	}
+
+	adminSQL, err := admin.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE").Error
+		_ = adminSQL.Close()
+	})
+
+	assertInsDBIsolation(t, db, schema)
+
 	if e = db.AutoMigrate(&insPatient{}, &insCompany{}, &insAuthorization{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &Settlement{}, &SettlementAllocation{}, &ReceivableMetadata{}, &FollowUp{}, &SubmissionBatch{}, &SubmissionBatchItem{}); e != nil {
 		t.Fatal(e)
 	}
 	return db
+}
+
+func assertInsDBIsolation(t *testing.T, db *gorm.DB, schema string) {
+	t.Helper()
+	var currentSchema string
+	if err := db.Raw("SELECT current_schema()").Scan(&currentSchema).Error; err != nil {
+		t.Fatalf("isolation assert current_schema: %v", err)
+	}
+	if currentSchema != schema {
+		t.Fatalf("insDB isolation failed: current_schema=%q want=%q (queries would hit the wrong schema)", currentSchema, schema)
+	}
+	var schemas []string
+	if err := db.Raw("SELECT unnest(current_schemas(false))").Scan(&schemas).Error; err != nil {
+		t.Fatalf("isolation assert current_schemas: %v", err)
+	}
+	if len(schemas) == 0 || schemas[0] != schema {
+		t.Fatalf("insDB isolation failed: current_schemas(false) effective first=%v want %q first", schemas, schema)
+	}
 }
 func insuredLine(t *testing.T, db *gorm.DB, company insCompany, patient insPatient, number string, gross, insurance, patientAmount int64) (billing.Invoice, billing.InvoiceLine) {
 	t.Helper()
