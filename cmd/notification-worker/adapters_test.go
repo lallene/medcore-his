@@ -46,7 +46,7 @@ func TestBuildAdaptersEmailDisabledIgnoresM365(t *testing.T) {
 	t.Setenv(envM365TenantID, "!!!not-a-tenant!!!")
 	t.Setenv(envM365Sender, "not an addr")
 
-	adapters, err := buildNotificationDeliveryAdapters(false, nil, slog.Default(), nil)
+	adapters, err := buildNotificationDeliveryAdapters(false, nil, slog.Default(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestBuildAdaptersEmailDisabledIgnoresM365(t *testing.T) {
 
 func TestBuildAdaptersEmailEnabledValid(t *testing.T) {
 	setValidM365Env(t, "dummy-client-secret")
-	adapters, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), time.UTC)
+	adapters, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), time.UTC, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestBuildAdaptersEmailEnabledValid(t *testing.T) {
 
 func TestBuildAdaptersEmailEnabledNilBusinessLocation(t *testing.T) {
 	setValidM365Env(t, "dummy-client-secret")
-	_, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), nil)
+	_, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error when business location is nil")
 	}
@@ -125,7 +125,7 @@ func TestBuildAdaptersEmailEnabledUsesConfigBusinessLocation(t *testing.T) {
 		t.Fatalf("BusinessLocation=%v", loc)
 	}
 
-	adapters, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), loc)
+	adapters, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), loc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestBuildAdaptersEmailEnabledMissingFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			base(t)
 			tc.mut(t)
-			_, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), time.UTC)
+			_, err := buildNotificationDeliveryAdapters(true, memDB(t), slog.Default(), time.UTC, nil)
 			if err == nil {
 				t.Fatal("expected error")
 			}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -233,6 +234,13 @@ func TestWorkerMetricsObserveFamilies(t *testing.T) {
 	wm.ObserveStaleRecovered(3)
 	wm.ObserveClaimed(0)        // no-op
 	wm.ObserveStaleRecovered(0) // no-op
+	wm.ObserveDeliveryAttempt(patient_queue.MetricChannelLog, patient_queue.DeliveryOutcomeSent)
+	wm.ObserveDeliveryAttempt(patient_queue.MetricChannelEmail, patient_queue.DeliveryOutcomeTransient)
+	wm.ObserveProviderDuration(patient_queue.MetricChannelLog, patient_queue.MetricProviderLog, 10*time.Millisecond)
+	wm.ObserveProviderDuration(patient_queue.MetricChannelEmail, patient_queue.MetricProviderMicrosoft365, 20*time.Millisecond)
+	// Drops
+	wm.ObserveDeliveryAttempt(patient_queue.MetricChannel("sms"), patient_queue.DeliveryOutcomeSent)
+	wm.ObserveProviderDuration(patient_queue.MetricChannelEmail, patient_queue.MetricProvider("fake"), time.Millisecond)
 
 	if got := testutil.ToFloat64(wm.ticks.WithLabelValues(tickResultSuccess)); got != 1 {
 		t.Fatalf("success ticks=%v want 1", got)
@@ -243,18 +251,28 @@ func TestWorkerMetricsObserveFamilies(t *testing.T) {
 	if got := testutil.CollectAndCount(wm.tickDuration); got != 1 {
 		t.Fatalf("histogram metric count=%d want 1", got)
 	}
+	if got := testutil.ToFloat64(wm.deliveryAttempts.WithLabelValues("log", "sent")); got != 1 {
+		t.Fatalf("delivery log/sent=%v", got)
+	}
+	if got := testutil.ToFloat64(wm.deliveryAttempts.WithLabelValues("email", "transient")); got != 1 {
+		t.Fatalf("delivery email/transient=%v", got)
+	}
 	// Histogram observation count via Gather
 	mfs, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var histCount uint64
+	var histCount, providerCount uint64
 	var claimed, stale float64
 	for _, mf := range mfs {
 		switch mf.GetName() {
 		case metricTickDurationSeconds:
 			for _, m := range mf.GetMetric() {
 				histCount += m.GetHistogram().GetSampleCount()
+			}
+		case metricProviderDurationSeconds:
+			for _, m := range mf.GetMetric() {
+				providerCount += m.GetHistogram().GetSampleCount()
 			}
 		case metricClaimedTotal:
 			for _, m := range mf.GetMetric() {
@@ -268,6 +286,9 @@ func TestWorkerMetricsObserveFamilies(t *testing.T) {
 	}
 	if histCount != 2 {
 		t.Fatalf("tick_duration sample_count=%d want 2", histCount)
+	}
+	if providerCount != 2 {
+		t.Fatalf("provider_duration sample_count=%d want 2", providerCount)
 	}
 	if claimed != 5 {
 		t.Fatalf("claimed=%v want 5", claimed)
@@ -316,8 +337,9 @@ func TestWorkerMetricsNoDefaultRegistryLeak(t *testing.T) {
 	for _, mf := range after {
 		name := mf.GetName()
 		if name == metricTicksTotal || name == metricTickDurationSeconds ||
-			name == metricClaimedTotal || name == metricStaleRecoveredTotal {
-			t.Fatalf("5B metric %s leaked into DefaultGatherer", name)
+			name == metricClaimedTotal || name == metricStaleRecoveredTotal ||
+			name == metricDeliveryAttemptsTotal || name == metricProviderDurationSeconds {
+			t.Fatalf("worker metric %s leaked into DefaultGatherer", name)
 		}
 	}
 	_ = before

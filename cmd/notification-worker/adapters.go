@@ -55,17 +55,22 @@ func loadWorkerMicrosoft365Config() (microsoft365.Config, error) {
 // When emailEnabled is false, M365 env is ignored and only LOG is registered.
 // When emailEnabled is true, full M365 config is required; construction fails closed (no LOG-only fallback).
 // businessLoc is the established 26B business timezone used by AppointmentEmailRenderer.
+// obs receives provider-duration observations (LOT 26I-5C); may be nil (no-op).
 func buildNotificationDeliveryAdapters(
 	emailEnabled bool,
 	db *gorm.DB,
 	log *slog.Logger,
 	businessLoc *time.Location,
+	obs patient_queue.WorkerLoopObserver,
 ) (map[string]patient_queue.NotificationDeliveryAdapter, error) {
 	if log == nil {
 		log = slog.Default()
 	}
 	adapters := map[string]patient_queue.NotificationDeliveryAdapter{
-		patient_queue.NotifChannelLog: patient_queue.NewLogDeliveryAdapter(patient_queue.NotifChannelLog, log),
+		patient_queue.NotifChannelLog: newMetricsLogAdapter(
+			patient_queue.NewLogDeliveryAdapter(patient_queue.NotifChannelLog, log),
+			obs,
+		),
 	}
 	if !emailEnabled {
 		return adapters, nil
@@ -84,8 +89,9 @@ func buildNotificationDeliveryAdapters(
 	if err != nil {
 		return nil, err
 	}
+	timed := newMetricsEmailTransport(transport, obs)
 	reader := patient_queue.NewGormPatientEmailReader(db)
 	renderer := patient_queue.NewAppointmentEmailRenderer(businessLoc)
-	adapters[patient_queue.NotifChannelEmail] = patient_queue.NewEmailDeliveryAdapter(transport, reader, renderer)
+	adapters[patient_queue.NotifChannelEmail] = patient_queue.NewEmailDeliveryAdapter(timed, reader, renderer)
 	return adapters, nil
 }

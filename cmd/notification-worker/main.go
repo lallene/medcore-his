@@ -20,7 +20,7 @@ import (
 // Graph client secret is worker-only (never required by the API).
 // Schema ownership is cmd/migrate only (LOT 26I-3) — no AutoMigrate / Ensure* at startup.
 // Health/readiness: GET /healthz and GET /readyz on NOTIFICATION_WORKER_HEALTH_PORT (LOT 26I-4).
-// Metrics: GET /metrics on the same port (LOT 26I-5A foundation + 26I-5B worker loop metrics).
+// Metrics: GET /metrics on the same port (LOT 26I-5A/5B + 26I-5C delivery/provider metrics).
 func main() {
 	cfg := config.Load()
 	logger.Init(cfg.AppEnv)
@@ -45,21 +45,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	metricsReg := NewWorkerMetricsRegistry()
+	workerMetrics, err := NewWorkerMetrics(metricsReg)
+	if err != nil {
+		log.Error("notification worker metrics", "error", err)
+		os.Exit(1)
+	}
+
 	adapters, err := buildNotificationDeliveryAdapters(
 		cfg.NotificationEmailEnabled,
 		db,
 		log,
 		cfg.BusinessLocation(),
+		workerMetrics,
 	)
 	if err != nil {
 		log.Error("notification worker adapters", "error", err)
-		os.Exit(1)
-	}
-
-	metricsReg := NewWorkerMetricsRegistry()
-	workerMetrics, err := NewWorkerMetrics(metricsReg)
-	if err != nil {
-		log.Error("notification worker metrics", "error", err)
 		os.Exit(1)
 	}
 

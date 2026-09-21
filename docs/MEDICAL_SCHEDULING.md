@@ -1110,6 +1110,30 @@ Notes:
 - Metrics are process-local; multi-replica aggregation is `sum` for counters and normal histogram aggregation. Do not encode pod/hostname into application labels.
 - Dashboards and alert rules are **not** shipped in 5B (26I-5F later).
 
+#### Delivery / provider metrics (LOT 26I-5C)
+
+Same private registry and observer wiring as 5B. Domain package stays Prometheus-free.
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `medcore_notification_delivery_attempts_total` | Counter | `channel` ∈ {`log`,`email`}, `outcome` (see below) | One increment per claimed intent handling **branch** selected by the worker |
+| `medcore_notification_provider_duration_seconds` | Histogram | `channel`+`provider`: (`log`,`log`) or (`email`,`microsoft365`) | Wall time of provider Send only |
+
+**`outcome` values** (worker decision class — not a durable intent-status gauge):
+
+`sent`, `skipped`, `permanent`, `invalid_message`, `not_configured`, `ambiguous`, `transient`, `canceled`, `invalid_payload`, `adapter_unavailable`
+
+Notes:
+
+- `sent` is recorded only when `FinalizeNotificationSent` succeeds (provider accepted + durable SENT path). Finalize TX failure after a successful Send does **not** increment `sent`.
+- Other outcomes describe the selected handling branch (even if a subsequent finalize TX logs an error).
+- `transient` covers `ErrTransient`, unknown errors on the retry path, and max-attempt exhaustion on that path. There is **no** separate retry/rate-limit/HTTP-429 metric.
+- `ambiguous` is distinct and terminal (FAILED); never counted as `sent` or `transient`.
+- `canceled` = bare context cancel/deadline that **leaves PROCESSING** (no attempt row).
+- EMAIL provider latency wraps **only** `email.Transport.Send` (not patient lookup or renderer). LOG latency wraps `LogDeliveryAdapter.Send`.
+- SMS is not a metric channel (no worker adapter).
+- Queue/backlog gauges remain 5D; dashboards/alerts remain 5F.
+
 **Liveness (`/healthz`) succeeds when** the worker Run loop has started, shutdown has not begun, and Run has not unexpectedly returned. It does **not** depend on DB availability, Microsoft Graph, M365 token acquisition, delivery success, queue depth, last Tick, or Tick duration. A long legitimate Tick alone must not fail liveness (avoids restart storms).
 
 **Readiness (`/readyz`) succeeds when** the worker has started, shutdown has not begun, and a bounded `sql.DB.PingContext` (≈1s) succeeds. It does **not** require Graph reachable, token acquisition at probe time, successful delivery, empty queue, or a recent Tick. Temporary provider/network failure is **not** worker unready. DB unavailable after startup **is** unready. Invalid M365 configuration when EMAIL is enabled still fails at **startup** (unchanged). Metric scrape failures do **not** make the worker unready.
@@ -1123,13 +1147,13 @@ Notes:
 | **Kubernetes** | liveness → `/healthz`; readiness → `/readyz` (target the configured container health port) |
 | **Docker** `HEALTHCHECK` | `/readyz` on `http://127.0.0.1:${NOTIFICATION_WORKER_HEALTH_PORT}/readyz` (Docker has a single health state; a worker that cannot reach DB is not operationally useful) |
 
-Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Delivery/provider metrics and dashboards belong to later **26I-5** slices.
+Do not confuse Docker `unhealthy` with Kubernetes liveness restart semantics. Queue gauges and dashboards belong to later **26I-5** slices.
 
 **Shutdown:** SIGINT/SIGTERM → mark shutting-down (readiness false immediately) → cancel worker context → existing Run cancellation semantics → graceful health HTTP `Shutdown` → exit.
 
 **Multi-replica:** health state is **per-process only**. No DB heartbeat rows, leader election, or distributed health locks. `ClaimDue` `SKIP LOCKED` semantics are unchanged.
 
-Deferred (later 26I slices): delivery/provider metrics (26I-5C), queue gauges (26I-5D), ops logging privacy cleanup (26I-5E), dashboards/alerts (26I-5F), production M365 auth posture (26I-6).
+Deferred (later 26I slices): queue gauges (26I-5D), ops logging privacy cleanup (26I-5E), dashboards/alerts (26I-5F), production M365 auth posture (26I-6).
 
 ### PHI
 

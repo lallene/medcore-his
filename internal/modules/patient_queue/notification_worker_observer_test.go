@@ -7,11 +7,13 @@ import (
 	"time"
 )
 
-// fakeWorkerLoopObserver records Observe* calls for LOT 26I-5B unit tests.
+// fakeWorkerLoopObserver records Observe* calls for LOT 26I-5B/5C unit tests.
 type fakeWorkerLoopObserver struct {
 	ticks          []tickObs
 	claimed        []int
 	staleRecovered []int
+	deliveries     []deliveryObs
+	providers      []providerObs
 }
 
 type tickObs struct {
