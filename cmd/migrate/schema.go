@@ -8,6 +8,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/audit"
 	"github.com/lallene/medcore-his/backend/internal/core/workflow"
 	"github.com/lallene/medcore-his/backend/internal/modules/access"
+	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
@@ -56,6 +57,7 @@ func schemaModels() []any {
 		&billing.InvoiceLine{},
 		&billing.AuthorizationAllocation{},
 		&billing.Payment{},
+		&act_catalog.Entry{},
 		&receivables.Metadata{},
 		&receivables.FollowUp{},
 		&insurance_receivables.Settlement{},

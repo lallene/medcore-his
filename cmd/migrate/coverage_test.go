@@ -7,20 +7,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 )
 
-func TestSchemaModelsIncludeAppointmentSeries(t *testing.T) {
+func TestSchemaModelsIncludeActCatalogEntry(t *testing.T) {
 	t.Parallel()
 	found := false
 	for _, m := range schemaModels() {
-		if _, ok := m.(*patient_queue.AppointmentSeries); ok {
+		if _, ok := m.(*act_catalog.Entry); ok {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("schemaModels must include *patient_queue.AppointmentSeries")
+		t.Fatal("schemaModels must include *act_catalog.Entry")
 	}
 }
 

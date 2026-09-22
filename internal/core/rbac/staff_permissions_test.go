@@ -23,9 +23,19 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	if has(facturation, "cash.payment.create") {
 		t.Fatalf("facturation=%v", facturation)
 	}
+	if !has(facturation, "act_catalog.read") || has(facturation, "act_catalog.manage") {
+		t.Fatalf("facturation act_catalog=%v", facturation)
+	}
 	comptable := EffectiveStaffPermissions("staff", []string{"COMPTABLE"}, nil)
 	if !has(comptable, "insurance_settlements.allocate") || has(comptable, "consultations.update") {
 		t.Fatalf("comptable=%v", comptable)
+	}
+	if !has(comptable, "act_catalog.read") {
+		t.Fatalf("comptable missing act_catalog.read=%v", comptable)
+	}
+	dirAdmin := EffectiveStaffPermissions("staff", []string{"DIRECTEUR_ADMINISTRATIF"}, nil)
+	if !has(dirAdmin, "act_catalog.manage") {
+		t.Fatalf("directeur administratif missing act_catalog.manage=%v", dirAdmin)
 	}
 	if got := EffectiveStaffPermissions("admin", nil, nil); len(got) != 1 || got[0] != "*" {
 		t.Fatalf("admin=%v", got)
