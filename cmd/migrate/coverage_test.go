@@ -9,6 +9,7 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
+	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 )
 
 func TestSchemaModelsIncludeActCatalogEntry(t *testing.T) {
@@ -22,6 +23,20 @@ func TestSchemaModelsIncludeActCatalogEntry(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("schemaModels must include *act_catalog.Entry")
+	}
+}
+
+func TestSchemaModelsIncludePerformedAct(t *testing.T) {
+	t.Parallel()
+	found := false
+	for _, m := range schemaModels() {
+		if _, ok := m.(*performed_acts.Act); ok {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("schemaModels must include *performed_acts.Act")
 	}
 }
 

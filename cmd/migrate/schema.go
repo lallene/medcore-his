@@ -26,6 +26,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patient_queue"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/qa"
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
@@ -58,6 +59,7 @@ func schemaModels() []any {
 		&billing.AuthorizationAllocation{},
 		&billing.Payment{},
 		&act_catalog.Entry{},
+		&performed_acts.Act{},
 		&receivables.Metadata{},
 		&receivables.FollowUp{},
 		&insurance_receivables.Settlement{},
