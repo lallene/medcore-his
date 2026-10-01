@@ -49,8 +49,20 @@ func consultationIntegrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Declared immutable DDL dependency on public.patients shape only.
-	if err := db.Exec(`CREATE TABLE patients (LIKE public.patients INCLUDING ALL)`).Error; err != nil {
+	// Prefer production patients shape when public.patients exists; otherwise
+	// AutoMigrate the application model (isolated schema / empty public).
+	var publicPatients bool
+	if err := admin.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_name = 'patients'
+	)`).Scan(&publicPatients).Error; err != nil {
+		t.Fatal(err)
+	}
+	if publicPatients {
+		if err := db.Exec(`CREATE TABLE patients (LIKE public.patients INCLUDING ALL)`).Error; err != nil {
+			t.Fatal(err)
+		}
+	} else if err := db.AutoMigrate(&patients.Patient{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(

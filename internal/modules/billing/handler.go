@@ -34,7 +34,7 @@ func fail(c *gin.Context, e error) {
 	if errors.As(e, &app) {
 		response.Error(c, app)
 	} else {
-		response.Error(c, coreerrors.Internal(e.Error()))
+		response.Error(c, coreerrors.Internal("Erreur interne"))
 	}
 }
 func (h *Handler) Tariffs(c *gin.Context) {

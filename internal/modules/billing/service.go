@@ -121,40 +121,56 @@ func (s *Service) snapshot(tx *gorm.DB, patient uint, typ string, id uint) (actS
 			Service   string
 			CreatedAt time.Time
 		}
-		if e := tx.Table("consultations").First(&r, id).Error; e != nil || r.PatientID != patient {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("consultations").
+			Select("id, patient_id, service, created_at").Where("id = ?", id).Take(&r).Error; e != nil || r.PatientID != patient {
 			return a, coreerrors.Conflict("Consultation invalide pour ce patient")
+		}
+		if e := s.rejectLegacyWhenCanonicalPA(tx, typ, id); e != nil {
+			return a, e
 		}
 		a.key = fmt.Sprintf("CONSULTATION:%d", id)
 		a.label = "Consultation — " + r.Service
 		a.date = r.CreatedAt.Format(time.RFC3339)
 	case "LABORATORY":
-		var r struct {
+		var o struct {
 			ID, PatientID, MedicalExamID uint
-			RequestNumber, ExamName      string
+			RequestNumber                string
 			CreatedAt                    time.Time
 		}
-		e := tx.Table("laboratory_orders o").Select("o.id,o.patient_id,o.medical_exam_id,o.request_number,e.name exam_name,o.created_at").Joins("JOIN medical_exams e ON e.id=o.medical_exam_id").Where("o.id=?", id).Scan(&r).Error
-		if e != nil || r.ID == 0 || r.PatientID != patient {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("laboratory_orders").
+			Select("id, patient_id, medical_exam_id, request_number, created_at").
+			Where("id = ?", id).Take(&o).Error; e != nil || o.ID == 0 || o.PatientID != patient {
 			return a, coreerrors.Conflict("Examen laboratoire invalide")
 		}
+		if e := s.rejectLegacyWhenCanonicalPA(tx, typ, id); e != nil {
+			return a, e
+		}
+		var examName string
+		_ = tx.Table("medical_exams").Select("name").Where("id = ?", o.MedicalExamID).Scan(&examName).Error
 		a.key = fmt.Sprintf("LABORATORY:%d", id)
-		a.tariffReferenceID = r.MedicalExamID
-		a.label = r.RequestNumber + " — " + r.ExamName
-		a.date = r.CreatedAt.Format(time.RFC3339)
+		a.tariffReferenceID = o.MedicalExamID
+		a.label = o.RequestNumber + " — " + examName
+		a.date = o.CreatedAt.Format(time.RFC3339)
 	case "IMAGING":
-		var r struct {
+		var o struct {
 			ID, PatientID, MedicalExamID uint
-			OrderNumber, ExamName        string
+			OrderNumber                  string
 			CreatedAt                    time.Time
 		}
-		e := tx.Table("imaging_orders o").Select("o.id,o.patient_id,o.medical_exam_id,o.order_number,e.name exam_name,o.created_at").Joins("JOIN medical_exams e ON e.id=o.medical_exam_id").Where("o.id=?", id).Scan(&r).Error
-		if e != nil || r.ID == 0 || r.PatientID != patient {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("imaging_orders").
+			Select("id, patient_id, medical_exam_id, order_number, created_at").
+			Where("id = ?", id).Take(&o).Error; e != nil || o.ID == 0 || o.PatientID != patient {
 			return a, coreerrors.Conflict("Examen d'imagerie invalide")
 		}
+		if e := s.rejectLegacyWhenCanonicalPA(tx, typ, id); e != nil {
+			return a, e
+		}
+		var examName string
+		_ = tx.Table("medical_exams").Select("name").Where("id = ?", o.MedicalExamID).Scan(&examName).Error
 		a.key = fmt.Sprintf("IMAGING:%d", id)
-		a.tariffReferenceID = r.MedicalExamID
-		a.label = r.OrderNumber + " — " + r.ExamName
-		a.date = r.CreatedAt.Format(time.RFC3339)
+		a.tariffReferenceID = o.MedicalExamID
+		a.label = o.OrderNumber + " — " + examName
+		a.date = o.CreatedAt.Format(time.RFC3339)
 	case "HOSPITALIZATION":
 		var r struct {
 			ID, PatientID               uint
@@ -253,44 +269,6 @@ func allocateInsurance(gross int64, rate *float64, remaining int64) int64 {
 		amount = gross
 	}
 	return amount
-}
-func (s *Service) financialCoverage(tx *gorm.DB, patient uint, a actSnapshot, gross int64) (string, *authorization.Response, int64, bool, error) {
-	cov, e := s.activeCoverage(tx, patient)
-	if e != nil || cov == nil {
-		return "NONE", nil, 0, false, e
-	}
-	match, e := s.authorizations.FindAuthorizationForAct(patient, cov.ID, a.coverageReferenceType, a.coverageReferenceID)
-	if e != nil {
-		return "", nil, 0, false, e
-	}
-	if match.Authorization == nil {
-		return "NONE", nil, 0, false, nil
-	}
-	auth := match.Authorization
-	if auth.Status == authorization.StatusRejected {
-		return match.MatchType, auth, 0, false, nil
-	}
-	if auth.Status != authorization.StatusApproved && auth.Status != authorization.StatusPartiallyApproved {
-		return match.MatchType, auth, 0, true, nil
-	}
-	var locked authorization.InsuranceAuthorization
-	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, auth.ID).Error; e != nil {
-		return "", nil, 0, false, e
-	}
-	var used int64
-	if e := tx.Model(&AuthorizationAllocation{}).Where("authorization_id=?", auth.ID).Select("COALESCE(SUM(amount),0)").Scan(&used).Error; e != nil {
-		return "", nil, 0, false, e
-	}
-	cap := int64(math.MaxInt64)
-	if locked.InsuranceAmount != nil {
-		cap = round(*locked.InsuranceAmount)
-	}
-	remaining := cap - used
-	if remaining < 0 {
-		remaining = 0
-	}
-	amount := allocateInsurance(gross, locked.ApprovedRate, remaining)
-	return match.MatchType, auth, amount, false, nil
 }
 func (s *Service) CreateInvoice(req CreateInvoiceRequest, user uint) (*Invoice, error) {
 	var id uint
@@ -621,6 +599,15 @@ func (s *Service) BillableActs(patient uint) ([]BillableAct, error) {
 	out := make([]BillableAct, 0, len(rows))
 	now := time.Now()
 	for _, r := range rows {
+		if _, isLegacyProducer := producerSourceTypeForLegacy(r.ActType); isLegacyProducer {
+			suppressed, err := s.hasCanonicalPerformedAct(s.db, r.ActType, r.ReferenceID)
+			if err != nil {
+				return nil, err
+			}
+			if suppressed {
+				continue
+			}
+		}
 		key := fmt.Sprintf("%s:%d", r.ActType, r.ReferenceID)
 		if r.ActType == "MEDICATION" {
 			key = fmt.Sprintf("MEDICATION_DISPENSATION:%d", r.ReferenceID)
@@ -645,13 +632,23 @@ func (s *Service) BillableActs(patient uint) ([]BillableAct, error) {
 		}
 		snap, e := s.snapshot(s.db, patient, r.ActType, r.ReferenceID)
 		if e == nil {
-			cov, _ := s.activeCoverage(s.db, patient)
-			if cov != nil {
-				match, _ := s.authorizations.FindAuthorizationForAct(patient, cov.ID, snap.coverageReferenceType, snap.coverageReferenceID)
-				if match != nil {
-					item.CoverageResolution = match.MatchType
-					if match.Authorization != nil {
-						item.AuthorizationNumber = match.Authorization.AuthorizationNumber
+			if r.ActType == authorization.ReferencePerformedAct {
+				resolution, auth, _, _, covErr := s.financialCoverage(s.db, patient, snap, 0)
+				if covErr == nil {
+					item.CoverageResolution = resolution
+					if auth != nil {
+						item.AuthorizationNumber = auth.AuthorizationNumber
+					}
+				}
+			} else {
+				cov, _ := s.activeCoverage(s.db, patient)
+				if cov != nil {
+					match, _ := s.authorizations.FindAuthorizationForAct(patient, cov.ID, snap.coverageReferenceType, snap.coverageReferenceID)
+					if match != nil {
+						item.CoverageResolution = match.MatchType
+						if match.Authorization != nil {
+							item.AuthorizationNumber = match.Authorization.AuthorizationNumber
+						}
 					}
 				}
 			}

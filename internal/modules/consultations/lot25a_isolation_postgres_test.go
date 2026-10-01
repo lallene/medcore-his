@@ -48,12 +48,23 @@ func TestPostgresConsultationIntegrationDBIsolatesPharmacyDispensationFromPublic
 		t.Fatalf("pharmacy_dispensations must exist in ephemeral schema %q, count=%d", schemaName, ephemeralTable)
 	}
 
-	var publicBefore, publicEmptyBefore int64
-	if err := admin.Raw(`SELECT COUNT(*) FROM public.pharmacy_dispensations`).Scan(&publicBefore).Error; err != nil {
+	var publicPharmacyExists bool
+	if err := admin.Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'pharmacy_dispensations'
+		)`).Scan(&publicPharmacyExists).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := admin.Raw(`SELECT COUNT(*) FROM public.pharmacy_dispensations WHERE idempotency_key = ''`).Scan(&publicEmptyBefore).Error; err != nil {
-		t.Fatal(err)
+
+	var publicBefore, publicEmptyBefore int64
+	if publicPharmacyExists {
+		if err := admin.Raw(`SELECT COUNT(*) FROM public.pharmacy_dispensations`).Scan(&publicBefore).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := admin.Raw(`SELECT COUNT(*) FROM public.pharmacy_dispensations WHERE idempotency_key = ''`).Scan(&publicEmptyBefore).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	key := fmt.Sprintf("LOT25A-ISOLATION-%d", time.Now().UnixNano())
@@ -70,16 +81,23 @@ func TestPostgresConsultationIntegrationDBIsolatesPharmacyDispensationFromPublic
 		t.Fatalf("create in consultationIntegrationDB: %v", err)
 	}
 
-	var inEphemeral, inPublic int64
+	var inEphemeral int64
 	ephemeralSQL := fmt.Sprintf(`SELECT COUNT(*) FROM "%s".pharmacy_dispensations WHERE idempotency_key = ?`, schemaName)
 	if err := admin.Raw(ephemeralSQL, key).Scan(&inEphemeral).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := admin.Raw(`SELECT COUNT(*) FROM public.pharmacy_dispensations WHERE idempotency_key = ?`, key).Scan(&inPublic).Error; err != nil {
-		t.Fatal(err)
-	}
 	if inEphemeral != 1 {
 		t.Fatalf("row must live in ephemeral schema %q, count=%d", schemaName, inEphemeral)
+	}
+
+	if !publicPharmacyExists {
+		// Isolated harness DB without migrated public schema: ephemeral isolation still proven.
+		return
+	}
+
+	var inPublic int64
+	if err := admin.Raw(`SELECT COUNT(*) FROM public.pharmacy_dispensations WHERE idempotency_key = ?`, key).Scan(&inPublic).Error; err != nil {
+		t.Fatal(err)
 	}
 	if inPublic != 0 {
 		t.Fatalf("public.pharmacy_dispensations must not receive test row, count=%d", inPublic)

@@ -125,6 +125,8 @@ type billingPerformedAct struct {
 	PerformedAt       time.Time
 	PerformedBy       uint
 	Status            string
+	SourceType        string
+	SourceID          *uint
 	CreatedBy         uint
 	UpdatedBy         uint
 	CreatedAt         time.Time

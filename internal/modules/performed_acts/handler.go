@@ -43,7 +43,7 @@ func fail(c *gin.Context, err error) {
 		response.Error(c, app)
 		return
 	}
-	response.Error(c, coreerrors.Internal(err.Error()))
+	response.Error(c, coreerrors.Internal("Erreur interne"))
 }
 
 func (h *Handler) List(c *gin.Context) {

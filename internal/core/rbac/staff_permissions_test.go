@@ -26,8 +26,15 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	if !has(facturation, "act_catalog.read") || has(facturation, "act_catalog.manage") {
 		t.Fatalf("facturation act_catalog=%v", facturation)
 	}
-	if !has(facturation, "performed_acts.read") || has(facturation, "performed_acts.create") || has(facturation, "performed_acts.void") {
-		t.Fatalf("facturation performed_acts=%v", facturation)
+	if !has(facturation, "billing.cancel") || !has(facturation, "billing.tariff.manage") {
+		t.Fatalf("facturation billing manage/cancel=%v", facturation)
+	}
+	if !has(facturation, "insurance.authorization.decide") || !has(facturation, "insurance.authorization.cancel") {
+		t.Fatalf("facturation insurance decide/cancel=%v", facturation)
+	}
+	caissier := EffectiveStaffPermissions("staff", []string{"CAISSIER"}, nil)
+	if !has(caissier, "billing.payment.create") {
+		t.Fatalf("caissier missing billing.payment.create=%v", caissier)
 	}
 	comptable := EffectiveStaffPermissions("staff", []string{"COMPTABLE"}, nil)
 	if !has(comptable, "insurance_settlements.allocate") || has(comptable, "consultations.update") {
@@ -59,6 +66,12 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	}
 	if !has(physician, "act_catalog.read") || has(physician, "act_catalog.manage") {
 		t.Fatalf("physician act_catalog=%v", physician)
+	}
+	if !has(physician, "insurance.authorization.submit") || !has(physician, "insurance.authorization.decide") {
+		t.Fatalf("physician insurance lifecycle=%v", physician)
+	}
+	if !has(physician, "insurance.authorization.link_act") {
+		t.Fatalf("physician missing link_act=%v", physician)
 	}
 	if has(physician, "performed_acts.producer_map.manage") || has(physician, "performed_acts.producer_map.read") {
 		t.Fatalf("physician must not manage producer maps=%v", physician)

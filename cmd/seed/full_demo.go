@@ -728,12 +728,25 @@ func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service
 		return *invoice
 	}
 	payOnce := func(invoice billing.Invoice, amount int64, key string) {
-		var count int64
-		db.Model(&billing.Payment{}).Where("idempotency_key=?", key).Count(&count)
-		if count > 0 {
+		payKey, skip, err := resolveDemoPaymentIdempotencyKey(db, invoice, key)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if skip {
 			return
 		}
-		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: invoice.ID, Amount: amount, PaymentMethod: "CASH", IdempotencyKey: key}, user); err != nil {
+		var current billing.Invoice
+		if err := db.First(&current, invoice.ID).Error; err != nil {
+			log.Fatal(err)
+		}
+		payAmount := amount
+		if current.BalanceAmount > 0 && current.BalanceAmount < payAmount {
+			payAmount = current.BalanceAmount
+		}
+		if payAmount <= 0 {
+			return
+		}
+		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: current.ID, Amount: payAmount, PaymentMethod: "CASH", IdempotencyKey: payKey}, user); err != nil {
 			log.Fatal(err)
 		}
 	}

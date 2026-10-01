@@ -50,8 +50,15 @@ func (s *Service) Create(req CreateRequest, actorID uint) (*Act, error) {
 	if qty == 0 {
 		qty = 1
 	}
-	if qty <= 0 {
+	if qty <= 0 || math.IsNaN(qty) || math.IsInf(qty, 0) {
 		return nil, coreerrors.BadRequest("La quantité doit être strictement positive")
+	}
+	if qty > 1_000_000 {
+		return nil, coreerrors.BadRequest("La quantité dépasse la limite autorisée")
+	}
+	// Manual create must not forge producer identity (source_type, source_id).
+	if strings.TrimSpace(req.SourceType) != "" || req.SourceID != nil {
+		return nil, coreerrors.BadRequest("sourceType/sourceId réservés aux producteurs cliniques")
 	}
 
 	performedAt := time.Now()
@@ -82,7 +89,7 @@ func (s *Service) Create(req CreateRequest, actorID uint) (*Act, error) {
 		return nil, coreerrors.BadRequest("L'acte catalogue est inactif")
 	}
 
-	if err := s.validateOptionalContextTx(s.db, req); err != nil {
+	if err := s.validateOptionalContextTx(s.db, req.PatientID, req); err != nil {
 		return nil, err
 	}
 
@@ -95,8 +102,6 @@ func (s *Service) Create(req CreateRequest, actorID uint) (*Act, error) {
 		ConsultationID:    req.ConsultationID,
 		AppointmentID:     req.AppointmentID,
 		HospitalizationID: req.HospitalizationID,
-		SourceType:        strings.TrimSpace(req.SourceType),
-		SourceID:          req.SourceID,
 		CreatedBy:         actorID,
 		UpdatedBy:         actorID,
 	}

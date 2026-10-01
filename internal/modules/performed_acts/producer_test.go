@@ -31,7 +31,7 @@ func producerSQLite(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	// Minimal stub so optional ConsultationID validation can succeed without importing consultations.
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS consultations (id INTEGER PRIMARY KEY)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS consultations (id INTEGER PRIMARY KEY, patient_id INTEGER)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -72,7 +72,7 @@ func seedProducerBase(t *testing.T, db *gorm.DB, sourceType, clinicalKey string)
 func TestProducerHappyPathSnapshotAndContext(t *testing.T) {
 	db := producerSQLite(t)
 	p, cat := seedProducerBase(t, db, SourceConsultation, ConsultationClinicalKey)
-	if err := db.Exec(`INSERT INTO consultations (id) VALUES (42)`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO consultations (id, patient_id) VALUES (42, ?)`, p.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	s := NewService(db)

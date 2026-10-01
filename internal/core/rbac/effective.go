@@ -47,20 +47,22 @@ type EffectiveEntry struct {
 
 // SensitivePermissions require reinforced UI confirmation.
 var SensitivePermissions = map[string]bool{
-	"*":                       true,
-	"rbac.read":               true,
-	"rbac.user.manage":        true,
-	"rbac.override.manage":    true,
-	"rbac.matrix.manage":      true,
-	"rbac.audit.read":         true,
-	"staff.manage":            true,
-	"staff.audit.read":        true,
-	"billing.cancel":          true,
-	"cash.payment.cancel":     true,
-	"queue.read.all":          true,
-	"ticket.read.all":         true,
-	"organization.manage":     true,
-	"appointment_type.manage": true,
+	"*":                              true,
+	"rbac.read":                      true,
+	"rbac.user.manage":               true,
+	"rbac.override.manage":           true,
+	"rbac.matrix.manage":             true,
+	"rbac.audit.read":                true,
+	"staff.manage":                   true,
+	"staff.audit.read":               true,
+	"billing.cancel":                 true,
+	"insurance.authorization.decide": true,
+	"insurance.authorization.cancel": true,
+	"cash.payment.cancel":            true,
+	"queue.read.all":                 true,
+	"ticket.read.all":                true,
+	"organization.manage":            true,
+	"appointment_type.manage":        true,
 }
 
 // IsSensitive reports whether a permission is high-risk.

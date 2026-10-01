@@ -152,13 +152,26 @@ func seedVoidFixture(t *testing.T, db *gorm.DB, suffix string) voidFixture {
 
 func createPerformed(t *testing.T, db *gorm.DB, f voidFixture, sourceType string, sourceID *uint) *Act {
 	t.Helper()
-	act, err := NewService(db).Create(CreateRequest{
-		PatientID: f.patient.ID, ActCatalogEntryID: f.catalog.ID, SourceType: sourceType, SourceID: sourceID,
-	}, 7)
-	if err != nil {
+	if sourceType == "" && sourceID == nil {
+		act, err := NewService(db).Create(CreateRequest{
+			PatientID: f.patient.ID, ActCatalogEntryID: f.catalog.ID,
+		}, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return act
+	}
+	// Producer identity is not settable via HTTP Create — insert ledger row directly for Void tests.
+	act := Act{
+		PatientID: f.patient.ID, ActCatalogEntryID: f.catalog.ID, Quantity: 1,
+		PerformedAt: time.Now(), PerformedBy: 7, Status: StatusPerformed,
+		SourceType: sourceType, SourceID: sourceID, CreatedBy: 7, UpdatedBy: 7,
+	}
+	applyCatalogSnapshot(&act, f.catalog)
+	if err := db.Create(&act).Error; err != nil {
 		t.Fatal(err)
 	}
-	return act
+	return &act
 }
 
 func seedPAAuth(t *testing.T, db *gorm.DB, f voidFixture, actID uint, status string, rate *float64, insurance float64) uint {
