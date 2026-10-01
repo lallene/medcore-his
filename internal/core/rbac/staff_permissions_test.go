@@ -46,9 +46,19 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	if !has(dirAdmin, "performed_acts.read") || !has(dirAdmin, "performed_acts.void") || has(dirAdmin, "performed_acts.create") {
 		t.Fatalf("directeur administratif performed_acts=%v", dirAdmin)
 	}
+	if !has(dirAdmin, "performed_acts.producer_map.read") || !has(dirAdmin, "performed_acts.producer_map.manage") {
+		t.Fatalf("directeur administratif producer_map=%v", dirAdmin)
+	}
+	dirMed := EffectiveStaffPermissions("staff", []string{"DIRECTEUR_MEDICAL"}, nil)
+	if !has(dirMed, "performed_acts.producer_map.read") || !has(dirMed, "performed_acts.producer_map.manage") {
+		t.Fatalf("directeur médical producer_map=%v", dirMed)
+	}
 	physician := EffectiveStaffPermissions("staff", nil, []string{"MEDECINE_GENERALE"})
 	if !has(physician, "performed_acts.create") || !has(physician, "performed_acts.void") {
 		t.Fatalf("physician performed_acts=%v", physician)
+	}
+	if has(physician, "performed_acts.producer_map.manage") || has(physician, "performed_acts.producer_map.read") {
+		t.Fatalf("physician must not manage producer maps=%v", physician)
 	}
 	if got := EffectiveStaffPermissions("admin", nil, nil); len(got) != 1 || got[0] != "*" {
 		t.Fatalf("admin=%v", got)

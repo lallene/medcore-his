@@ -47,3 +47,21 @@ func TestDefaultBusinessTimezoneIsUTCNotLocal(t *testing.T) {
 		t.Fatalf("default=%s", DefaultBusinessTimezone)
 	}
 }
+
+func TestParsePerformedActProducersEnabledDefaultSafe(t *testing.T) {
+	v, err := ParsePerformedActProducersEnabled("")
+	if err != nil || v {
+		t.Fatalf("empty default want false, got %v err=%v", v, err)
+	}
+	v, err = ParsePerformedActProducersEnabled("true")
+	if err != nil || !v {
+		t.Fatalf("true want true, got %v err=%v", v, err)
+	}
+	v, err = ParsePerformedActProducersEnabled("0")
+	if err != nil || v {
+		t.Fatalf("0 want false, got %v err=%v", v, err)
+	}
+	if _, err := ParsePerformedActProducersEnabled("maybe"); err == nil {
+		t.Fatal("expected invalid value error")
+	}
+}

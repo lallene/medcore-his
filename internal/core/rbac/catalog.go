@@ -89,6 +89,8 @@ func init() {
 	add("performed_acts.read", "Lire les actes réalisés", "Actes", "SERVICE")
 	add("performed_acts.create", "Enregistrer un acte réalisé", "Actes", "SERVICE")
 	add("performed_acts.void", "Annuler un acte réalisé", "Actes", "SERVICE")
+	add("performed_acts.producer_map.read", "Lire les correspondances producteurs → catalogue", "Actes", "GLOBAL")
+	add("performed_acts.producer_map.manage", "Gérer les correspondances producteurs → catalogue", "Actes", "GLOBAL")
 	add("cash.register.read", "Lire les caisses", "Cash", "SERVICE")
 	add("cash.session.read", "Lire les sessions de caisse", "Cash", "SERVICE")
 	add("cash.session.open", "Ouvrir une session de caisse", "Cash", "SERVICE")

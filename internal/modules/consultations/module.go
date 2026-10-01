@@ -5,6 +5,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
+	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 )
 
 type Module struct{}
@@ -28,6 +29,9 @@ func (Module) Register(app *application.Application) {
 		repository,
 		medicalRecordsService,
 	)
+	if app.Config.PerformedActProducersEnabled {
+		service = service.WithPerformedActs(performed_acts.NewService(app.DB))
+	}
 
 	handler := NewHandler(service)
 

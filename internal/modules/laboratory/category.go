@@ -1,24 +1,12 @@
 package laboratory
 
-import "strings"
+import (
+	"github.com/lallene/medcore-his/backend/internal/modules/examcategories"
+)
 
-var laboratoryCategories = []string{
-	"laboratoire",
-	"biologie",
-	"biochimie",
-	"hématologie",
-	"hematologie",
-	"microbiologie",
-	"immunologie",
-	"parasitologie",
-}
+// laboratoryCategories retained as alias for repository SQL IN (?) clauses.
+var laboratoryCategories = examcategories.Laboratory
 
 func IsLaboratoryCategory(category string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(category))
-	for _, allowed := range laboratoryCategories {
-		if normalized == allowed {
-			return true
-		}
-	}
-	return false
+	return examcategories.IsLaboratory(category)
 }

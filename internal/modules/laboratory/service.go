@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
+	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -14,9 +15,22 @@ import (
 var ErrInvalidTransition = errors.New("transition laboratoire non autorisée")
 var ErrValidated = errors.New("un résultat validé est immuable")
 
-type Service struct{ repo *Repository }
+type Service struct {
+	repo          *Repository
+	performedActs *performed_acts.Service
+}
 
 func NewService(r *Repository) *Service { return &Service{repo: r} }
+
+// WithPerformedActs enables LOT27D automatic PerformedAct creation on lab validation.
+func (s *Service) WithPerformedActs(pa *performed_acts.Service) *Service {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	out.performedActs = pa
+	return &out
+}
 
 func (s *Service) List(f ListFilter, a Access) (*ListResult, error) {
 	if err := s.repo.Materialize(a.UserID); err != nil {
@@ -139,6 +153,27 @@ func (s *Service) Validate(id uint, a Access) (*Order, error) {
 		now := time.Now()
 		if err := tx.Model(o).Updates(map[string]interface{}{"status": StatusValidated, "validated_at": now, "validated_by": a.UserID, "updated_by": a.UserID}).Error; err != nil {
 			return err
+		}
+		if s.performedActs != nil {
+			var examCode string
+			if err := tx.Raw(`SELECT code FROM medical_exams WHERE id = ?`, o.MedicalExamID).Scan(&examCode).Error; err != nil {
+				return err
+			}
+			if examCode == "" {
+				return ErrInvalidTransition
+			}
+			cid := o.ConsultationID
+			if _, err := s.performedActs.EnsureFromProducer(tx, performed_acts.ProducerCreateRequest{
+				SourceType:     performed_acts.SourceLaboratory,
+				SourceID:       o.ID,
+				PatientID:      o.PatientID,
+				ClinicalKey:    examCode,
+				ConsultationID: &cid,
+				PerformedAt:    &now,
+				ActorID:        a.UserID,
+			}); err != nil {
+				return err
+			}
 		}
 		if o.MedicalRecordID != nil {
 			return createEvent(tx, *o.MedicalRecordID, o.PatientID, "lab_result_validated", "Résultat de laboratoire validé", o.RequestNumber, o.ID, a.UserID)

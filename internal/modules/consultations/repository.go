@@ -235,10 +235,20 @@ func (r *Repository) UpdateStatus(
 	unrestricted bool,
 	assignedServiceIDs []uint,
 ) error {
+	return r.UpdateStatusTx(r.db, id, updates, unrestricted, assignedServiceIDs)
+}
+
+func (r *Repository) UpdateStatusTx(
+	tx *gorm.DB,
+	id uint,
+	updates map[string]interface{},
+	unrestricted bool,
+	assignedServiceIDs []uint,
+) error {
 	if !unrestricted && len(assignedServiceIDs) == 0 {
 		return ErrConsultationNotFound
 	}
-	q := r.db.Model(&Consultation{}).Where("id = ?", id)
+	q := tx.Model(&Consultation{}).Where("id = ?", id)
 	if !unrestricted {
 		q = q.Where("service_id IN ?", assignedServiceIDs)
 	}

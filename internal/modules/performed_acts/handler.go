@@ -136,3 +136,91 @@ func (h *Handler) Void(c *gin.Context) {
 	}
 	c.JSON(200, item)
 }
+
+func (h *Handler) ListProducerMaps(c *gin.Context) {
+	rows, err := h.service.ListProducerMaps()
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, gin.H{"data": rows})
+}
+
+func (h *Handler) GetProducerMap(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.GetProducerMap(id)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, item)
+}
+
+func (h *Handler) ProducerReadiness(c *gin.Context) {
+	report, err := h.service.ProducerReadinessReport()
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, report)
+}
+
+func (h *Handler) UpsertProducerMap(c *gin.Context) {
+	var req UpsertProducerMapRequest
+	if c.ShouldBindJSON(&req) != nil {
+		fail(c, coreerrors.BadRequest("Correspondance producteur invalide"))
+		return
+	}
+	actor, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.UpsertProducerMap(req, actor)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, item)
+}
+
+func (h *Handler) UpdateProducerMap(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req UpdateProducerMapRequest
+	if c.ShouldBindJSON(&req) != nil {
+		fail(c, coreerrors.BadRequest("Correspondance producteur invalide"))
+		return
+	}
+	actor, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.UpdateProducerMap(id, req, actor)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, item)
+}
+
+func (h *Handler) DeactivateProducerMap(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	actor, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.DeactivateProducerMap(id, actor)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, item)
+}

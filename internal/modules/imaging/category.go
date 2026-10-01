@@ -1,9 +1,13 @@
 package imaging
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/lallene/medcore-his/backend/internal/modules/examcategories"
+)
 
 func IsImagingCategory(category string) bool {
-	return strings.EqualFold(strings.TrimSpace(category), "Imagerie")
+	return examcategories.IsImaging(category)
 }
 
 func modalityForExamCode(code string) string {

@@ -40,6 +40,20 @@ func TestSchemaModelsIncludePerformedAct(t *testing.T) {
 	}
 }
 
+func TestSchemaModelsIncludeProducerMap(t *testing.T) {
+	t.Parallel()
+	found := false
+	for _, m := range schemaModels() {
+		if _, ok := m.(*performed_acts.ProducerMap); ok {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("schemaModels must include *performed_acts.ProducerMap")
+	}
+}
+
 func TestSchemaModelsIncludeNotificationTables(t *testing.T) {
 	t.Parallel()
 	var intent, attempt bool
@@ -102,6 +116,12 @@ func TestApplyMigrationsIncludesRequiredEnsureHelpers(t *testing.T) {
 	// Fail-closed: EnsureTicketIndexes errors must be returned (not swallowed).
 	if !strings.Contains(body, `return fmt.Errorf("EnsureTicketIndexes: %w", err)`) {
 		t.Fatal("applyMigrations must propagate EnsureTicketIndexes failures")
+	}
+	if !strings.Contains(body, "performed_acts.EnsurePerformedActIndexes") {
+		t.Fatal("applyMigrations must call performed_acts.EnsurePerformedActIndexes")
+	}
+	if !strings.Contains(body, `return fmt.Errorf("EnsurePerformedActIndexes: %w", err)`) {
+		t.Fatal("applyMigrations must propagate EnsurePerformedActIndexes failures")
 	}
 }
 

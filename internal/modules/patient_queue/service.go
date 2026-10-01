@@ -8,6 +8,7 @@ import (
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
+	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -19,8 +20,9 @@ type NotificationLifecycleConfig struct {
 }
 
 type Service struct {
-	db       *gorm.DB
-	notifCfg NotificationLifecycleConfig
+	db            *gorm.DB
+	notifCfg      NotificationLifecycleConfig
+	performedActs *performed_acts.Service
 }
 
 // NewService constructs a queue/scheduling service with LOG-only notification lifecycle (EMAIL off).
@@ -36,6 +38,16 @@ func (s *Service) WithNotificationLifecycleConfig(cfg NotificationLifecycleConfi
 	}
 	out := *s
 	out.notifCfg = cfg
+	return &out
+}
+
+// WithPerformedActs enables LOT27D automatic PerformedAct creation on consultation completion via queue.
+func (s *Service) WithPerformedActs(pa *performed_acts.Service) *Service {
+	if s == nil {
+		return NewService(nil)
+	}
+	out := *s
+	out.performedActs = pa
 	return &out
 }
 
@@ -908,48 +920,67 @@ func (s *Service) linkVitalSignsToConsultationTx(tx *gorm.DB, vitalID, consultat
 	return nil
 }
 
-func (s *Service) completeConsultationTx(tx *gorm.DB, consultationID uint, disposition, dispositionNote string, authorID uint) error {
-	var status string
-	if err := tx.Raw(`SELECT status FROM consultations WHERE id=?`, consultationID).Scan(&status).Error; err != nil {
+func (s *Service) completeConsultationTx(tx *gorm.DB, consultationID uint, disposition, dispositionNote string, authorID uint, appointmentID *uint) error {
+	var row struct {
+		Status    string
+		PatientID uint
+	}
+	if err := tx.Raw(`SELECT status, patient_id FROM consultations WHERE id=?`, consultationID).Scan(&row).Error; err != nil {
 		return coreerrors.Internal(err.Error())
 	}
-	if status == consultations.ConsultationStatusCompleted || status == consultations.ConsultationStatusCancelled {
+	if row.Status == consultations.ConsultationStatusCancelled {
 		return nil
 	}
 	now := time.Now().UTC()
-	if err := tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(map[string]any{
-		"status":       consultations.ConsultationStatusCompleted,
-		"completed_at": now,
-		"updated_at":   now,
-	}).Error; err != nil {
-		return err
-	}
-	if disposition != "" || dispositionNote != "" {
-		var soapID uint
-		err := tx.Raw(`SELECT id FROM consultation_soaps WHERE consultation_id=?`, consultationID).Scan(&soapID).Error
-		if err == nil && soapID > 0 {
-			updates := map[string]any{"updated_at": now, "updated_by": authorID}
-			if disposition != "" {
-				updates["disposition"] = disposition
-			}
-			if dispositionNote != "" {
-				updates["patient_advice"] = dispositionNote
-			}
-			if err := tx.Table("consultation_soaps").
-				Where("consultation_id=?", consultationID).
-				Updates(updates).Error; err != nil {
-				return err
-			}
-		} else {
-			if err := tx.Exec(`
+	if row.Status != consultations.ConsultationStatusCompleted {
+		if err := tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(map[string]any{
+			"status":       consultations.ConsultationStatusCompleted,
+			"completed_at": now,
+			"updated_at":   now,
+		}).Error; err != nil {
+			return err
+		}
+		if disposition != "" || dispositionNote != "" {
+			var soapID uint
+			err := tx.Raw(`SELECT id FROM consultation_soaps WHERE consultation_id=?`, consultationID).Scan(&soapID).Error
+			if err == nil && soapID > 0 {
+				updates := map[string]any{"updated_at": now, "updated_by": authorID}
+				if disposition != "" {
+					updates["disposition"] = disposition
+				}
+				if dispositionNote != "" {
+					updates["patient_advice"] = dispositionNote
+				}
+				if err := tx.Table("consultation_soaps").
+					Where("consultation_id=?", consultationID).
+					Updates(updates).Error; err != nil {
+					return err
+				}
+			} else {
+				if err := tx.Exec(`
 	INSERT INTO consultation_soaps(consultation_id, disposition, patient_advice, created_by, updated_by, created_at, updated_at)
 	VALUES (?,?,?,?,?,?,?)`,
-				consultationID, disposition, dispositionNote, authorID, authorID, now, now).Error; err != nil {
-				return err
+					consultationID, disposition, dispositionNote, authorID, authorID, now, now).Error; err != nil {
+					return err
+				}
 			}
 		}
 	}
-	return nil
+	if s.performedActs == nil {
+		return nil
+	}
+	cid := consultationID
+	_, err := s.performedActs.EnsureFromProducer(tx, performed_acts.ProducerCreateRequest{
+		SourceType:     performed_acts.SourceConsultation,
+		SourceID:       consultationID,
+		PatientID:      row.PatientID,
+		ClinicalKey:    performed_acts.ConsultationClinicalKey,
+		ConsultationID: &cid,
+		AppointmentID:  appointmentID,
+		PerformedAt:    &now,
+		ActorID:        authorID,
+	})
+	return err
 }
 
 func (s *Service) assertDoctorCanComplete(t Ticket, a Access) error {
@@ -1096,7 +1127,7 @@ func (s *Service) Complete(id uint, r CompleteRequest, a Access) (*Ticket, error
 			return coreerrors.Conflict(err.Error())
 		}
 		if t.ConsultationID != nil {
-			if err := s.completeConsultationTx(tx, *t.ConsultationID, r.Disposition, r.DispositionNote, a.UserID); err != nil {
+			if err := s.completeConsultationTx(tx, *t.ConsultationID, r.Disposition, r.DispositionNote, a.UserID, t.AppointmentID); err != nil {
 				return err
 			}
 		}

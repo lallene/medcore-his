@@ -8,7 +8,7 @@ Durable record of an act **actually performed** for a patient.
 |---|---|---|
 | **ActCatalog** | LOT27B | What *can* be done |
 | **PerformedAct** (`performed_acts`) | LOT27C | What *was* done for a patient |
-| Clinical producers | Future LOT27D | Auto-mapping from consult/lab/imaging/hosp |
+| Clinical producers | **LOT27D** | Auto-mapping from consult / lab validate / imaging start — see `CLINICAL_PRODUCERS.md` |
 | Insurance / PEC | Future LOT27E | Submission references **PerformedAct** |
 | Financial split | Future LOT27F | Insurer / patient shares |
 | Billing | Future LOT27G | Invoice integration |

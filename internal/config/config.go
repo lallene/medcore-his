@@ -21,6 +21,11 @@ const DefaultSchedulingTimezone = "UTC"
 // and worker EMAIL adapter registration. Graph credentials are worker-only.
 const EnvNotificationEmailEnabled = "MEDCORE_NOTIFICATION_EMAIL_ENABLED"
 
+// EnvPerformedActProducersEnabled controls automatic PerformedAct creation from
+// clinical workflows (LOT27D). Default false: deploy safely, configure maps,
+// then enable. Operational flag — not a secret.
+const EnvPerformedActProducersEnabled = "PERFORMED_ACT_PRODUCERS_ENABLED"
+
 type Config struct {
 	AppEnv      string
 	Port        string
@@ -36,6 +41,9 @@ type Config struct {
 	// EMAIL adapter registration on the notification-worker. Does not imply Graph
 	// credentials are present on this process (worker owns MEDCORE_M365_* secrets).
 	NotificationEmailEnabled bool
+	// PerformedActProducersEnabled enables fail-closed automatic PerformedAct
+	// creation from consultation/lab/imaging transitions (LOT27D).
+	PerformedActProducersEnabled bool
 }
 
 func Load() Config {
@@ -47,16 +55,21 @@ func Load() Config {
 	if err != nil {
 		log.Fatalf("configuration invalide: %v", err)
 	}
+	producersEnabled, err := ParsePerformedActProducersEnabled(os.Getenv(EnvPerformedActProducersEnabled))
+	if err != nil {
+		log.Fatalf("configuration invalide: %v", err)
+	}
 
 	cfg := Config{
-		AppEnv:                   getEnv("APP_ENV", "development"),
-		Port:                     getEnv("PORT", "8080"),
-		DatabaseURL:              getEnv("DATABASE_URL", ""),
-		JWTSecret:                getEnv("JWT_SECRET", "change_me"),
-		CORSOrigin:               getEnv("CORS_ORIGIN", "http://localhost:5173"),
-		Timezone:                 NormalizeTimezoneEnv(os.Getenv("MEDCORE_TIMEZONE"), DefaultSchedulingTimezone),
-		BusinessTimezone:         NormalizeTimezoneEnv(os.Getenv("MEDCORE_BUSINESS_TIMEZONE"), DefaultBusinessTimezone),
-		NotificationEmailEnabled: emailEnabled,
+		AppEnv:                       getEnv("APP_ENV", "development"),
+		Port:                         getEnv("PORT", "8080"),
+		DatabaseURL:                  getEnv("DATABASE_URL", ""),
+		JWTSecret:                    getEnv("JWT_SECRET", "change_me"),
+		CORSOrigin:                   getEnv("CORS_ORIGIN", "http://localhost:5173"),
+		Timezone:                     NormalizeTimezoneEnv(os.Getenv("MEDCORE_TIMEZONE"), DefaultSchedulingTimezone),
+		BusinessTimezone:             NormalizeTimezoneEnv(os.Getenv("MEDCORE_BUSINESS_TIMEZONE"), DefaultBusinessTimezone),
+		NotificationEmailEnabled:     emailEnabled,
+		PerformedActProducersEnabled: producersEnabled,
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -81,6 +94,17 @@ func NormalizeTimezoneEnv(raw, fallback string) string {
 // Missing/empty/whitespace → false. true/1 and false/0 (case-insensitive) are accepted.
 // Any other explicit value is an error (never silently disabled). Error text does not echo the value.
 func ParseNotificationEmailEnabled(raw string) (bool, error) {
+	return parseBoolEnv(raw, EnvNotificationEmailEnabled)
+}
+
+// ParsePerformedActProducersEnabled interprets PERFORMED_ACT_PRODUCERS_ENABLED.
+// Missing/empty/whitespace → false (safe default for deployment).
+// true/1 and false/0 (case-insensitive) are accepted. Error text does not echo the value.
+func ParsePerformedActProducersEnabled(raw string) (bool, error) {
+	return parseBoolEnv(raw, EnvPerformedActProducersEnabled)
+}
+
+func parseBoolEnv(raw, envName string) (bool, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return false, nil
@@ -91,7 +115,7 @@ func ParseNotificationEmailEnabled(raw string) (bool, error) {
 	case "false", "0":
 		return false, nil
 	default:
-		return false, fmt.Errorf("%s: valeur invalide", EnvNotificationEmailEnabled)
+		return false, fmt.Errorf("%s: valeur invalide", envName)
 	}
 }
 

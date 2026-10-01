@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -11,9 +12,22 @@ import (
 var ErrInvalidTransition = errors.New("transition d’imagerie non autorisée")
 var ErrValidated = errors.New("un compte rendu validé est immuable")
 
-type Service struct{ repo *Repository }
+type Service struct {
+	repo          *Repository
+	performedActs *performed_acts.Service
+}
 
 func NewService(r *Repository) *Service { return &Service{repo: r} }
+
+// WithPerformedActs enables LOT27D automatic PerformedAct creation when imaging is started (performed).
+func (s *Service) WithPerformedActs(pa *performed_acts.Service) *Service {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	out.performedActs = pa
+	return &out
+}
 
 func (s *Service) List(f ListFilter, a Access) (*ListResult, error) {
 	if err := s.repo.Materialize(a.UserID); err != nil {
@@ -65,7 +79,30 @@ func (s *Service) Start(id uint, a Access, req StartRequest) (*Order, error) {
 			return ErrInvalidTransition
 		}
 		now := time.Now()
-		return s.updateAndEvent(tx, o, map[string]interface{}{"status": StatusInProgress, "performed_at": now, "performed_by": a.UserID, "technical_notes": req.TechnicalNotes, "contrast_used": req.ContrastUsed, "contrast_product": req.ContrastProduct, "study_instance_uid": req.StudyInstanceUID, "external_viewer_url": req.ExternalViewerURL, "updated_by": a.UserID}, "imaging_started", "Examen d’imagerie démarré", o.OrderNumber, a.UserID)
+		if err := s.updateAndEvent(tx, o, map[string]interface{}{"status": StatusInProgress, "performed_at": now, "performed_by": a.UserID, "technical_notes": req.TechnicalNotes, "contrast_used": req.ContrastUsed, "contrast_product": req.ContrastProduct, "study_instance_uid": req.StudyInstanceUID, "external_viewer_url": req.ExternalViewerURL, "updated_by": a.UserID}, "imaging_started", "Examen d’imagerie démarré", o.OrderNumber, a.UserID); err != nil {
+			return err
+		}
+		if s.performedActs == nil {
+			return nil
+		}
+		var examCode string
+		if err := tx.Raw(`SELECT code FROM medical_exams WHERE id = ?`, o.MedicalExamID).Scan(&examCode).Error; err != nil {
+			return err
+		}
+		if examCode == "" {
+			return ErrInvalidTransition
+		}
+		cid := o.ConsultationID
+		_, err := s.performedActs.EnsureFromProducer(tx, performed_acts.ProducerCreateRequest{
+			SourceType:     performed_acts.SourceImaging,
+			SourceID:       o.ID,
+			PatientID:      o.PatientID,
+			ClinicalKey:    examCode,
+			ConsultationID: &cid,
+			PerformedAt:    &now,
+			ActorID:        a.UserID,
+		})
+		return err
 	})
 	if err != nil {
 		return nil, err

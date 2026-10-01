@@ -13,11 +13,30 @@ import (
 )
 
 type Service struct {
-	db *gorm.DB
+	db               *gorm.DB
+	producersEnabled bool
 }
 
 func NewService(db *gorm.DB) *Service {
 	return &Service{db: db}
+}
+
+// WithProducersEnabled returns a shallow copy reflecting whether clinical
+// producers are fail-closed enforced (PERFORMED_ACT_PRODUCERS_ENABLED).
+func (s *Service) WithProducersEnabled(enabled bool) *Service {
+	if s == nil {
+		return NewService(nil)
+	}
+	out := *s
+	out.producersEnabled = enabled
+	return &out
+}
+
+func (s *Service) ProducersEnabled() bool {
+	if s == nil {
+		return false
+	}
+	return s.producersEnabled
 }
 
 func (s *Service) Create(req CreateRequest, actorID uint) (*Act, error) {
@@ -60,21 +79,12 @@ func (s *Service) Create(req CreateRequest, actorID uint) (*Act, error) {
 		return nil, coreerrors.BadRequest("L'acte catalogue est inactif")
 	}
 
-	if err := s.validateOptionalContext(req); err != nil {
+	if err := s.validateOptionalContextTx(s.db, req); err != nil {
 		return nil, err
 	}
 
 	item := Act{
 		PatientID:         req.PatientID,
-		ActCatalogEntryID: catalog.ID,
-		ActCode:           catalog.Code,
-		ActLabel:          catalog.Label,
-		ActDescription:    catalog.Description,
-		ActCategory:       catalog.Category,
-		BasePrice:         catalog.BasePrice,
-		Currency:          catalog.Currency,
-		Billable:          catalog.Billable,
-		InsuranceEligible: catalog.InsuranceEligible,
 		Quantity:          qty,
 		PerformedAt:       performedAt,
 		PerformedBy:       actorID,
@@ -87,42 +97,12 @@ func (s *Service) Create(req CreateRequest, actorID uint) (*Act, error) {
 		CreatedBy:         actorID,
 		UpdatedBy:         actorID,
 	}
+	applyCatalogSnapshot(&item, catalog)
 
 	if err := s.db.Create(&item).Error; err != nil {
 		return nil, err
 	}
 	return &item, nil
-}
-
-func (s *Service) validateOptionalContext(req CreateRequest) error {
-	if req.ConsultationID != nil {
-		var n int64
-		if err := s.db.Table("consultations").Where("id = ?", *req.ConsultationID).Count(&n).Error; err != nil {
-			return err
-		}
-		if n == 0 {
-			return coreerrors.NotFound("CONSULTATION")
-		}
-	}
-	if req.AppointmentID != nil {
-		var n int64
-		if err := s.db.Table("patient_queue_appointments").Where("id = ?", *req.AppointmentID).Count(&n).Error; err != nil {
-			return err
-		}
-		if n == 0 {
-			return coreerrors.NotFound("APPOINTMENT")
-		}
-	}
-	if req.HospitalizationID != nil {
-		var n int64
-		if err := s.db.Table("hospitalizations").Where("id = ?", *req.HospitalizationID).Count(&n).Error; err != nil {
-			return err
-		}
-		if n == 0 {
-			return coreerrors.NotFound("HOSPITALIZATION")
-		}
-	}
-	return nil
 }
 
 func (s *Service) GetByID(id uint) (*Act, error) {

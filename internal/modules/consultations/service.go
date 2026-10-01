@@ -9,6 +9,7 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 	"gorm.io/gorm"
 )
 
@@ -55,6 +56,7 @@ var (
 type Service struct {
 	repo                  *Repository
 	medicalRecordsService medical_records.Service
+	performedActs         *performed_acts.Service
 }
 
 func NewService(
@@ -65,6 +67,16 @@ func NewService(
 		repo:                  repo,
 		medicalRecordsService: medicalRecordsService,
 	}
+}
+
+// WithPerformedActs enables LOT27D automatic PerformedAct creation on consultation completion.
+func (s *Service) WithPerformedActs(pa *performed_acts.Service) *Service {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	out.performedActs = pa
+	return &out
 }
 
 func (s *Service) GetReasons() ([]ConsultationReason, error) {
@@ -448,8 +460,37 @@ func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, aut
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.UpdateStatus(id, updates, unrestricted, ids); err != nil {
-		return nil, err
+
+	if req.Status == ConsultationStatusCompleted && s.performedActs != nil {
+		err = s.repo.db.Transaction(func(tx *gorm.DB) error {
+			if err := s.repo.UpdateStatusTx(tx, id, updates, unrestricted, ids); err != nil {
+				return err
+			}
+			cid := id
+			var appointmentID *uint
+			var appt uint
+			if err := tx.Raw(`SELECT appointment_id FROM patient_queue_tickets WHERE consultation_id = ? AND appointment_id IS NOT NULL LIMIT 1`, id).Scan(&appt).Error; err == nil && appt > 0 {
+				appointmentID = &appt
+			}
+			_, err := s.performedActs.EnsureFromProducer(tx, performed_acts.ProducerCreateRequest{
+				SourceType:     performed_acts.SourceConsultation,
+				SourceID:       id,
+				PatientID:      consultation.PatientID,
+				ClinicalKey:    performed_acts.ConsultationClinicalKey,
+				ConsultationID: &cid,
+				AppointmentID:  appointmentID,
+				PerformedAt:    &now,
+				ActorID:        authorID,
+			})
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.repo.UpdateStatus(id, updates, unrestricted, ids); err != nil {
+			return nil, err
+		}
 	}
 
 	if s.medicalRecordsService != nil {

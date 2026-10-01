@@ -60,6 +60,7 @@ func schemaModels() []any {
 		&billing.Payment{},
 		&act_catalog.Entry{},
 		&performed_acts.Act{},
+		&performed_acts.ProducerMap{},
 		&receivables.Metadata{},
 		&receivables.FollowUp{},
 		&insurance_receivables.Settlement{},
@@ -176,6 +177,9 @@ func applyMigrations(db *gorm.DB) error {
 	}
 	if err := patient_queue.EnsureNotificationIndexes(db); err != nil {
 		return fmt.Errorf("EnsureNotificationIndexes: %w", err)
+	}
+	if err := performed_acts.EnsurePerformedActIndexes(db); err != nil {
+		return fmt.Errorf("EnsurePerformedActIndexes: %w", err)
 	}
 	if err := pharmacy.BackfillVouchers(db); err != nil {
 		return fmt.Errorf("pharmacy.BackfillVouchers: %w", err)

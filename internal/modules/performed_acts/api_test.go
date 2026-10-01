@@ -27,7 +27,7 @@ func apiDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &billing.Invoice{}, &billing.InvoiceLine{}); err != nil {
+	if err := db.AutoMigrate(&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{}, &billing.Invoice{}, &billing.InvoiceLine{}); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -214,5 +214,55 @@ func TestAPIMissingPatient(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d", w.Code)
+	}
+}
+
+func TestAPIProducerMapsRBACAndNoDelete(t *testing.T) {
+	db := apiDB(t)
+	_, cat := seedPatientCatalog(t, db)
+
+	forbidden := apiRouter(db, []string{"performed_acts.create"})
+	req := httptest.NewRequest(http.MethodGet, "/api/performed-acts/producer-maps", nil)
+	w := httptest.NewRecorder()
+	forbidden.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("read without perm status=%d", w.Code)
+	}
+
+	r := apiRouter(db, []string{"performed_acts.producer_map.read", "performed_acts.producer_map.manage"})
+	body, _ := json.Marshal(UpsertProducerMapRequest{
+		SourceType: SourceConsultation, ClinicalKey: "", ActCatalogEntryID: cat.ID,
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/performed-acts/producer-maps", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("upsert status=%d body=%s", w.Code, w.Body.String())
+	}
+	var created ProducerMap
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/performed-acts/producer-maps/readiness", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("readiness status=%d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/performed-acts/producer-maps/"+strconv.FormatUint(uint64(created.ID), 10), nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK || w.Code == http.StatusNoContent {
+		t.Fatal("DELETE producer-map must not succeed")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/performed-acts/producer-maps/"+strconv.FormatUint(uint64(created.ID), 10)+"/deactivate", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("deactivate status=%d body=%s", w.Code, w.Body.String())
 	}
 }

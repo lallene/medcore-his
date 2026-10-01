@@ -27,6 +27,9 @@ func performedActsDB(t *testing.T) *gorm.DB {
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL performed_acts ignorés")
 	}
+	// Prefer direct/session endpoint: Neon -pooler (transaction mode) cannot preserve
+	// per-connection search_path under concurrent workers.
+	dsn = strings.Replace(dsn, "-pooler", "", 1)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +88,7 @@ func performedActsDB(t *testing.T) *gorm.DB {
 
 	assertPerformedActsIsolation(t, db, schema)
 
-	if err = db.AutoMigrate(&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &billing.Invoice{}, &billing.InvoiceLine{}); err != nil {
+	if err = db.AutoMigrate(&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{}, &billing.Invoice{}, &billing.InvoiceLine{}); err != nil {
 		t.Fatal(err)
 	}
 	return db

@@ -10,8 +10,9 @@ type Module struct{}
 
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "performed_acts")
-	// Schema owned by cmd/migrate (LOT 26I-3 / LOT27C). No runtime AutoMigrate.
-	h := NewHandler(NewService(app.DB))
+	// Schema owned by cmd/migrate (LOT 26I-3 / LOT27C / LOT27D). No runtime AutoMigrate.
+	svc := NewService(app.DB).WithProducersEnabled(app.Config.PerformedActProducersEnabled)
+	h := NewHandler(svc)
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))
 	RegisterRoutes(g, h)
