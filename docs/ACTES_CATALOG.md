@@ -23,7 +23,7 @@ ActCatalog  ≠  PerformedAct
 - **Code**: stable, uppercase, globally unique, immutable after create; not recycled after deactivation.
 - **BasePrice**: current catalogue list price (integer minor units, default currency XOF). Changing it must not rewrite historical invoice lines (lines already snapshot `unit_price` from tariffs).
 - **Billable**: act *may* participate in billing workflows.
-- **InsuranceEligible**: act *may* enter a future PEC workflow. It does **not** mean a specific insurer covers the act (27E/27F).
+- **InsuranceEligible**: act *may* enter a PEC workflow via explicit `PERFORMED_ACT` authorization (LOT27E). It does **not** mean a specific insurer covers the act or pays (Decide / LOT27F).
 
 ## Categories (bounded)
 

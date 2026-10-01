@@ -123,6 +123,12 @@ func TestApplyMigrationsIncludesRequiredEnsureHelpers(t *testing.T) {
 	if !strings.Contains(body, `return fmt.Errorf("EnsurePerformedActIndexes: %w", err)`) {
 		t.Fatal("applyMigrations must propagate EnsurePerformedActIndexes failures")
 	}
+	if !strings.Contains(body, "authorization.EnsureAuthorizationIndexes") {
+		t.Fatal("applyMigrations must call authorization.EnsureAuthorizationIndexes")
+	}
+	if !strings.Contains(body, `return fmt.Errorf("EnsureAuthorizationIndexes: %w", err)`) {
+		t.Fatal("applyMigrations must propagate EnsureAuthorizationIndexes failures")
+	}
 }
 
 func TestMainFailsClosedOnApplyMigrationsError(t *testing.T) {

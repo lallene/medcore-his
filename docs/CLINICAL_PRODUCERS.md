@@ -17,12 +17,16 @@ ActCatalog mapping (act_catalog_producer_maps)
       v
 PerformedAct
       |
-      +------> LOT27E Insurance / PEC   [NOT YET]
+      +------> LOT27E Insurance / PEC   [PERFORMED_ACT reference — explicit submit]
       |
-      +------> later Billing            [NOT YET]
+      +------> later Billing            [NOT YET — LOT27G]
 ```
 
 Medication remains on its separate prescription/dispensation chain.
+
+**LOT27E note:** PEC creation for a performed act is **manual/explicit** with a chosen
+`PatientCoverageID`. Clinical producers never auto-create authorizations. Dual clinical +
+`PERFORMED_ACT` authorizations may coexist historically; no destructive migration.
 
 ## Enablement (deployment safety)
 
@@ -118,7 +122,9 @@ Manual `Create` and `EnsureFromProducer` share `applyCatalogSnapshot` (LOT27C fi
 **Hospitalization** is not a LOT27D producer (`SourceType` has no `HOSPITALIZATION`).
 Admission/stay events do not auto-create PerformedActs here — deferred to a later lot.
 
-No insurance/PEC, billing invoices, medication producers, frontend, LOT27E+.
+No insurance/PEC **automation**, billing invoices, medication producers, frontend, LOT27F+.
+
+LOT27E adds explicit `PERFORMED_ACT` PEC submission only (see `PERFORMED_ACTS.md`).
 
 ## Schema ownership
 

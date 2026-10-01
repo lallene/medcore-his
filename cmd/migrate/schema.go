@@ -181,6 +181,9 @@ func applyMigrations(db *gorm.DB) error {
 	if err := performed_acts.EnsurePerformedActIndexes(db); err != nil {
 		return fmt.Errorf("EnsurePerformedActIndexes: %w", err)
 	}
+	if err := authorization.EnsureAuthorizationIndexes(db); err != nil {
+		return fmt.Errorf("EnsureAuthorizationIndexes: %w", err)
+	}
 	if err := pharmacy.BackfillVouchers(db); err != nil {
 		return fmt.Errorf("pharmacy.BackfillVouchers: %w", err)
 	}

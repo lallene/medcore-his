@@ -15,9 +15,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ReferencePerformedAct is the LOT27E PEC reference to performed_acts.id.
+const ReferencePerformedAct = "PERFORMED_ACT"
+
 var allowedReferences = map[string]string{
-	"CONSULTATION": "consultations", "LABORATORY": "laboratory_orders", "IMAGING": "imaging_orders",
-	"HOSPITALIZATION": "hospitalizations", "MEDICATION": "consultation_prescriptions",
+	"CONSULTATION":        "consultations",
+	"LABORATORY":          "laboratory_orders",
+	"IMAGING":             "imaging_orders",
+	"HOSPITALIZATION":     "hospitalizations",
+	"MEDICATION":          "consultation_prescriptions",
+	ReferencePerformedAct: "performed_acts",
 }
 
 type Service struct{ db *gorm.DB }
@@ -80,6 +87,30 @@ func (s *Service) validateReference(tx *gorm.DB, patientID uint, typ string, id 
 	if !ok {
 		return "", coreerrors.BadRequest("Type d'acte non pris en charge par le référentiel actuel")
 	}
+	if typ == ReferencePerformedAct {
+		var act struct {
+			ID                uint
+			Status            string
+			InsuranceEligible bool
+		}
+		err := tx.Table("performed_acts").
+			Select("id, status, insurance_eligible").
+			Where("id = ? AND patient_id = ?", id, patientID).
+			Take(&act).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", coreerrors.Conflict("L'acte n'existe pas ou appartient à un autre patient")
+			}
+			return "", err
+		}
+		if act.Status != "PERFORMED" {
+			return "", coreerrors.Conflict("Seul un acte réalisé (PERFORMED) peut faire l'objet d'une PEC")
+		}
+		if !act.InsuranceEligible {
+			return "", coreerrors.Conflict("Cet acte n'est pas éligible à une prise en charge")
+		}
+		return typ, nil
+	}
 	var count int64
 	if typ == "MEDICATION" {
 		err := tx.Table("consultation_prescriptions p").Joins("JOIN consultations c ON c.id = p.consultation_id").Where("p.id = ? AND c.patient_id = ?", id, patientID).Count(&count).Error
@@ -115,6 +146,8 @@ func referenceService(tx *gorm.DB, typ string, id uint) (*uint, string, error) {
 			query = `SELECT NULL id, department name FROM hospitalizations WHERE id=?`
 		case "MEDICATION":
 			query = `SELECT NULL id, c.service name FROM consultation_prescriptions p JOIN consultations c ON c.id=p.consultation_id WHERE p.id=?`
+		case ReferencePerformedAct:
+			query = `SELECT NULL id, COALESCE(c.service,'') name FROM performed_acts pa LEFT JOIN consultations c ON c.id=pa.consultation_id WHERE pa.id=?`
 		}
 		if query == "" {
 			return nil, "", nil
@@ -135,6 +168,8 @@ func referenceService(tx *gorm.DB, typ string, id uint) (*uint, string, error) {
 		query = `SELECT h.service_id id, COALESCE(os.name,h.department) name FROM hospitalizations h LEFT JOIN organization_services os ON os.id=h.service_id WHERE h.id=?`
 	case "MEDICATION":
 		query = `SELECT c.service_id id, COALESCE(os.name,c.service) name FROM consultation_prescriptions p JOIN consultations c ON c.id=p.consultation_id LEFT JOIN organization_services os ON os.id=c.service_id WHERE p.id=?`
+	case ReferencePerformedAct:
+		query = `SELECT c.service_id id, COALESCE(os.name,c.service,'') name FROM performed_acts pa LEFT JOIN consultations c ON c.id=pa.consultation_id LEFT JOIN organization_services os ON os.id=c.service_id WHERE pa.id=?`
 	}
 	if query == "" {
 		return nil, "", nil
@@ -483,11 +518,12 @@ func (s *Service) EligibleActs(patientID, coverageID uint, referenceType, search
 	}
 	var rows []EligibleAct
 	queries := map[string]string{
-		"CONSULTATION":    `SELECT 'CONSULTATION' reference_type,id reference_id,('#' || id || ' — ' || COALESCE(NULLIF(service,''),'Consultation')) label,COALESCE(doctor_name,'') secondary_label,created_at::text date,status FROM consultations WHERE patient_id=?`,
-		"LABORATORY":      `SELECT 'LABORATORY' reference_type,o.id reference_id,(o.request_number || ' — ' || e.name) label,COALESCE(e.category,'') secondary_label,o.created_at::text date,o.status FROM laboratory_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=?`,
-		"IMAGING":         `SELECT 'IMAGING' reference_type,o.id reference_id,(o.order_number || ' — ' || e.name) label,COALESCE(o.modality,'') secondary_label,o.created_at::text date,o.status FROM imaging_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=?`,
-		"HOSPITALIZATION": `SELECT 'HOSPITALIZATION' reference_type,id reference_id,(admission_number || ' — ' || COALESCE(NULLIF(department,''),'Hospitalisation')) label,COALESCE(admission_reason,'') secondary_label,created_at::text date,status FROM hospitalizations WHERE patient_id=?`,
-		"MEDICATION":      `SELECT 'MEDICATION' reference_type,cp.id reference_id,('Prescription #' || cp.id || ' — ' || cp.medication_name || CASE WHEN cp.dosage='' THEN '' ELSE ' ' || cp.dosage END) label,('Consultation #' || cp.consultation_id) secondary_label,cp.created_at::text date,'PRESCRIBED' status FROM consultation_prescriptions cp JOIN consultations c ON c.id=cp.consultation_id WHERE c.patient_id=?`,
+		"CONSULTATION":        `SELECT 'CONSULTATION' reference_type,id reference_id,('#' || id || ' — ' || COALESCE(NULLIF(service,''),'Consultation')) label,COALESCE(doctor_name,'') secondary_label,created_at::text date,status FROM consultations WHERE patient_id=?`,
+		"LABORATORY":          `SELECT 'LABORATORY' reference_type,o.id reference_id,(o.request_number || ' — ' || e.name) label,COALESCE(e.category,'') secondary_label,o.created_at::text date,o.status FROM laboratory_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=?`,
+		"IMAGING":             `SELECT 'IMAGING' reference_type,o.id reference_id,(o.order_number || ' — ' || e.name) label,COALESCE(o.modality,'') secondary_label,o.created_at::text date,o.status FROM imaging_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=?`,
+		"HOSPITALIZATION":     `SELECT 'HOSPITALIZATION' reference_type,id reference_id,(admission_number || ' — ' || COALESCE(NULLIF(department,''),'Hospitalisation')) label,COALESCE(admission_reason,'') secondary_label,created_at::text date,status FROM hospitalizations WHERE patient_id=?`,
+		"MEDICATION":          `SELECT 'MEDICATION' reference_type,cp.id reference_id,('Prescription #' || cp.id || ' — ' || cp.medication_name || CASE WHEN cp.dosage='' THEN '' ELSE ' ' || cp.dosage END) label,('Consultation #' || cp.consultation_id) secondary_label,cp.created_at::text date,'PRESCRIBED' status FROM consultation_prescriptions cp JOIN consultations c ON c.id=cp.consultation_id WHERE c.patient_id=?`,
+		ReferencePerformedAct: `SELECT 'PERFORMED_ACT' reference_type,id reference_id,(act_code || ' — ' || act_label) label,COALESCE(act_category,'') secondary_label,performed_at::text date,status FROM performed_acts WHERE patient_id=? AND status='PERFORMED' AND insurance_eligible=true`,
 	}
 	if err := s.db.Raw(queries[typ], patientID).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -578,6 +614,8 @@ func (s *Service) referenceLabel(typ string, id uint) (string, error) {
 		query = s.db.Table("imaging_orders o").Select("e.name").Joins("JOIN medical_exams e ON e.id=o.medical_exam_id").Where("o.id=?", id).Scan(&label)
 	case "LABORATORY":
 		query = s.db.Table("laboratory_orders o").Select("e.name").Joins("JOIN medical_exams e ON e.id=o.medical_exam_id").Where("o.id=?", id).Scan(&label)
+	case ReferencePerformedAct:
+		query = s.db.Table("performed_acts").Select("act_code || ' — ' || act_label").Where("id=?", id).Scan(&label)
 	default:
 		label = fmt.Sprintf("%s #%d", typ, id)
 		return label, nil
