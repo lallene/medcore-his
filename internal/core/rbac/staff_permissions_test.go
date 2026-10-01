@@ -57,11 +57,64 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	if !has(physician, "performed_acts.create") || !has(physician, "performed_acts.void") {
 		t.Fatalf("physician performed_acts=%v", physician)
 	}
+	if !has(physician, "act_catalog.read") || has(physician, "act_catalog.manage") {
+		t.Fatalf("physician act_catalog=%v", physician)
+	}
 	if has(physician, "performed_acts.producer_map.manage") || has(physician, "performed_acts.producer_map.read") {
 		t.Fatalf("physician must not manage producer maps=%v", physician)
 	}
 	if got := EffectiveStaffPermissions("admin", nil, nil); len(got) != 1 || got[0] != "*" {
 		t.Fatalf("admin=%v", got)
+	}
+}
+
+// LOT27I-A — performed_acts.create requires act_catalog.read (catalog selection dependency).
+func TestPerformedActsCreateImpliesActCatalogRead(t *testing.T) {
+	type caseSpec struct {
+		name        string
+		functions   []string
+		specialties []string
+	}
+	cases := []caseSpec{
+		{name: "physician", specialties: []string{"MEDECINE_GENERALE"}},
+		{name: "INFIRMIER", functions: []string{"INFIRMIER"}},
+		{name: "BIOLOGISTE", functions: []string{"BIOLOGISTE"}},
+		{name: "RADIOLOGIE", functions: []string{"RADIOLOGIE"}},
+	}
+	for _, tc := range cases {
+		perms := EffectiveStaffPermissions("staff", tc.functions, tc.specialties)
+		if !has(perms, "performed_acts.create") {
+			t.Fatalf("%s missing performed_acts.create: %v", tc.name, perms)
+		}
+		if !has(perms, "act_catalog.read") {
+			t.Fatalf("%s has performed_acts.create without act_catalog.read: %v", tc.name, perms)
+		}
+		if has(perms, "act_catalog.manage") {
+			t.Fatalf("%s must not gain act_catalog.manage from create dependency: %v", tc.name, perms)
+		}
+	}
+
+	// Exhaustive: every built-in function pack that grants create also grants catalog read
+	// and does not imply catalog manage via this dependency.
+	for code, pack := range StaffFunctionPermissions {
+		if !has(pack, "performed_acts.create") {
+			continue
+		}
+		if !has(pack, "act_catalog.read") {
+			t.Fatalf("function %s has performed_acts.create without act_catalog.read: %v", code, pack)
+		}
+		if has(pack, "act_catalog.manage") {
+			t.Fatalf("function %s must not gain act_catalog.manage from create dependency: %v", code, pack)
+		}
+	}
+	if !has(StaffPhysicianPermissions, "performed_acts.create") {
+		t.Fatal("StaffPhysicianPermissions missing performed_acts.create")
+	}
+	if !has(StaffPhysicianPermissions, "act_catalog.read") {
+		t.Fatal("StaffPhysicianPermissions missing act_catalog.read")
+	}
+	if has(StaffPhysicianPermissions, "act_catalog.manage") {
+		t.Fatal("StaffPhysicianPermissions must not include act_catalog.manage")
 	}
 }
 
