@@ -67,7 +67,9 @@ func Calculate(requested float64, status string, rate, fixed, ceiling *float64) 
 		insurance = *ceiling
 	}
 	insurance = math.Min(requested, math.Max(0, insurance))
-	return math.Round(insurance*100) / 100, math.Round((requested-insurance)*100) / 100, nil
+	insRounded := math.Round(insurance*100) / 100
+	reqRounded := math.Round(requested*100) / 100
+	return insRounded, math.Round((reqRounded-insRounded)*100) / 100, nil
 }
 
 func parseDate(value string) (*time.Time, error) {
@@ -413,15 +415,22 @@ func (s *Service) Decide(id uint, req DecisionRequest, userID uint) (*Response, 
 		item.Status = status
 		item.ExternalReference = strings.TrimSpace(req.ExternalReference)
 		item.ExternalDecisionDate = decisionDate
-		item.ApprovedRate = req.ApprovedRate
-		item.ApprovedAmount = req.ApprovedAmount
 		item.InsuranceAmount = &insuranceAmount
 		item.PatientAmount = &patientAmount
-		item.CeilingAmount = req.CeilingAmount
 		item.RejectionReason = strings.TrimSpace(req.RejectionReason)
 		item.Comment = strings.TrimSpace(req.Comment)
 		item.DecidedBy = &userID
 		item.UpdatedBy = userID
+		if status == StatusRejected {
+			// REJECTED: insurer share is zero; do not expose rate/fixed/ceiling as effective terms.
+			item.ApprovedRate = nil
+			item.ApprovedAmount = nil
+			item.CeilingAmount = nil
+		} else {
+			item.ApprovedRate = req.ApprovedRate
+			item.ApprovedAmount = req.ApprovedAmount
+			item.CeilingAmount = req.CeilingAmount
+		}
 		if err := tx.Save(&item).Error; err != nil {
 			return err
 		}

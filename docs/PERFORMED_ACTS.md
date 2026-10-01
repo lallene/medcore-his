@@ -10,7 +10,7 @@ Durable record of an act **actually performed** for a patient.
 | **PerformedAct** (`performed_acts`) | LOT27C | What *was* done for a patient |
 | Clinical producers | **LOT27D** | Auto-mapping from consult / lab validate / imaging start — see `CLINICAL_PRODUCERS.md` |
 | Insurance / PEC | **LOT27E** | Explicit submit: `ReferenceType=PERFORMED_ACT` → existing authorization lifecycle |
-| Financial split | Future LOT27F | Insurer / patient shares (existing Decide remains; productization later) |
+| Financial split | **LOT27F** | Decide/Calculate on authorization: RequestedAmount → InsuranceAmount / PatientAmount |
 | Billing | Future LOT27G | Invoice integration from PerformedAct |
 
 ```
@@ -59,8 +59,36 @@ Creates a PEC in `DRAFT`. Eligibility requires `Status=PERFORMED` and `Insurance
 VOIDED acts cannot create a new PEC.
 
 `RequestedAmount` remains optional at create and is **not** final insurer payment.
-Insurer/patient split remains existing `Decide` / `Calculate` behaviour (LOT27F productization).
-Billing consumption of PerformedAct is **LOT27G** (not wired here).
+
+## LOT27F — Insurance / patient financial split
+
+Decision basis and split are owned by existing `Calculate` / `Decide` on
+`InsuranceAuthorization` (no rewrite in LOT27F):
+
+```
+RequestedAmount
+  → ApprovedRate and/or ApprovedAmount
+  → CeilingAmount (optional clamp)
+  → InsuranceAmount
+  → PatientAmount = RequestedAmount − InsuranceAmount (2 decimal places)
+```
+
+Rules:
+
+- **`RequestedAmount`** is the monetary basis for Decide. It is optional at Create and
+  **mandatory** at Decide. It is **not** auto-derived from `PerformedAct.BasePrice` or
+  `Quantity`.
+- **`contractRate` / `PatientCoverage.CoverageRate`** is informational on read responses
+  and is **not** automatically applied to the split.
+- **`APPROVED` and `PARTIALLY_APPROVED` use the same Calculate math**; the status label does
+  not change the formula. Operators choose the label; inputs (rate/fixed/ceiling) drive amounts.
+- **`REJECTED`**: `InsuranceAmount = 0`, `PatientAmount = RequestedAmount`. Approval terms
+  (`ApprovedRate`, `ApprovedAmount`, `CeilingAmount`) are cleared so they are not exposed as
+  effective. Rejection reason is required.
+- Final split is persisted on the authorization row. Decide does not create invoices,
+  allocations, receivables, or payments.
+- Billing consumption of `PERFORMED_ACT` remains **LOT27G**. Void/open-PEC reconciliation
+  remains **LOT27H**.
 
 **Dual-reference risk:** historical PECs may still reference `CONSULTATION` / `LABORATORY` /
 `IMAGING` / … while a newer PEC references `PERFORMED_ACT` for related care. Coexistence is
