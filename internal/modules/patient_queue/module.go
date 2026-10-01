@@ -4,6 +4,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/application"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 )
 
@@ -15,7 +16,8 @@ func (Module) Register(app *application.Application) {
 	s := NewService(app.DB).
 		WithNotificationLifecycleConfig(NotificationLifecycleConfig{
 			EmailEnabled: app.Config.NotificationEmailEnabled,
-		})
+		}).
+		WithMedicalRecords(medical_records.NewService(medical_records.NewRepository(app.DB)))
 	if app.Config.PerformedActProducersEnabled {
 		s = s.WithPerformedActs(performed_acts.NewService(app.DB))
 	}

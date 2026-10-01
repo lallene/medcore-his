@@ -429,7 +429,10 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 				"error": err.Error(),
 			})
 
-		case errors.Is(err, ErrInvalidTransition):
+		case errors.Is(err, ErrInvalidTransition),
+			errors.Is(err, ErrConsultationVersionConflict),
+			errors.Is(err, ErrQueueLinkedCancelBlocked),
+			errors.Is(err, ErrConsultationLocked):
 			c.JSON(http.StatusConflict, gin.H{
 				"error": err.Error(),
 			})

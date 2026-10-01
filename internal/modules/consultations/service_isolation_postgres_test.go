@@ -259,7 +259,8 @@ func TestPostgresConsultationServiceScopeUpdateDeniesCrossServiceF2401(t *testin
 func TestPostgresConsultationServiceScopeUpdateStatusDeniesCrossServiceF2401(t *testing.T) {
 	f := seedF2401Fixture(t)
 	_, err := f.svc.UpdateStatus(f.medConsult.ID, UpdateConsultationStatusRequest{
-		Status: ConsultationStatusInProgress,
+		ExpectedVersion: 1,
+		Status:          ConsultationStatusInProgress,
 	}, f.userB, f.accessB)
 	assertScopeDenied(t, err, "UpdateStatus GEN→MED")
 	var status string

@@ -95,6 +95,7 @@ type UpdateReferenceRequest struct {
 
 type UpdateConsultationStatusRequest struct {
 	Status             string `json:"status" binding:"required"`
+	ExpectedVersion    int    `json:"expectedVersion" binding:"required"`
 	CancellationReason string `json:"cancellationReason"`
 }
 

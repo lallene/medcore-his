@@ -70,7 +70,7 @@ func TestConsultationCompletionCreatesPerformedAct(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewService(NewRepository(db), nil).WithPerformedActs(performed_acts.NewService(db))
-	out, err := svc.UpdateStatus(c.ID, UpdateConsultationStatusRequest{Status: ConsultationStatusCompleted}, 12, Access{
+	out, err := svc.UpdateStatus(c.ID, UpdateConsultationStatusRequest{ExpectedVersion: 1, Status: ConsultationStatusCompleted}, 12, Access{
 		UserID: 12, Permissions: map[string]bool{"*": true},
 	})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestConsultationCompletionMissingMapRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewService(NewRepository(db), nil).WithPerformedActs(performed_acts.NewService(db))
-	_, err := svc.UpdateStatus(c.ID, UpdateConsultationStatusRequest{Status: ConsultationStatusCompleted}, 1, Access{
+	_, err := svc.UpdateStatus(c.ID, UpdateConsultationStatusRequest{ExpectedVersion: 1, Status: ConsultationStatusCompleted}, 1, Access{
 		UserID: 1, Permissions: map[string]bool{"*": true},
 	})
 	if err == nil {
@@ -137,7 +137,7 @@ func TestConsultationInProgressDoesNotCreatePerformedAct(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewService(NewRepository(db), nil).WithPerformedActs(performed_acts.NewService(db))
-	if _, err := svc.UpdateStatus(c.ID, UpdateConsultationStatusRequest{Status: ConsultationStatusInProgress}, 1, Access{
+	if _, err := svc.UpdateStatus(c.ID, UpdateConsultationStatusRequest{ExpectedVersion: 1, Status: ConsultationStatusInProgress}, 1, Access{
 		UserID: 1, Permissions: map[string]bool{"*": true},
 	}); err != nil {
 		t.Fatal(err)

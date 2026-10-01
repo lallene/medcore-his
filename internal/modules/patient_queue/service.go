@@ -9,6 +9,7 @@ import (
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -21,9 +22,10 @@ type NotificationLifecycleConfig struct {
 }
 
 type Service struct {
-	db            *gorm.DB
-	notifCfg      NotificationLifecycleConfig
-	performedActs *performed_acts.Service
+	db             *gorm.DB
+	notifCfg       NotificationLifecycleConfig
+	performedActs  *performed_acts.Service
+	medicalRecords medical_records.Service
 }
 
 // NewService constructs a queue/scheduling service with LOG-only notification lifecycle (EMAIL off).
@@ -49,6 +51,16 @@ func (s *Service) WithPerformedActs(pa *performed_acts.Service) *Service {
 	}
 	out := *s
 	out.performedActs = pa
+	return &out
+}
+
+// WithMedicalRecords enables LOT28B MR timeline parity on queue-linked clinical completion.
+func (s *Service) WithMedicalRecords(mr medical_records.Service) *Service {
+	if s == nil {
+		return NewService(nil)
+	}
+	out := *s
+	out.medicalRecords = mr
 	return &out
 }
 
@@ -901,15 +913,15 @@ func (s *Service) activateConsultationTx(tx *gorm.DB, consultationID uint, docto
 		if row.DoctorUserID != nil && *row.DoctorUserID != doctorUserID {
 			return coreerrors.Conflict("La consultation liée est déjà assignée à un autre médecin")
 		}
-		updates := map[string]any{
-			"status":     consultations.ConsultationStatusInProgress,
-			"started_at": now,
-			"updated_at": now,
-		}
 		if row.DoctorUserID == nil {
+			updates := map[string]any{"updated_at": now}
 			bindDoctor(updates)
+			if err := tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(updates).Error; err != nil {
+				return err
+			}
 		}
-		return tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(updates).Error
+		_, err := consultations.ActivateDraftInTx(tx, consultationID, doctorUserID)
+		return err
 	default:
 		return coreerrors.Conflict("Statut de consultation lié incompatible")
 	}
@@ -929,67 +941,49 @@ func (s *Service) linkVitalSignsToConsultationTx(tx *gorm.DB, vitalID, consultat
 	return nil
 }
 
-func (s *Service) completeConsultationTx(tx *gorm.DB, consultationID uint, disposition, dispositionNote string, authorID uint, appointmentID *uint) error {
-	var row struct {
-		Status    string
-		PatientID uint
-	}
-	if err := tx.Raw(`SELECT status, patient_id FROM consultations WHERE id=?`, consultationID).Scan(&row).Error; err != nil {
-		return coreerrors.Internal(err.Error())
-	}
-	if row.Status == consultations.ConsultationStatusCancelled {
-		return nil
-	}
-	now := time.Now().UTC()
-	if row.Status != consultations.ConsultationStatusCompleted {
-		if err := tx.Model(&consultations.Consultation{}).Where("id=?", consultationID).Updates(map[string]any{
-			"status":       consultations.ConsultationStatusCompleted,
-			"completed_at": now,
-			"updated_at":   now,
-		}).Error; err != nil {
-			return err
+func (s *Service) completeConsultationTx(tx *gorm.DB, consultationID uint, disposition, dispositionNote string, authorID uint, appointmentID *uint) (*consultations.TransitionResult, error) {
+	tr, err := consultations.CompleteConsultationInTx(tx, consultationID, authorID, appointmentID, s.performedActs)
+	if err != nil {
+		// Map domain errors to queue HTTP-style errors.
+		if errors.Is(err, consultations.ErrInvalidTransition) {
+			return nil, coreerrors.Conflict(err.Error())
 		}
-		if disposition != "" || dispositionNote != "" {
-			var soapID uint
-			err := tx.Raw(`SELECT id FROM consultation_soaps WHERE consultation_id=?`, consultationID).Scan(&soapID).Error
-			if err == nil && soapID > 0 {
-				updates := map[string]any{"updated_at": now, "updated_by": authorID}
-				if disposition != "" {
-					updates["disposition"] = disposition
-				}
-				if dispositionNote != "" {
-					updates["patient_advice"] = dispositionNote
-				}
-				if err := tx.Table("consultation_soaps").
-					Where("consultation_id=?", consultationID).
-					Updates(updates).Error; err != nil {
-					return err
-				}
-			} else {
-				if err := tx.Exec(`
+		if errors.Is(err, consultations.ErrConsultationNotFound) {
+			return nil, coreerrors.NotFound("Consultation")
+		}
+		if errors.Is(err, consultations.ErrConsultationVersionConflict) {
+			return nil, coreerrors.Conflict(err.Error())
+		}
+		return nil, err
+	}
+	// SOAP disposition remains queue-owned (clinical disposition on complete).
+	if tr != nil && tr.Changed && (disposition != "" || dispositionNote != "") {
+		now := time.Now().UTC()
+		var soapID uint
+		scanErr := tx.Raw(`SELECT id FROM consultation_soaps WHERE consultation_id=?`, consultationID).Scan(&soapID).Error
+		if scanErr == nil && soapID > 0 {
+			updates := map[string]any{"updated_at": now, "updated_by": authorID}
+			if disposition != "" {
+				updates["disposition"] = disposition
+			}
+			if dispositionNote != "" {
+				updates["patient_advice"] = dispositionNote
+			}
+			if err := tx.Table("consultation_soaps").
+				Where("consultation_id=?", consultationID).
+				Updates(updates).Error; err != nil {
+				return nil, err
+			}
+		} else {
+			if err := tx.Exec(`
 	INSERT INTO consultation_soaps(consultation_id, disposition, patient_advice, created_by, updated_by, created_at, updated_at)
 	VALUES (?,?,?,?,?,?,?)`,
-					consultationID, disposition, dispositionNote, authorID, authorID, now, now).Error; err != nil {
-					return err
-				}
+				consultationID, disposition, dispositionNote, authorID, authorID, now, now).Error; err != nil {
+				return nil, err
 			}
 		}
 	}
-	if s.performedActs == nil {
-		return nil
-	}
-	cid := consultationID
-	_, err := s.performedActs.EnsureFromProducer(tx, performed_acts.ProducerCreateRequest{
-		SourceType:     performed_acts.SourceConsultation,
-		SourceID:       consultationID,
-		PatientID:      row.PatientID,
-		ClinicalKey:    performed_acts.ConsultationClinicalKey,
-		ConsultationID: &cid,
-		AppointmentID:  appointmentID,
-		PerformedAt:    &now,
-		ActorID:        authorID,
-	})
-	return err
+	return tr, nil
 }
 
 func (s *Service) assertDoctorCanComplete(t Ticket, a Access) error {
@@ -1120,9 +1114,10 @@ func (s *Service) Complete(id uint, r CompleteRequest, a Access) (*Ticket, error
 		return nil, err
 	}
 	var out Ticket
+	var clinical *consultations.TransitionResult
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var t Ticket
-		if err := tx.First(&t, id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&t, id).Error; err != nil {
 			return coreerrors.NotFound("Ticket")
 		}
 		if t.Stage == StageCompleted && t.Status == StatusCompleted {
@@ -1136,9 +1131,11 @@ func (s *Service) Complete(id uint, r CompleteRequest, a Access) (*Ticket, error
 			return coreerrors.Conflict(err.Error())
 		}
 		if t.ConsultationID != nil {
-			if err := s.completeConsultationTx(tx, *t.ConsultationID, r.Disposition, r.DispositionNote, a.UserID, t.AppointmentID); err != nil {
+			tr, err := s.completeConsultationTx(tx, *t.ConsultationID, r.Disposition, r.DispositionNote, a.UserID, t.AppointmentID)
+			if err != nil {
 				return err
 			}
+			clinical = tr
 		}
 		from := t.Stage
 		now := time.Now().UTC()
@@ -1167,7 +1164,20 @@ func (s *Service) Complete(id uint, r CompleteRequest, a Access) (*Ticket, error
 		out = t
 		return nil
 	})
-	return &out, err
+	if err != nil {
+		return nil, err
+	}
+	// LOT28B: MR timeline parity with direct consultation completion (once, after clinical TX).
+	if clinical != nil && clinical.Changed && s.medicalRecords != nil {
+		_ = s.medicalRecords.RecordConsultationStatusChanged(
+			clinical.PatientID,
+			*out.ConsultationID,
+			clinical.OldStatus,
+			clinical.NewStatus,
+			a.UserID,
+		)
+	}
+	return &out, nil
 }
 
 // GetByConsultationID returns the queue ticket linked to a consultation (reverse lookup).

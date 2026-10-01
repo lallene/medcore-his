@@ -419,86 +419,39 @@ func canTransitionConsultationStatus(currentStatus, newStatus string) bool {
 }
 
 func (s *Service) UpdateStatus(id uint, req UpdateConsultationStatusRequest, authorID uint, access Access) (*Consultation, error) {
+	// Access gate before TX (anti-enumeration / service scope).
 	consultation, err := s.loadConsultationForAccess(id, access)
 	if err != nil {
 		return nil, err
 	}
-
-	if !canTransitionConsultationStatus(
-		consultation.Status,
-		req.Status,
-	) {
-		return nil, ErrInvalidTransition
+	if req.ExpectedVersion < 1 {
+		return nil, ErrConsultationVersionConflict
 	}
 
-	now := time.Now()
-
-	updates := map[string]interface{}{
-		"status": req.Status,
-	}
-
-	switch req.Status {
-
-	case ConsultationStatusInProgress:
-		updates["started_at"] = now
-
-	case ConsultationStatusCompleted:
-		updates["completed_at"] = now
-
-	case ConsultationStatusCancelled:
-		if req.CancellationReason == "" {
-			return nil, ErrCancellationReasonRequired
-		}
-
-		updates["cancelled_at"] = now
-		updates["cancellation_reason"] = req.CancellationReason
-	}
-
-	oldStatus := consultation.Status
-
-	unrestricted, ids, err := s.assignedServiceIDs(access)
+	var transition *TransitionResult
+	err = s.repo.db.Transaction(func(tx *gorm.DB) error {
+		ev := req.ExpectedVersion
+		var trErr error
+		transition, trErr = TransitionStatusTx(tx, id, TransitionOpts{
+			ToStatus:           req.Status,
+			ExpectedVersion:    &ev,
+			AuthorID:           authorID,
+			CancellationReason: req.CancellationReason,
+			PerformedActs:      s.performedActs,
+		})
+		return trErr
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if req.Status == ConsultationStatusCompleted && s.performedActs != nil {
-		err = s.repo.db.Transaction(func(tx *gorm.DB) error {
-			if err := s.repo.UpdateStatusTx(tx, id, updates, unrestricted, ids); err != nil {
-				return err
-			}
-			cid := id
-			var appointmentID *uint
-			var appt uint
-			if err := tx.Raw(`SELECT appointment_id FROM patient_queue_tickets WHERE consultation_id = ? AND appointment_id IS NOT NULL LIMIT 1`, id).Scan(&appt).Error; err == nil && appt > 0 {
-				appointmentID = &appt
-			}
-			_, err := s.performedActs.EnsureFromProducer(tx, performed_acts.ProducerCreateRequest{
-				SourceType:     performed_acts.SourceConsultation,
-				SourceID:       id,
-				PatientID:      consultation.PatientID,
-				ClinicalKey:    performed_acts.ConsultationClinicalKey,
-				ConsultationID: &cid,
-				AppointmentID:  appointmentID,
-				PerformedAt:    &now,
-				ActorID:        authorID,
-			})
-			return err
-		})
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if err := s.repo.UpdateStatus(id, updates, unrestricted, ids); err != nil {
-			return nil, err
-		}
-	}
-
-	if s.medicalRecordsService != nil {
+	// Timeline once after successful clinical TX (LOT28B path parity with queue Complete).
+	if transition != nil && transition.Changed && s.medicalRecordsService != nil {
 		_ = s.medicalRecordsService.RecordConsultationStatusChanged(
 			consultation.PatientID,
-			consultation.ID,
-			oldStatus,
-			req.Status,
+			id,
+			transition.OldStatus,
+			transition.NewStatus,
 			authorID,
 		)
 	}

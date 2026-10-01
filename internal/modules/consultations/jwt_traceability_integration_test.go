@@ -180,7 +180,7 @@ func TestConsultationTimelineUsesAuthenticatedAuthor(t *testing.T) {
 	}
 
 	const statusAuthor uint = 82
-	if _, err := service.UpdateStatus(consultation.ID, UpdateConsultationStatusRequest{Status: ConsultationStatusInProgress}, statusAuthor, unrestrictedAccess(statusAuthor)); err != nil {
+	if _, err := service.UpdateStatus(consultation.ID, UpdateConsultationStatusRequest{ExpectedVersion: 1, Status: ConsultationStatusInProgress}, statusAuthor, unrestrictedAccess(statusAuthor)); err != nil {
 		t.Fatal(err)
 	}
 	var status medical_records.MedicalTimelineEvent
