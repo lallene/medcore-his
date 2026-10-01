@@ -95,7 +95,9 @@ func (s *Service) validateReference(tx *gorm.DB, patientID uint, typ string, id 
 			Status            string
 			InsuranceEligible bool
 		}
-		err := tx.Table("performed_acts").
+		// LOT27H: serialize against Void on the same performed_acts row.
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Table("performed_acts").
 			Select("id, status, insurance_eligible").
 			Where("id = ? AND patient_id = ?", id, patientID).
 			Take(&act).Error
@@ -445,27 +447,62 @@ func (s *Service) Decide(id uint, req DecisionRequest, userID uint) (*Response, 
 
 func (s *Service) Cancel(id uint, userID uint) (*Response, error) {
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		var item InsuranceAuthorization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
-			return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
-		}
-		if finalStatuses[item.Status] || item.Status == StatusCancelled {
-			return coreerrors.Conflict("Une décision finale ne peut pas être annulée")
-		}
-		item.Status = StatusCancelled
-		item.UpdatedBy = userID
-		if err := tx.Save(&item).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&InsuranceAuthorizationAct{}).Where("insurance_authorization_id=? AND is_active", item.ID).Update("is_active", false).Error; err != nil {
-			return err
-		}
-		return s.timeline(tx, &item, "insurance_authorization_cancelled", "Demande de PEC annulée", userID)
+		return s.cancelAuthorizationTx(tx, id, userID)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s.FindByID(id)
+}
+
+// cancelAuthorizationTx applies existing Cancel business rules inside a caller-owned TX.
+// Callers must not open a nested root transaction.
+func (s *Service) cancelAuthorizationTx(tx *gorm.DB, id uint, userID uint) error {
+	var item InsuranceAuthorization
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
+		return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
+	}
+	if finalStatuses[item.Status] || item.Status == StatusCancelled {
+		return coreerrors.Conflict("Une décision finale ne peut pas être annulée")
+	}
+	item.Status = StatusCancelled
+	item.UpdatedBy = userID
+	if err := tx.Save(&item).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&InsuranceAuthorizationAct{}).Where("insurance_authorization_id=? AND is_active", item.ID).Update("is_active", false).Error; err != nil {
+		return err
+	}
+	return s.timeline(tx, &item, "insurance_authorization_cancelled", "Demande de PEC annulée", userID)
+}
+
+var openAuthorizationStatuses = []string{StatusDraft, StatusSubmitted, StatusPending}
+
+// CancelOpenPerformedActAuthorizationsInTx cancels open primary PERFORMED_ACT PECs
+// for the given act inside an existing transaction (LOT27H Void reconciliation).
+func (s *Service) CancelOpenPerformedActAuthorizationsInTx(tx *gorm.DB, patientID, performedActID, userID uint) error {
+	var rows []InsuranceAuthorization
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("patient_id = ? AND reference_type = ? AND reference_id = ? AND status IN ?",
+			patientID, ReferencePerformedAct, performedActID, openAuthorizationStatuses).
+		Order("id ASC").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := s.cancelAuthorizationTx(tx, row.ID, userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeactivatePerformedActCoveredLinksInTx deactivates active covered-act links that
+// reference this PERFORMED_ACT without cancelling unrelated parent PECs (LOT27H).
+func (s *Service) DeactivatePerformedActCoveredLinksInTx(tx *gorm.DB, performedActID uint) error {
+	return tx.Model(&InsuranceAuthorizationAct{}).
+		Where("reference_type = ? AND reference_id = ? AND is_active", ReferencePerformedAct, performedActID).
+		Update("is_active", false).Error
 }
 
 func (s *Service) timeline(tx *gorm.DB, item *InsuranceAuthorization, event, title string, userID uint) error {

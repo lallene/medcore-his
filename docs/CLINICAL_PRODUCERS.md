@@ -20,6 +20,8 @@ PerformedAct
       +------> LOT27E Insurance / PEC   [PERFORMED_ACT reference — explicit submit]
       |
       +------> LOT27G Billing           [PERFORMED_ACT → Tariff + optional PEC]
+      |
+      +------> LOT27H Void reconcile    [block active bill / cancel open PA PEC]
 ```
 
 Medication remains on its separate prescription/dispensation chain.

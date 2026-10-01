@@ -2,14 +2,17 @@ package performed_acts
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
+	"github.com/lallene/medcore-his/backend/internal/modules/insurance/authorization"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Service struct {
@@ -187,23 +190,53 @@ func (s *Service) Void(id uint, req VoidRequest, actorID uint) (*Act, error) {
 		return nil, coreerrors.BadRequest("Motif d'annulation trop long")
 	}
 
-	item, err := s.GetByID(id)
+	var voided Act
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&voided, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return coreerrors.NotFound("PERFORMED_ACT")
+			}
+			return err
+		}
+		if voided.Status != StatusPerformed {
+			return coreerrors.Conflict("Seul un acte réalisé peut être annulé")
+		}
+
+		billableKey := fmt.Sprintf("%s:%d", authorization.ReferencePerformedAct, voided.ID)
+		if tx.Migrator().HasTable("billing_invoice_lines") {
+			var activeBilling int64
+			if err := tx.Table("billing_invoice_lines").
+				Where("billable_key = ? AND is_active", billableKey).
+				Count(&activeBilling).Error; err != nil {
+				return err
+			}
+			if activeBilling > 0 {
+				return coreerrors.Conflict("Impossible d'annuler un acte encore facturé activement")
+			}
+		}
+
+		auth := authorization.NewService(s.db)
+		if tx.Migrator().HasTable("insurance_authorizations") {
+			if err := auth.CancelOpenPerformedActAuthorizationsInTx(tx, voided.PatientID, voided.ID, actorID); err != nil {
+				return err
+			}
+		}
+		if tx.Migrator().HasTable("insurance_authorization_acts") {
+			if err := auth.DeactivatePerformedActCoveredLinksInTx(tx, voided.ID); err != nil {
+				return err
+			}
+		}
+
+		now := time.Now()
+		voided.Status = StatusVoided
+		voided.VoidedAt = &now
+		voided.VoidedBy = &actorID
+		voided.VoidReason = reason
+		voided.UpdatedBy = actorID
+		return tx.Save(&voided).Error
+	})
 	if err != nil {
 		return nil, err
 	}
-	if item.Status != StatusPerformed {
-		return nil, coreerrors.Conflict("Seul un acte réalisé peut être annulé")
-	}
-
-	now := time.Now()
-	item.Status = StatusVoided
-	item.VoidedAt = &now
-	item.VoidedBy = &actorID
-	item.VoidReason = reason
-	item.UpdatedBy = actorID
-
-	if err := s.db.Save(item).Error; err != nil {
-		return nil, err
-	}
-	return item, nil
+	return &voided, nil
 }

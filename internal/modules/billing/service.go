@@ -199,10 +199,12 @@ func (s *Service) snapshot(tx *gorm.DB, patient uint, typ string, id uint) (actS
 			Status            string
 			PerformedAt       time.Time
 		}
-		e := tx.Table("performed_acts").
+		// LOT27H: serialize Void vs CreateInvoice on the performed_acts row.
+		e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Table("performed_acts").
 			Select("id, patient_id, act_catalog_entry_id, act_code, act_label, billable, quantity, status, performed_at").
 			Where("id = ?", id).
-			Scan(&r).Error
+			Take(&r).Error
 		if e != nil || r.ID == 0 || r.PatientID != patient {
 			return a, coreerrors.Conflict("Acte réalisé invalide pour ce patient")
 		}

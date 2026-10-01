@@ -36,6 +36,33 @@ It is not an invoice amount, tariff amount, insurer approved amount, or copay.
 
 `PERFORMED` → `VOIDED` (terminal). Soft void only; no hard delete. Voided rows remain readable.
 
+## LOT27H — Void reconciliation
+
+Existing `POST /api/performed-acts/:id/void` owns **one** database transaction:
+
+```
+PERFORMED
+  → Void request (reason required)
+  → FOR UPDATE performed_acts
+  → block if active billable_key PERFORMED_ACT:{id}
+  → cancel open primary PERFORMED_ACT PECs (DRAFT|SUBMITTED|PENDING)
+  → deactivate matching active covered-act links for this PA
+  → VOIDED
+```
+
+Rules:
+
+- **Active invoice line blocks Void** (`is_active=true` on `PERFORMED_ACT:{id}`). Paid invoices therefore block Void because their lines remain active. Eligible invoices must be cancelled separately via existing billing Cancel first.
+- **Cancelled / inactive** historical invoice lines do **not** block Void; history is preserved.
+- Void does **not** cancel invoices, delete allocations, reverse payments, or issue credit notes.
+- **Open primary** `PERFORMED_ACT` PECs are cancelled atomically with Void (existing Cancel semantics + timeline).
+- **Final** PECs (`APPROVED` / `PARTIALLY_APPROVED` / `REJECTED`) are preserved unchanged.
+- **Already CANCELLED** PECs are left untouched (no duplicate cancel timeline).
+- Covered-act links referencing this PA are deactivated; **parent** authorizations whose primary reference is another clinical type are **not** cancelled solely for that reason.
+- Legacy PECs keyed by clinical `SourceType`/`SourceID` are **not** auto-cancelled.
+- CreateInvoice / CreateAuthorization lock the same `performed_acts` row for `PERFORMED_ACT` to close Void races.
+- Medication path unchanged. Frontend UX for blocked Void remains **LOT27I**.
+
 ## InsuranceEligible snapshot
 
 Means the catalogue marked the act as potentially eligible to **enter** a PEC workflow.
@@ -87,7 +114,7 @@ Rules:
   effective. Rejection reason is required.
 - Final split is persisted on the authorization row. Decide does not create invoices,
   allocations, receivables, or payments.
-- Void/open-PEC reconciliation remains **LOT27H**.
+- Void reconciliation of open PECs is owned by **LOT27H** (see above).
 
 ## LOT27G — PerformedAct → Billing
 
@@ -116,11 +143,12 @@ Rules:
 - Medication billing remains dispensation-based (`MEDICATION_DISPENSATION:{id}`); unchanged.
 - Billing still discovers PEC via the patient's **activeCoverage** then
   `FindAuthorizationForAct` (pre-existing multi-coverage limitation; not redesigned here).
-- Void/open-PEC reconciliation remains **LOT27H**.
+- Void with open PEC / active billing is owned by **LOT27H** (see Void reconciliation).
 
 **Dual-reference risk:** historical PECs may still reference `CONSULTATION` / `LABORATORY` /
 `IMAGING` / … while a newer PEC references `PERFORMED_ACT` for related care. Coexistence is
-allowed; destructive deduplication is deferred. VOIDED-after-PEC reconciliation is **LOT27H**.
+allowed; destructive deduplication is deferred. Void reconciliation does **not** cancel legacy
+clinical-reference PECs via SourceType/SourceID.
 
 Medication PEC remains prescription-based (`MEDICATION` → `consultation_prescriptions`).
 
