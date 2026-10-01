@@ -193,13 +193,16 @@ func TestPostgresOrphanUniqueConflict23F(t *testing.T) {
 	}
 	freeApptSlot(t, db, appt2.ID, &tk.ID)
 
-	// O3: queue_ticket_id=T1 but unique appointment_id owned by T2
+	// O3: queue_ticket_id=T1 but unique appointment_id owned by T2.
+	// LOT28A: T1 must leave ACTIVE before T2 can insert (ux_pq_tickets_patient_active).
 	appt3 := bookNear(t, svc, admin, 803, prac, at.ID, now.Add(20*time.Minute).Truncate(time.Minute))
 	t1, _, err := svc.CheckInAppointment(appt3.ID, AppointmentCheckInRequest{IdentityConfirmed: true}, admin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	forceTicketFields(t, db, t1.ID, map[string]any{"appointment_id": nil})
+	forceTicketFields(t, db, t1.ID, map[string]any{
+		"appointment_id": nil, "status": StatusCancelled, "stage": StageCancelled,
+	})
 	t2row := Ticket{
 		Reference: "Q-ORPHAN-T2", PatientID: appt3.PatientID, AppointmentID: &appt3.ID, Source: SourceAppointment,
 		ServiceID: appt3.ServiceID, ExpectedDoctorID: appt3.ExpectedDoctorID,
@@ -219,6 +222,7 @@ func TestPostgresOrphanUniqueConflict23F(t *testing.T) {
 func TestEnsureTicketIndexesDuplicateFailsNoRepair23F(t *testing.T) {
 	db := queuePostgres(t)
 	_ = db.Exec(`DROP INDEX IF EXISTS ux_pq_tickets_appointment`)
+	_ = db.Exec(`DROP INDEX IF EXISTS ux_pq_tickets_patient_active`)
 	now := time.Now().UTC()
 	apptID := uint(42)
 	_ = db.Create(&Appointment{
@@ -227,8 +231,10 @@ func TestEnsureTicketIndexesDuplicateFailsNoRepair23F(t *testing.T) {
 	}).Error
 	for i, ref := range []string{"Q-DUP-A", "Q-DUP-B"} {
 		aid := apptID
+		// Distinct patients so only appointment uniqueness is under test (LOT28A also
+		// enforces one ACTIVE per patient when that index is present).
 		tkt := Ticket{
-			Reference: ref, PatientID: 1, AppointmentID: &aid, Source: SourceAppointment,
+			Reference: ref, PatientID: uint(10 + i), AppointmentID: &aid, Source: SourceAppointment,
 			ServiceID: 10, ArrivedAt: now, CheckedInAt: now, Stage: StageWaitingTriage, Status: StatusActive,
 			Priority: PriorityNormal, FinanceStatus: FinanceClear, IdentityConfirmed: true, Version: 1,
 			CreatedBy: 1, CreatedAt: now, UpdatedAt: now,
@@ -286,10 +292,14 @@ func TestModuleRegisterDoesNotOwnTicketIndexDDL26I3(t *testing.T) {
 func TestEnsureTicketIndexesInstallsAndVerifies23F(t *testing.T) {
 	db := queuePostgres(t)
 	_ = db.Exec(`DROP INDEX IF EXISTS ux_pq_tickets_appointment`)
+	_ = db.Exec(`DROP INDEX IF EXISTS ux_pq_tickets_patient_active`)
 	if err := EnsureTicketIndexes(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := assertTicketAppointmentUniqueIndex(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := assertTicketPatientActiveUniqueIndex(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := EnsureTicketIndexes(db); err != nil {

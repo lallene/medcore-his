@@ -612,11 +612,17 @@ func TestPostgresCrossServiceMutationsDenied(t *testing.T) {
 	}
 	_ = tkWait
 	_ = global
-	// ensure patient 1 free
+	// ensure patient 1 free (LOT28A: Cancel is blocked after care start — force terminal)
 	var active []Ticket
 	db.Where("patient_id=? AND status=?", 1, StatusActive).Find(&active)
 	for _, x := range active {
-		_, _ = svc.Cancel(x.ID, CancelRequest{Reason: "cleanup"}, admin)
+		if _, cerr := svc.Cancel(x.ID, CancelRequest{Reason: "cleanup"}, admin); cerr != nil {
+			if err := db.Model(&Ticket{}).Where("id = ?", x.ID).Updates(map[string]any{
+				"status": StatusCompleted, "stage": StageCompleted,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	tkWait, e = svc.CheckInWalkIn(WalkInCheckInRequest{
 		PatientID: 1, ServiceID: svcB, IdentityConfirmed: true,
@@ -1507,8 +1513,8 @@ func TestPostgresClinicalFlowRejectTakeDoctorOnCompletedConsultation(t *testing.
 	}
 }
 
-// Characterization: cancelling a queue ticket during an active doctor encounter must not
-// leave CANCELLED ticket + IN_PROGRESS consultation linked together.
+// LOT28A: cancelling a queue ticket after clinical care start must Conflict (409)
+// and must not cancel/rewind the linked in_progress consultation or appointment.
 func TestPostgresClinicalFlowCancelDuringDoctorEncounterConsultationIntegrity(t *testing.T) {
 	db := queuePostgres(t)
 	svc := NewService(db)
@@ -1530,8 +1536,11 @@ func TestPostgresClinicalFlowCancelDuringDoctorEncounterConsultationIntegrity(t 
 	}
 
 	cancelled, e := svc.Cancel(taken.ID, CancelRequest{Reason: "cancel-during-doctor-encounter"}, admin)
-	if e != nil {
-		t.Fatalf("Queue Cancel with authorized actor: %v", e)
+	if statusOf(e) != 409 {
+		t.Fatalf("Queue Cancel after care start want 409 got %d (%v)", statusOf(e), e)
+	}
+	if cancelled != nil {
+		t.Fatalf("expected nil ticket on care-start cancel conflict, got %+v", cancelled)
 	}
 
 	detail, ge := svc.Get(taken.ID, admin)
@@ -1542,24 +1551,11 @@ func TestPostgresClinicalFlowCancelDuringDoctorEncounterConsultationIntegrity(t 
 	if err := db.Raw(`SELECT status FROM consultations WHERE id=?`, *taken.ConsultationID).Scan(&consultAfter).Error; err != nil {
 		t.Fatal(err)
 	}
-	var apptStatus string
-	apptNote := "none"
-	if detail.Ticket.AppointmentID != nil {
-		if err := db.Raw(`SELECT status FROM patient_queue_appointments WHERE id=?`, *detail.Ticket.AppointmentID).Scan(&apptStatus).Error; err != nil {
-			t.Fatal(err)
-		}
-		apptNote = apptStatus
+	if detail.Ticket.Status != StatusActive || detail.Ticket.Stage != StageDoctorInProgress {
+		t.Fatalf("ticket must remain ACTIVE/DOCTOR_IN_PROGRESS, got %s/%s", detail.Ticket.Status, detail.Ticket.Stage)
 	}
-
-	t.Logf("after Cancel: ticket.status=%s ticket.stage=%s consultation.status=%s appointment.status=%s",
-		detail.Ticket.Status, detail.Ticket.Stage, consultAfter, apptNote)
-
-	if cancelled.Status != StatusCancelled && detail.Ticket.Status != StatusCancelled {
-		t.Fatalf("expected cancelled ticket status, got cancelResult=%s detail=%s", cancelled.Status, detail.Ticket.Status)
-	}
-	if detail.Ticket.Status == StatusCancelled && consultAfter == "in_progress" {
-		t.Fatalf("integrity invariant violated: CANCELLED ticket still linked to IN_PROGRESS consultation (ticket stage=%s consult=%s appt=%s)",
-			detail.Ticket.Stage, consultAfter, apptNote)
+	if consultAfter != "in_progress" {
+		t.Fatalf("consultation must remain in_progress after blocked cancel, got %s", consultAfter)
 	}
 }
 

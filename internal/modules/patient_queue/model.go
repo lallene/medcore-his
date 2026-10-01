@@ -152,6 +152,7 @@ const (
 	ApptHistPractitionerChanged = "PRACTITIONER_CHANGED"
 	ApptHistCancelled           = "CANCELLED"
 	ApptHistCheckedIn           = "CHECKED_IN"
+	ApptHistCheckInReversed     = "CHECK_IN_REVERSED" // LOT28A: ticket cancel before care start
 	ApptHistNoShow              = "NO_SHOW"
 	ApptHistInProgress          = "IN_PROGRESS"
 	ApptHistCompleted           = "COMPLETED"

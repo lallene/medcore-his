@@ -3,6 +3,7 @@ package patient_queue
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -342,12 +343,12 @@ func (s *Service) CheckInWalkIn(r WalkInCheckInRequest, a Access) (*Ticket, erro
 		if err := s.advisoryLockPatient(tx, r.PatientID); err != nil {
 			return err
 		}
-		var active int64
-		if err := tx.Model(&Ticket{}).Where("patient_id=? AND status=?", r.PatientID, StatusActive).Count(&active).Error; err != nil {
-			return coreerrors.Internal(err.Error())
+		active, err := countActiveVisitsTx(tx, r.PatientID)
+		if err != nil {
+			return err
 		}
 		if active > 0 {
-			return coreerrors.Conflict("Le patient a déjà un parcours actif")
+			return conflictActiveVisit()
 		}
 		fin, err := s.EvaluateFinance(r.PatientID)
 		if err != nil {
@@ -386,10 +387,18 @@ func (s *Service) CheckInWalkIn(r WalkInCheckInRequest, a Access) (*Ticket, erro
 			UpdatedAt:           now,
 		}
 		if err := tx.Create(&t).Error; err != nil {
+			if isActiveVisitUniqueViolation(err) {
+				return conflictActiveVisit()
+			}
 			return coreerrors.Internal(err.Error())
 		}
 		if err := s.writeHistory(tx, t.ID, a.UserID, StageReception, StageWaitingTriage, "CHECK_IN", "walk_in:"+r.Reason); err != nil {
 			return err
+		}
+		if r.FinanceOverride {
+			if err := s.writeHistory(tx, t.ID, a.UserID, StageReception, StageWaitingTriage, "FINANCE_OVERRIDE", r.FinanceOverrideNote); err != nil {
+				return err
+			}
 		}
 		out = &t
 		return nil
@@ -1208,44 +1217,45 @@ func (s *Service) Cancel(id uint, r CancelRequest, a Access) (*Ticket, error) {
 	var out Ticket
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var t Ticket
-		if err := tx.First(&t, id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&t, id).Error; err != nil {
 			return coreerrors.NotFound("Ticket")
+		}
+		// LOT28A: terminal cancel is idempotent (no duplicate history).
+		if t.Status == StatusCancelled || t.Status == StatusCompleted {
+			out = t
+			return nil
 		}
 		if t.Status != StatusActive && t.Status != StatusOnHold {
 			return coreerrors.Conflict("Ticket non annulable")
 		}
-		from := t.Stage
-		now := time.Now().UTC()
+		if err := s.advisoryLockPatient(tx, t.PatientID); err != nil {
+			return err
+		}
 
+		var consultationStatus string
 		if t.ConsultationID != nil {
-			var consultationStatus string
 			if err := tx.Raw(
 				`SELECT status FROM consultations WHERE id=? FOR UPDATE`,
 				*t.ConsultationID,
 			).Scan(&consultationStatus).Error; err != nil {
 				return coreerrors.Internal(err.Error())
 			}
-
 			switch consultationStatus {
-			case consultations.ConsultationStatusInProgress:
-				if err := tx.Model(&consultations.Consultation{}).
-					Where("id=?", *t.ConsultationID).
-					Updates(map[string]any{
-						"status":       consultations.ConsultationStatusCancelled,
-						"cancelled_at": now,
-						"updated_at":   now,
-					}).Error; err != nil {
-					return err
-				}
-
-			case consultations.ConsultationStatusCompleted,
+			case consultations.ConsultationStatusInProgress,
+				consultations.ConsultationStatusCompleted,
 				consultations.ConsultationStatusCancelled:
-				// Consultation déjà terminale : ne pas la rouvrir ni la modifier.
-
+				// inspected by clinicalCareStarted / leave terminals untouched
 			default:
 				return coreerrors.Conflict("État de consultation incompatible avec l'annulation du ticket")
 			}
 		}
+		// LOT28A: after clinical care start, do not cancel visit or rewind appointment/consultation.
+		if clinicalCareStarted(t, consultationStatus) {
+			return coreerrors.Conflict(errCareStartedCancel)
+		}
+
+		from := t.Stage
+		now := time.Now().UTC()
 		t.Stage = StageCancelled
 		t.Status = StatusCancelled
 		t.Version++
@@ -1257,10 +1267,65 @@ func (s *Service) Cancel(id uint, r CancelRequest, a Access) (*Ticket, error) {
 		if err := s.writeHistory(tx, id, a.UserID, from, StageCancelled, "CANCELLED", r.Reason); err != nil {
 			return err
 		}
+		if err := s.reconcileAppointmentAfterVisitCancel(tx, t, a.UserID, r.Reason); err != nil {
+			return err
+		}
 		out = t
 		return nil
 	})
-	return &out, err
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// reconcileAppointmentAfterVisitCancel restores CHECKED_IN appointments when a pre-care
+// queue visit is cancelled (LOT28A). Does not delete triage/vitals history.
+func (s *Service) reconcileAppointmentAfterVisitCancel(tx *gorm.DB, t Ticket, actor uint, reason string) error {
+	if t.AppointmentID == nil {
+		return nil
+	}
+	var appt Appointment
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&appt, *t.AppointmentID).Error; err != nil {
+		return coreerrors.NotFound("Rendez-vous")
+	}
+	switch appt.Status {
+	case ApptInProgress, ApptCompleted:
+		return coreerrors.Conflict(errApptOperationalCancel)
+	case ApptCancelled, ApptNoShow, ApptScheduled, ApptArrived:
+		// Already non-operational / restored — clear stale link if it still points at this ticket.
+		if appt.QueueTicketID != nil && *appt.QueueTicketID == t.ID {
+			if err := tx.Model(&appt).Updates(map[string]any{
+				"queue_ticket_id": nil,
+				"updated_at":      time.Now().UTC(),
+			}).Error; err != nil {
+				return coreerrors.Internal(err.Error())
+			}
+		}
+		return nil
+	case ApptCheckedIn:
+		if appt.QueueTicketID == nil || *appt.QueueTicketID != t.ID {
+			return coreerrors.Conflict("intégrité: rendez-vous CHECKED_IN sans lien ticket cohérent")
+		}
+		from := appt.Status
+		now := time.Now().UTC()
+		if err := tx.Model(&appt).Updates(map[string]any{
+			"status":          ApptScheduled,
+			"queue_ticket_id": nil,
+			"checked_in_at":   nil,
+			"updated_at":      now,
+		}).Error; err != nil {
+			return coreerrors.Internal(err.Error())
+		}
+		payload := `{"ticketId":` + strconv.FormatUint(uint64(t.ID), 10) + `}`
+		histReason := reason
+		if strings.TrimSpace(histReason) == "" {
+			histReason = "annulation parcours file"
+		}
+		return s.writeAppointmentHistory(tx, appt.ID, actor, ApptHistCheckInReversed, from, ApptScheduled, histReason, payload)
+	default:
+		return coreerrors.Conflict("État de rendez-vous incompatible avec l'annulation du ticket")
+	}
 }
 
 func (s *Service) SetPriority(id uint, r PriorityRequest, a Access) (*Ticket, error) {

@@ -158,11 +158,12 @@ func (s *Service) CheckInAppointment(appointmentID uint, r AppointmentCheckInReq
 		}
 
 		var active int64
-		if err := tx.Model(&Ticket{}).Where("patient_id=? AND status=?", appt.PatientID, StatusActive).Count(&active).Error; err != nil {
-			return coreerrors.Internal(err.Error())
+		active, err := countActiveVisitsTx(tx, appt.PatientID)
+		if err != nil {
+			return err
 		}
 		if active > 0 {
-			return coreerrors.Conflict("Le patient a déjà un parcours actif")
+			return conflictActiveVisit()
 		}
 
 		fin, err := s.EvaluateFinance(appt.PatientID)
@@ -220,6 +221,9 @@ func (s *Service) CheckInAppointment(appointmentID uint, r AppointmentCheckInReq
 		}
 		if err := tx.Create(&t).Error; err != nil {
 			msg := strings.ToLower(err.Error())
+			if isActiveVisitUniqueViolation(err) {
+				return conflictActiveVisit()
+			}
 			if strings.Contains(msg, "ux_pq_tickets_appointment") || strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate") {
 				// Unique index hit: only soft-success if appointment already fully checked in to that ticket.
 				var existing Ticket
