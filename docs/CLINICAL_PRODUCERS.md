@@ -19,7 +19,7 @@ PerformedAct
       |
       +------> LOT27E Insurance / PEC   [PERFORMED_ACT reference — explicit submit]
       |
-      +------> later Billing            [NOT YET — LOT27G]
+      +------> LOT27G Billing           [PERFORMED_ACT → Tariff + optional PEC]
 ```
 
 Medication remains on its separate prescription/dispensation chain.

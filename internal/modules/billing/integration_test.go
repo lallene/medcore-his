@@ -1,15 +1,17 @@
 package billing
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/authorization"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
@@ -74,6 +76,14 @@ type billingImagingOrder struct {
 
 func (billingImagingOrder) TableName() string { return "imaging_orders" }
 
+type billingHospitalization struct {
+	ID, PatientID                       uint
+	AdmissionNumber, Department, Status string
+	CreatedAt                           time.Time
+}
+
+func (billingHospitalization) TableName() string { return "hospitalizations" }
+
 type billingMedication struct {
 	ID   uint
 	Name string
@@ -99,38 +109,87 @@ type billingDispensation struct {
 
 func (billingDispensation) TableName() string { return "pharmacy_dispensations" }
 
-func schemaDSN(dsn, schema string) string {
-	if strings.Contains(dsn, "://") {
-		sep := "?"
-		if strings.Contains(dsn, "?") {
-			sep = "&"
-		}
-		return dsn + sep + "search_path=" + url.QueryEscape(schema)
-	}
-	return dsn + " search_path=" + schema
+// billingPerformedAct is a minimal performed_acts stub for LOT27G billing PG tests.
+type billingPerformedAct struct {
+	ID                uint
+	PatientID         uint
+	ActCatalogEntryID uint
+	ActCode           string
+	ActLabel          string
+	ActCategory       string
+	BasePrice         int64
+	Currency          string
+	Billable          bool
+	InsuranceEligible bool
+	Quantity          float64
+	PerformedAt       time.Time
+	PerformedBy       uint
+	Status            string
+	CreatedBy         uint
+	UpdatedBy         uint
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
+
+func (billingPerformedAct) TableName() string { return "performed_acts" }
+
+// billingDB opens a schema-isolated PG pool with per-connection search_path.
+// DSN query search_path is not reliable with pgx; RuntimeParams + AfterConnect
+// keep MaxOpenConns>1 valid for concurrent invoice races (LOT27G).
 func billingDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Billing ignorés")
 	}
+	dsn = strings.Replace(dsn, "-pooler", "", 1)
 	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)
 	}
 	schema := fmt.Sprintf("billing_%d", time.Now().UnixNano())
-	if e = admin.Exec(`CREATE SCHEMA "` + schema + `"`).Error; e != nil {
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	if e = admin.Exec("CREATE SCHEMA " + schemaIdent).Error; e != nil {
 		t.Fatal(e)
 	}
-	db, e := gorm.Open(postgres.Open(schemaDSN(dsn, schema)), &gorm.Config{})
+	pgConfig, e := pgx.ParseConfig(dsn)
+	if e != nil {
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(e)
+	}
+	if pgConfig.RuntimeParams == nil {
+		pgConfig.RuntimeParams = map[string]string{}
+	}
+	pgConfig.RuntimeParams["search_path"] = schemaIdent
+	sqlDB := stdlib.OpenDB(*pgConfig, stdlib.OptionAfterConnect(func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET search_path TO "+schemaIdent)
+		return err
+	}))
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(10)
+	pingCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if e = sqlDB.PingContext(pingCtx); e != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(e)
+	}
+	db, e := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if e != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(e)
+	}
+	adminSQL, e := admin.DB()
 	if e != nil {
 		t.Fatal(e)
 	}
-	sqlDB, _ := db.DB()
-	sqlDB.SetMaxOpenConns(10)
-	t.Cleanup(func() { _ = sqlDB.Close(); _ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error })
-	models := []any{&patients.Patient{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE").Error
+		_ = adminSQL.Close()
+	})
+	models := []any{&patients.Patient{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingHospitalization{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &billingPerformedAct{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}}
 	if e = db.AutoMigrate(models...); e != nil {
 		t.Fatal(e)
 	}

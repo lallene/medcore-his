@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var actTypes = map[string]bool{"CONSULTATION": true, "LABORATORY": true, "IMAGING": true, "HOSPITALIZATION": true, "MEDICATION": true}
+var actTypes = map[string]bool{"CONSULTATION": true, "LABORATORY": true, "IMAGING": true, "HOSPITALIZATION": true, "MEDICATION": true, "PERFORMED_ACT": true}
 var paymentMethods = map[string]bool{"CASH": true, "CARD": true, "MOBILE_MONEY": true, "BANK_TRANSFER": true, "CHECK": true, "OTHER": true}
 
 type Service struct {
@@ -187,6 +187,41 @@ func (s *Service) snapshot(tx *gorm.DB, patient uint, typ string, id uint) (actS
 		a.quantity = r.Quantity
 		a.date = r.CreatedAt.Format(time.RFC3339)
 		a.coverageReferenceID = *r.ReferenceID
+	case authorization.ReferencePerformedAct:
+		var r struct {
+			ID                uint
+			PatientID         uint
+			ActCatalogEntryID uint
+			ActCode           string
+			ActLabel          string
+			Billable          bool
+			Quantity          float64
+			Status            string
+			PerformedAt       time.Time
+		}
+		e := tx.Table("performed_acts").
+			Select("id, patient_id, act_catalog_entry_id, act_code, act_label, billable, quantity, status, performed_at").
+			Where("id = ?", id).
+			Scan(&r).Error
+		if e != nil || r.ID == 0 || r.PatientID != patient {
+			return a, coreerrors.Conflict("Acte réalisé invalide pour ce patient")
+		}
+		if r.Status != "PERFORMED" {
+			return a, coreerrors.Conflict("Seul un acte réalisé (PERFORMED) peut être facturé")
+		}
+		if !r.Billable {
+			return a, coreerrors.Conflict("Cet acte réalisé n'est pas facturable")
+		}
+		if r.Quantity <= 0 {
+			return a, coreerrors.Conflict("La quantité de l'acte réalisé est invalide")
+		}
+		a.key = fmt.Sprintf("%s:%d", authorization.ReferencePerformedAct, r.ID)
+		a.label = r.ActCode + " — " + r.ActLabel
+		a.quantity = r.Quantity
+		a.tariffReferenceID = r.ActCatalogEntryID
+		a.coverageReferenceType = authorization.ReferencePerformedAct
+		a.coverageReferenceID = r.ID
+		a.date = r.PerformedAt.Format(time.RFC3339)
 	default:
 		return a, coreerrors.BadRequest("Type d'acte invalide")
 	}
@@ -576,8 +611,9 @@ func (s *Service) BillableActs(patient uint) ([]BillableAct, error) {
 	UNION ALL SELECT 'LABORATORY',o.id,o.medical_exam_id,(o.request_number||' — '||e.name),o.created_at,1 FROM laboratory_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=? AND o.status<>'CANCELLED'
 	UNION ALL SELECT 'IMAGING',o.id,o.medical_exam_id,(o.order_number||' — '||e.name),o.created_at,1 FROM imaging_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=? AND o.status<>'CANCELLED'
 	UNION ALL SELECT 'HOSPITALIZATION',h.id,0,(h.admission_number||' — '||COALESCE(NULLIF(h.department,''),'Hospitalisation')),h.created_at,1 FROM hospitalizations h WHERE h.patient_id=? AND h.status<>'CANCELLED'
-	UNION ALL SELECT 'MEDICATION',d.id,d.presentation_id,(m.name||CASE WHEN p.dosage='' THEN '' ELSE ' '||p.dosage END),d.created_at,d.quantity FROM pharmacy_dispensations d JOIN medication_presentations p ON p.id=d.presentation_id JOIN medications m ON m.id=p.medication_id WHERE d.patient_id=? AND d.status='COMPLETED' ORDER BY date DESC`
-	if e := s.db.Raw(query, patient, patient, patient, patient, patient).Scan(&rows).Error; e != nil {
+	UNION ALL SELECT 'MEDICATION',d.id,d.presentation_id,(m.name||CASE WHEN p.dosage='' THEN '' ELSE ' '||p.dosage END),d.created_at,d.quantity FROM pharmacy_dispensations d JOIN medication_presentations p ON p.id=d.presentation_id JOIN medications m ON m.id=p.medication_id WHERE d.patient_id=? AND d.status='COMPLETED'
+	UNION ALL SELECT 'PERFORMED_ACT',pa.id,pa.act_catalog_entry_id,(pa.act_code||' — '||pa.act_label),pa.performed_at,pa.quantity FROM performed_acts pa WHERE pa.patient_id=? AND pa.status='PERFORMED' AND pa.billable=true ORDER BY date DESC`
+	if e := s.db.Raw(query, patient, patient, patient, patient, patient, patient).Scan(&rows).Error; e != nil {
 		return nil, e
 	}
 	out := make([]BillableAct, 0, len(rows))

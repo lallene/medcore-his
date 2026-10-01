@@ -11,7 +11,7 @@ Durable record of an act **actually performed** for a patient.
 | Clinical producers | **LOT27D** | Auto-mapping from consult / lab validate / imaging start — see `CLINICAL_PRODUCERS.md` |
 | Insurance / PEC | **LOT27E** | Explicit submit: `ReferenceType=PERFORMED_ACT` → existing authorization lifecycle |
 | Financial split | **LOT27F** | Decide/Calculate on authorization: RequestedAmount → InsuranceAmount / PatientAmount |
-| Billing | Future LOT27G | Invoice integration from PerformedAct |
+| Billing | **LOT27G** | Invoice lines from PerformedAct via existing Tariff + optional PEC allocation |
 
 ```
 ActCatalog  ≠  PerformedAct
@@ -87,8 +87,36 @@ Rules:
   effective. Rejection reason is required.
 - Final split is persisted on the authorization row. Decide does not create invoices,
   allocations, receivables, or payments.
-- Billing consumption of `PERFORMED_ACT` remains **LOT27G**. Void/open-PEC reconciliation
-  remains **LOT27H**.
+- Void/open-PEC reconciliation remains **LOT27H**.
+
+## LOT27G — PerformedAct → Billing
+
+Existing `POST /api/billing/invoices` accepts `actType=PERFORMED_ACT` and
+`referenceId=performed_acts.id` (no new endpoint).
+
+```
+PerformedAct (PERFORMED ∧ Billable)
+  → Tariff (ActType=PERFORMED_ACT, optional ReferenceID=ActCatalogEntryID)
+  → gross = round(Quantity × Tariff.UnitPrice)
+  → optional PEC via FindAuthorizationForAct(PERFORMED_ACT, id)
+  → insurance allocation (existing financialCoverage)
+  → patient = gross − insurance
+```
+
+Rules:
+
+- **Tariff is the billing price authority.** `PerformedAct.BasePrice` is catalogue reference
+  only and is **never** used as invoice `UnitPrice`.
+- **Quantity** comes from `PerformedAct.Quantity`.
+- **`Billable`** controls billing eligibility; **`InsuranceEligible`** only gates PEC entry
+  (self-pay remains allowed when Billable even if not insurance-eligible).
+- **VOIDED** acts are not billable.
+- Duplicate active billing is blocked by `billable_key=PERFORMED_ACT:{id}` and existing
+  `ux_billing_active_billable_key` (`is_active=true`). Cancel releases the key.
+- Medication billing remains dispensation-based (`MEDICATION_DISPENSATION:{id}`); unchanged.
+- Billing still discovers PEC via the patient's **activeCoverage** then
+  `FindAuthorizationForAct` (pre-existing multi-coverage limitation; not redesigned here).
+- Void/open-PEC reconciliation remains **LOT27H**.
 
 **Dual-reference risk:** historical PECs may still reference `CONSULTATION` / `LABORATORY` /
 `IMAGING` / … while a newer PEC references `PERFORMED_ACT` for related care. Coexistence is
