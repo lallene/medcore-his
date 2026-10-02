@@ -4,16 +4,12 @@ import (
 	"testing"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
-	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 )
 
 func TestConsultationCompletionWithoutProducerWhenDisabled(t *testing.T) {
 	db := consultProducerDB(t)
-	p := patients.Patient{CodePatient: "DIS1", NumeroDossier: "DIS1", Nom: "D"}
-	if err := db.Create(&p).Error; err != nil {
-		t.Fatal(err)
-	}
+	p := seedConsultPatientMR(t, db, "DIS1", "DIS1", "D")
 	c := Consultation{PatientID: p.ID, DoctorName: "Dr", Service: "Med", Status: ConsultationStatusInProgress}
 	if err := db.Create(&c).Error; err != nil {
 		t.Fatal(err)
@@ -38,10 +34,7 @@ func TestConsultationCompletionWithoutProducerWhenDisabled(t *testing.T) {
 
 func TestConsultationCompletionEnabledMissingMapRollsBack(t *testing.T) {
 	db := consultProducerDB(t)
-	p := patients.Patient{CodePatient: "EN1", NumeroDossier: "EN1", Nom: "E"}
-	if err := db.Create(&p).Error; err != nil {
-		t.Fatal(err)
-	}
+	p := seedConsultPatientMR(t, db, "EN1", "EN1", "E")
 	c := Consultation{PatientID: p.ID, DoctorName: "Dr", Service: "Med", Status: ConsultationStatusInProgress}
 	if err := db.Create(&c).Error; err != nil {
 		t.Fatal(err)
@@ -62,10 +55,7 @@ func TestConsultationCompletionEnabledMissingMapRollsBack(t *testing.T) {
 
 func TestConsultationCompletionEnabledHappyPath(t *testing.T) {
 	db := consultProducerDB(t)
-	p := patients.Patient{CodePatient: "EN2", NumeroDossier: "EN2", Nom: "E"}
-	if err := db.Create(&p).Error; err != nil {
-		t.Fatal(err)
-	}
+	p := seedConsultPatientMR(t, db, "EN2", "EN2", "E")
 	cat := act_catalog.Entry{
 		Code: "CONSULTATION", Label: "Consultation", Category: "CONSULTATION",
 		BasePrice: 8000, Currency: "XOF", Billable: true, InsuranceEligible: true, IsActive: true,

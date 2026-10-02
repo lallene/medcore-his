@@ -6,6 +6,7 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -27,6 +28,8 @@ func producerSQLite(t *testing.T) *gorm.DB {
 		&ProducerMap{},
 		&billing.Invoice{},
 		&billing.InvoiceLine{},
+		&medical_records.MedicalRecord{},
+		&medical_records.MedicalTimelineEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +67,10 @@ func seedProducerBase(t *testing.T, db *gorm.DB, sourceType, clinicalKey string)
 		IsActive: true, CreatedBy: 1, UpdatedBy: 1,
 	}
 	if err := db.Create(&m).Error; err != nil {
+		t.Fatal(err)
+	}
+	rec := medical_records.MedicalRecord{PatientID: p.ID, RecordNumber: "PR-MR", Status: "active"}
+	if err := db.Create(&rec).Error; err != nil {
 		t.Fatal(err)
 	}
 	return p, cat

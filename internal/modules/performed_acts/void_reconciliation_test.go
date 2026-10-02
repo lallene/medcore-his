@@ -360,7 +360,9 @@ func TestPostgresVoidAlreadyCancelledPEC(t *testing.T) {
 	act := createPerformed(t, db, f, "", nil)
 	authID := seedPAAuth(t, db, f, act.ID, authorization.StatusCancelled, nil, 0)
 	var beforeEvents int64
-	db.Model(&medical_records.MedicalTimelineEvent{}).Where("reference_id=?", authID).Count(&beforeEvents)
+	db.Model(&medical_records.MedicalTimelineEvent{}).
+		Where("event_type=? AND reference_id=?", "insurance_authorization_cancelled", authID).
+		Count(&beforeEvents)
 	if _, err := NewService(db).Void(act.ID, VoidRequest{Reason: "already cancelled"}, 5); err != nil {
 		t.Fatal(err)
 	}

@@ -37,6 +37,7 @@ func labProducerDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&patients.Patient{}, &consultations.Consultation{}, &consultations.MedicalExam{},
 		&consultations.ConsultationExamRequest{}, &medical_records.MedicalRecord{},
+		&medical_records.MedicalTimelineEvent{},
 		&Order{}, &Sample{}, &Result{}, &act_catalog.Entry{}, &performed_acts.Act{}, &performed_acts.ProducerMap{},
 		&billing.Invoice{}, &billing.InvoiceLine{},
 	); err != nil {
@@ -45,12 +46,22 @@ func labProducerDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestLabValidateCreatesPerformedAct(t *testing.T) {
-	db := labProducerDB(t)
-	p := patients.Patient{CodePatient: "LP1", NumeroDossier: "LD1", Nom: "L"}
+func seedLabPatientMR(t *testing.T, db *gorm.DB, code, dossier, nom string) patients.Patient {
+	t.Helper()
+	p := patients.Patient{CodePatient: code, NumeroDossier: dossier, Nom: nom}
 	if err := db.Create(&p).Error; err != nil {
 		t.Fatal(err)
 	}
+	rec := medical_records.MedicalRecord{PatientID: p.ID, RecordNumber: "MR-" + code, Status: "active"}
+	if err := db.Create(&rec).Error; err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestLabValidateCreatesPerformedAct(t *testing.T) {
+	db := labProducerDB(t)
+	p := seedLabPatientMR(t, db, "LP1", "LD1", "L")
 	c := consultations.Consultation{PatientID: p.ID, DoctorName: "Dr", Service: "Lab", Status: "in_progress"}
 	if err := db.Create(&c).Error; err != nil {
 		t.Fatal(err)

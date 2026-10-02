@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -43,7 +44,10 @@ func hardeningSQLite(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{}); err != nil {
+	if err := db.AutoMigrate(
+		&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{},
+		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	return db

@@ -107,7 +107,21 @@ func (s *Service) Create(req CreateRequest, actorID uint) (*Act, error) {
 	}
 	applyCatalogSnapshot(&item, catalog)
 
-	if err := s.db.Create(&item).Error; err != nil {
+	// LOT28E-B3: same-TX fail-closed — PA row + performed_act_performed.
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.validateOptionalContextTx(tx, req.PatientID, req); err != nil {
+			return err
+		}
+		record, err := resolveMedicalRecordForPatientTx(tx, req.PatientID)
+		if err != nil {
+			return err
+		}
+		if err := tx.Create(&item).Error; err != nil {
+			return err
+		}
+		return recordPerformedActPerformedTimeline(tx, record, &item, actorID)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &item, nil
@@ -238,7 +252,15 @@ func (s *Service) Void(id uint, req VoidRequest, actorID uint) (*Act, error) {
 		voided.VoidedBy = &actorID
 		voided.VoidReason = reason
 		voided.UpdatedBy = actorID
-		return tx.Save(&voided).Error
+		if err := tx.Save(&voided).Error; err != nil {
+			return err
+		}
+		// LOT28E-B3: same-TX fail-closed void chronology (EventDate = VoidedAt).
+		record, err := resolveMedicalRecordForPatientTx(tx, voided.PatientID)
+		if err != nil {
+			return err
+		}
+		return recordPerformedActVoidedTimeline(tx, record, &voided, actorID, now)
 	})
 	if err != nil {
 		return nil, err

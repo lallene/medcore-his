@@ -133,6 +133,10 @@ func seedPG(t *testing.T, db *gorm.DB) (patients.Patient, act_catalog.Entry) {
 	if err := db.Create(&cat).Error; err != nil {
 		t.Fatal(err)
 	}
+	rec := medical_records.MedicalRecord{PatientID: p.ID, RecordNumber: "PG-MR-1", Status: "active"}
+	if err := db.Create(&rec).Error; err != nil {
+		t.Fatal(err)
+	}
 	return p, cat
 }
 

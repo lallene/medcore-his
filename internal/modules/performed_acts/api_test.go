@@ -13,6 +13,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -27,7 +28,11 @@ func apiDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{}, &billing.Invoice{}, &billing.InvoiceLine{}); err != nil {
+	if err := db.AutoMigrate(
+		&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{},
+		&billing.Invoice{}, &billing.InvoiceLine{},
+		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -45,6 +50,10 @@ func seedPatientCatalog(t *testing.T, db *gorm.DB) (patients.Patient, act_catalo
 		CreatedBy: 1, UpdatedBy: 1,
 	}
 	if err := db.Create(&cat).Error; err != nil {
+		t.Fatal(err)
+	}
+	rec := medical_records.MedicalRecord{PatientID: p.ID, RecordNumber: "MR-PA-1", Status: "active"}
+	if err := db.Create(&rec).Error; err != nil {
 		t.Fatal(err)
 	}
 	return p, cat

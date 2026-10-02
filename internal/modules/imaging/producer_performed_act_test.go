@@ -37,6 +37,7 @@ func imagingProducerDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&patients.Patient{}, &consultations.Consultation{}, &consultations.MedicalExam{},
 		&consultations.ConsultationExamRequest{}, &medical_records.MedicalRecord{},
+		&medical_records.MedicalTimelineEvent{},
 		&Order{}, &Report{}, &act_catalog.Entry{}, &performed_acts.Act{}, &performed_acts.ProducerMap{},
 	); err != nil {
 		t.Fatal(err)
@@ -44,12 +45,22 @@ func imagingProducerDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestImagingStartCreatesPerformedAct(t *testing.T) {
-	db := imagingProducerDB(t)
-	p := patients.Patient{CodePatient: "IP1", NumeroDossier: "ID1", Nom: "I"}
+func seedImagingPatientMR(t *testing.T, db *gorm.DB, code, dossier, nom string) patients.Patient {
+	t.Helper()
+	p := patients.Patient{CodePatient: code, NumeroDossier: dossier, Nom: nom}
 	if err := db.Create(&p).Error; err != nil {
 		t.Fatal(err)
 	}
+	rec := medical_records.MedicalRecord{PatientID: p.ID, RecordNumber: "MR-" + code, Status: "active"}
+	if err := db.Create(&rec).Error; err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestImagingStartCreatesPerformedAct(t *testing.T) {
+	db := imagingProducerDB(t)
+	p := seedImagingPatientMR(t, db, "IP1", "ID1", "I")
 	c := consultations.Consultation{PatientID: p.ID, DoctorName: "Dr", Service: "Radio", Status: "in_progress"}
 	if err := db.Create(&c).Error; err != nil {
 		t.Fatal(err)

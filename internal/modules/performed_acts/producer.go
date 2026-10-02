@@ -152,6 +152,14 @@ func (s *Service) EnsureFromProducer(tx *gorm.DB, req ProducerCreateRequest) (*A
 	if useSavepoint {
 		_ = tx.Exec("RELEASE SAVEPOINT ensure_performed_act").Error
 	}
+	// LOT28E-B3: same caller TX — new PA only (idempotent accept path skips).
+	record, err := resolveMedicalRecordForPatientTx(tx, req.PatientID)
+	if err != nil {
+		return nil, err
+	}
+	if err := recordPerformedActPerformedTimeline(tx, record, &item, req.ActorID); err != nil {
+		return nil, err
+	}
 	return &item, nil
 }
 

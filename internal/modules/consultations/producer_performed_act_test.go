@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
 	"gorm.io/driver/sqlite"
@@ -38,6 +39,8 @@ func consultProducerDB(t *testing.T) *gorm.DB {
 		&act_catalog.Entry{},
 		&performed_acts.Act{},
 		&performed_acts.ProducerMap{},
+		&medical_records.MedicalRecord{},
+		&medical_records.MedicalTimelineEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -45,12 +48,22 @@ func consultProducerDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestConsultationCompletionCreatesPerformedAct(t *testing.T) {
-	db := consultProducerDB(t)
-	p := patients.Patient{CodePatient: "CP1", NumeroDossier: "CD1", Nom: "C"}
+func seedConsultPatientMR(t *testing.T, db *gorm.DB, code, dossier, nom string) patients.Patient {
+	t.Helper()
+	p := patients.Patient{CodePatient: code, NumeroDossier: dossier, Nom: nom}
 	if err := db.Create(&p).Error; err != nil {
 		t.Fatal(err)
 	}
+	rec := medical_records.MedicalRecord{PatientID: p.ID, RecordNumber: "MR-" + code, Status: "active"}
+	if err := db.Create(&rec).Error; err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestConsultationCompletionCreatesPerformedAct(t *testing.T) {
+	db := consultProducerDB(t)
+	p := seedConsultPatientMR(t, db, "CP1", "CD1", "C")
 	cat := act_catalog.Entry{
 		Code: "CONSULTATION", Label: "Consultation", Category: "CONSULTATION",
 		BasePrice: 8000, Currency: "XOF", Billable: true, InsuranceEligible: true, IsActive: true,

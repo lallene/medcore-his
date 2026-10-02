@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/act_catalog"
+	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -18,7 +19,10 @@ func mapDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{}); err != nil {
+	if err := db.AutoMigrate(
+		&patients.Patient{}, &act_catalog.Entry{}, &Act{}, &ProducerMap{},
+		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Exec(`CREATE TABLE IF NOT EXISTS medical_exams (
@@ -202,6 +206,10 @@ func TestSnapshotHelperParityManualVsProducer(t *testing.T) {
 	s := NewService(db)
 	p := patients.Patient{CodePatient: "S1", NumeroDossier: "S1", Nom: "Snap"}
 	if err := db.Create(&p).Error; err != nil {
+		t.Fatal(err)
+	}
+	rec := medical_records.MedicalRecord{PatientID: p.ID, RecordNumber: "S1-MR", Status: "active"}
+	if err := db.Create(&rec).Error; err != nil {
 		t.Fatal(err)
 	}
 	cat := seedCatalog(t, db, "SNAP", "PROCEDURE", true)
