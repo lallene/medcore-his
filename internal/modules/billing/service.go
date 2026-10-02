@@ -214,11 +214,14 @@ func (s *Service) snapshot(tx *gorm.DB, patient uint, typ string, id uint) (actS
 			Quantity          float64
 			Status            string
 			PerformedAt       time.Time
+			SourceType        string
+			SourceID          *uint
 		}
 		// LOT27H: serialize Void vs CreateInvoice on the performed_acts row.
+		// LOT28C: then lock clinical source (same row as producer / legacy invoice).
 		e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Table("performed_acts").
-			Select("id, patient_id, act_catalog_entry_id, act_code, act_label, billable, quantity, status, performed_at").
+			Select("id, patient_id, act_catalog_entry_id, act_code, act_label, billable, quantity, status, performed_at, source_type, source_id").
 			Where("id = ?", id).
 			Take(&r).Error
 		if e != nil || r.ID == 0 || r.PatientID != patient {
@@ -232,6 +235,16 @@ func (s *Service) snapshot(tx *gorm.DB, patient uint, typ string, id uint) (actS
 		}
 		if r.Quantity <= 0 {
 			return a, coreerrors.Conflict("La quantité de l'acte réalisé est invalide")
+		}
+		if r.SourceID != nil && *r.SourceID > 0 {
+			if _, ok := producerSourceTypeForLegacy(r.SourceType); ok {
+				if e := s.lockClinicalSource(tx, r.SourceType, *r.SourceID); e != nil {
+					return a, e
+				}
+				if e := s.rejectPAWhenAuthoritativeLegacy(tx, r.SourceType, *r.SourceID); e != nil {
+					return a, e
+				}
+			}
 		}
 		a.key = fmt.Sprintf("%s:%d", authorization.ReferencePerformedAct, r.ID)
 		a.label = r.ActCode + " — " + r.ActLabel
@@ -585,14 +598,16 @@ func (s *Service) BillableActs(patient uint) ([]BillableAct, error) {
 		Label                          string
 		Date                           time.Time
 		Quantity                       float64
+		SourceType                     string
+		SourceID                       *uint
 	}
 	var rows []row
-	query := `SELECT 'CONSULTATION' act_type,c.id reference_id,0 tariff_reference_id,('Consultation — '||COALESCE(NULLIF(c.service,''),'générale')) label,c.created_at date,1::numeric quantity FROM consultations c WHERE c.patient_id=? AND c.status<>'cancelled'
-	UNION ALL SELECT 'LABORATORY',o.id,o.medical_exam_id,(o.request_number||' — '||e.name),o.created_at,1 FROM laboratory_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=? AND o.status<>'CANCELLED'
-	UNION ALL SELECT 'IMAGING',o.id,o.medical_exam_id,(o.order_number||' — '||e.name),o.created_at,1 FROM imaging_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=? AND o.status<>'CANCELLED'
-	UNION ALL SELECT 'HOSPITALIZATION',h.id,0,(h.admission_number||' — '||COALESCE(NULLIF(h.department,''),'Hospitalisation')),h.created_at,1 FROM hospitalizations h WHERE h.patient_id=? AND h.status<>'CANCELLED'
-	UNION ALL SELECT 'MEDICATION',d.id,d.presentation_id,(m.name||CASE WHEN p.dosage='' THEN '' ELSE ' '||p.dosage END),d.created_at,d.quantity FROM pharmacy_dispensations d JOIN medication_presentations p ON p.id=d.presentation_id JOIN medications m ON m.id=p.medication_id WHERE d.patient_id=? AND d.status='COMPLETED'
-	UNION ALL SELECT 'PERFORMED_ACT',pa.id,pa.act_catalog_entry_id,(pa.act_code||' — '||pa.act_label),pa.performed_at,pa.quantity FROM performed_acts pa WHERE pa.patient_id=? AND pa.status='PERFORMED' AND pa.billable=true ORDER BY date DESC`
+	query := `SELECT 'CONSULTATION' act_type,c.id reference_id,0 tariff_reference_id,('Consultation — '||COALESCE(NULLIF(c.service,''),'générale')) label,c.created_at date,1::numeric quantity,NULL::text source_type,NULL::bigint source_id FROM consultations c WHERE c.patient_id=? AND c.status<>'cancelled'
+	UNION ALL SELECT 'LABORATORY',o.id,o.medical_exam_id,(o.request_number||' — '||e.name),o.created_at,1,NULL,NULL FROM laboratory_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=? AND o.status<>'CANCELLED'
+	UNION ALL SELECT 'IMAGING',o.id,o.medical_exam_id,(o.order_number||' — '||e.name),o.created_at,1,NULL,NULL FROM imaging_orders o JOIN medical_exams e ON e.id=o.medical_exam_id WHERE o.patient_id=? AND o.status<>'CANCELLED'
+	UNION ALL SELECT 'HOSPITALIZATION',h.id,0,(h.admission_number||' — '||COALESCE(NULLIF(h.department,''),'Hospitalisation')),h.created_at,1,NULL,NULL FROM hospitalizations h WHERE h.patient_id=? AND h.status<>'CANCELLED'
+	UNION ALL SELECT 'MEDICATION',d.id,d.presentation_id,(m.name||CASE WHEN p.dosage='' THEN '' ELSE ' '||p.dosage END),d.created_at,d.quantity,NULL,NULL FROM pharmacy_dispensations d JOIN medication_presentations p ON p.id=d.presentation_id JOIN medications m ON m.id=p.medication_id WHERE d.patient_id=? AND d.status='COMPLETED'
+	UNION ALL SELECT 'PERFORMED_ACT',pa.id,pa.act_catalog_entry_id,(pa.act_code||' — '||pa.act_label),pa.performed_at,pa.quantity,pa.source_type,pa.source_id FROM performed_acts pa WHERE pa.patient_id=? AND pa.status='PERFORMED' AND pa.billable=true ORDER BY date DESC`
 	if e := s.db.Raw(query, patient, patient, patient, patient, patient, patient).Scan(&rows).Error; e != nil {
 		return nil, e
 	}
@@ -606,6 +621,18 @@ func (s *Service) BillableActs(patient uint) ([]BillableAct, error) {
 			}
 			if suppressed {
 				continue
+			}
+		}
+		// LOT28C: PA with authoritative legacy financial identity is not newly billable.
+		if r.ActType == authorization.ReferencePerformedAct && r.SourceID != nil && *r.SourceID > 0 {
+			if _, ok := producerSourceTypeForLegacy(r.SourceType); ok {
+				blocked, err := s.hasFinanciallyAuthoritativeLegacy(s.db, r.SourceType, *r.SourceID)
+				if err != nil {
+					return nil, err
+				}
+				if blocked {
+					continue
+				}
 			}
 		}
 		key := fmt.Sprintf("%s:%d", r.ActType, r.ReferenceID)

@@ -40,3 +40,7 @@ type ReportRequest struct {
 type CancelRequest struct {
 	Reason string `json:"reason" binding:"required"`
 }
+
+type CloseReportRequest struct {
+	Reason string `json:"reason" binding:"required"`
+}

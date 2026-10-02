@@ -117,6 +117,14 @@ func (h *Handler) Report(c *gin.Context) {
 func (h *Handler) Validate(c *gin.Context) {
 	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.Validate(id, a) })
 }
+func (h *Handler) CloseReport(c *gin.Context) {
+	var req CloseReportRequest
+	if c.ShouldBindJSON(&req) != nil {
+		c.JSON(400, gin.H{"error": "motif obligatoire"})
+		return
+	}
+	h.respond(c, func(id uint, a Access) (*Order, error) { return h.service.CloseReport(id, a, req.Reason) })
+}
 func (h *Handler) Cancel(c *gin.Context) {
 	var req CancelRequest
 	if c.ShouldBindJSON(&req) != nil {

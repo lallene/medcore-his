@@ -12,6 +12,9 @@ const (
 	StatusReportDrafted = "REPORT_DRAFTED"
 	StatusValidated     = "VALIDATED"
 	StatusCancelled     = "CANCELLED"
+	// StatusReportClosed = performed exam whose reporting workflow was terminated
+	// without validation (LOT28C POLICY A). Performance evidence + PA are preserved.
+	StatusReportClosed = "REPORT_CLOSED"
 )
 
 type Order struct {

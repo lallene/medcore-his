@@ -2,6 +2,7 @@ package imaging
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/performed_acts"
@@ -171,6 +172,36 @@ func (s *Service) Cancel(id uint, a Access, reason string) (*Order, error) {
 			return ErrInvalidTransition
 		}
 		return s.updateAndEvent(tx, o, map[string]interface{}{"status": StatusCancelled, "cancelled_reason": reason, "updated_by": a.UserID}, "imaging_cancelled", "Demande d’imagerie annulée", reason, a.UserID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.Get(id, a)
+}
+
+// CloseReport terminates reporting after performance (LOT28C POLICY A).
+// Preserves performed_at/performed_by and does not void PerformedAct.
+func (s *Service) CloseReport(id uint, a Access, reason string) (*Order, error) {
+	if strings.TrimSpace(reason) == "" {
+		return nil, ErrInvalidTransition
+	}
+	err := s.repo.WithLockedOrder(id, func(tx *gorm.DB, o *Order) error {
+		if err := s.assertCanAccessExecutingOrder(o, a); err != nil {
+			return err
+		}
+		if o.Status == StatusReportClosed {
+			// Idempotent close.
+			return nil
+		}
+		if o.Status != StatusInProgress && o.Status != StatusReportDrafted {
+			return ErrInvalidTransition
+		}
+		if o.PerformedAt == nil {
+			return ErrInvalidTransition
+		}
+		return s.updateAndEvent(tx, o, map[string]interface{}{
+			"status": StatusReportClosed, "cancelled_reason": reason, "updated_by": a.UserID,
+		}, "imaging_report_closed", "Compte rendu d’imagerie clôturé sans validation", reason, a.UserID)
 	})
 	if err != nil {
 		return nil, err

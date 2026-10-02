@@ -13,6 +13,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.POST("/orders/:id/start", rbac.Permission("imaging.perform"), h.Start)
 	g.PUT("/orders/:id/report", rbac.Permission("imaging.report.write"), h.Report)
 	g.POST("/orders/:id/validate", rbac.Permission("imaging.validate"), h.Validate)
+	g.POST("/orders/:id/close-report", rbac.Permission("imaging.report.write"), h.CloseReport)
 	g.POST("/orders/:id/cancel", rbac.Permission("imaging.cancel"), h.Cancel)
 	r.GET("/patients/:id/imaging-orders", rbac.Permission("imaging.read"), h.List)
 }
