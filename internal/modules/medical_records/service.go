@@ -700,8 +700,11 @@ func (s *service) UpdateCommonMedicalRecord(
 	}
 
 	// LOT28E-B1: emit generic CMR event only for non-document mutations.
+	// LOT28E-B2-A: common_medical_record_updated is post-commit BEST-EFFORT UX chronology.
+	// Intentional asymmetry vs B1 document_added/document_archived (same-TX fail-closed).
+	// Generic timeline insert failure must NOT rollback CMR or change HTTP success.
 	if saveResult.ShouldEmitGenericCMREvent() && !record.UpdatedAt.Equal(previousUpdatedAt) {
-		_ = s.createTimelineEvent(
+		if err := s.createTimelineEvent(
 			record,
 			"common_medical_record_updated",
 			"medical_record",
@@ -711,7 +714,9 @@ func (s *service) UpdateCommonMedicalRecord(
 			record.ID,
 			"info",
 			authorID,
-		)
+		); err != nil {
+			logGenericCMRTimelineFailure(record.ID, err)
+		}
 	}
 
 	return s.repo.GetCommonMedicalRecord(record.ID)
