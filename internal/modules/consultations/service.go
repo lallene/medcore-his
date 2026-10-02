@@ -306,16 +306,17 @@ func (s *Service) CreateConsultation(req CreateConsultationRequest, authorID uin
 		return nil, err
 	}
 
+	// LOT28E-B2-C1 Policy A: consultation_created is post-commit best-effort UX
+	// chronology. Timeline failure must not fail create after business commit.
 	if s.medicalRecordsService != nil {
-		err = s.medicalRecordsService.RecordConsultationCreated(
+		if err := s.medicalRecordsService.RecordConsultationCreated(
 			consultation.PatientID,
 			consultation.ID,
 			consultation.Service,
 			consultation.DoctorName,
 			authorID,
-		)
-		if err != nil {
-			return nil, err
+		); err != nil {
+			logConsultationCreatedTimelineFailure(consultation.ID, err)
 		}
 	}
 
