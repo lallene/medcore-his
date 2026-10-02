@@ -28,7 +28,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	creator := uint(21)
 
 	// P01 create → UploadedBy creator, archive fields NULL
-	err := repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err := repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -58,7 +58,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	// P02/P03/P04 active metadata updates
 	newLabel := "Compte rendu corrigé"
 	newType := "certificate"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -88,7 +88,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 
 	// P05 FileURL valid HTTPS update
 	nextURL := "https://docs.example.com/cr-v2.pdf?sig=1"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -101,7 +101,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	parentStamp = record.UpdatedAt
 
 	// P06 ConsultationID same patient → NULL
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -117,7 +117,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	parentStamp = record.UpdatedAt
 
 	// P12 C1 cross-patient rejected
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -133,7 +133,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 
 	// P13 C2-A unsafe FileURL rejected
 	badURL := "http://docs.example.com/x.pdf"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -149,7 +149,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	keptURL := created.FileURL
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Profile:           &PatientMedicalProfileRequest{Profession: str("médecin")},
 	}, 99)
@@ -166,7 +166,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 
 	// P18 same ID in upsert + delete_ids → reject
 	desc := "should not apply"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present:   true,
@@ -185,7 +185,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	}
 
 	// P19 duplicate delete_ids
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present:   true,
@@ -199,7 +199,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	// P07 archive via delete_ids — row remains
 	archiver := uint(55)
 	beforeArchiveStamp := parentStamp
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present:   true,
@@ -249,7 +249,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	var countBefore int64
 	db.Model(&MedicalDocument{}).Where("medical_record_id = ?", record.ID).Count(&countBefore)
 	reviveLabel := "resurrect"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -272,7 +272,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	}
 
 	// P11 re-archive already archived → invalid (no unarchive path)
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present:   true,
@@ -286,7 +286,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	// Create second active doc for remaining tests
 	label2 := "Doc 2"
 	url2 := "https://docs.example.com/d2.pdf"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -322,7 +322,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	if err := db.Create(&foreign).Error; err != nil {
 		t.Fatal(err)
 	}
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present:   true,
@@ -338,7 +338,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Profile:           &PatientMedicalProfileRequest{Profession: str("ne doit pas persister")},
 		Documents: PatchCollection[MedicalDocumentRequest]{
@@ -366,7 +366,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 
 	// P15 stale OCC archive → 409
 	stale := parentStamp
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &parentStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
@@ -377,7 +377,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 		t.Fatalf("P15 setup A: %v", err)
 	}
 	freshStamp := record.UpdatedAt
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &stale,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present:   true,
@@ -398,7 +398,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	}
 
 	// P16 stale OCC edit after archive → 409, no resurrection
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &freshStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present:   true,
@@ -408,7 +408,7 @@ func TestLot28EC2B_P01_P20_DocumentLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("P16 archive A: %v", err)
 	}
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		ExpectedUpdatedAt: &freshStamp,
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,

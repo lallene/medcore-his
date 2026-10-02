@@ -688,11 +688,13 @@ func (s *service) UpdateCommonMedicalRecord(
 	}
 
 	previousUpdatedAt := record.UpdatedAt
-	if err := s.repo.SaveCommonMedicalRecord(record, req, authorID); err != nil {
+	saveResult, err := s.repo.SaveCommonMedicalRecord(record, req, authorID)
+	if err != nil {
 		return nil, err
 	}
 
-	if !record.UpdatedAt.Equal(previousUpdatedAt) {
+	// LOT28E-B1: emit generic CMR event only for non-document mutations.
+	if saveResult.ShouldEmitGenericCMREvent() && !record.UpdatedAt.Equal(previousUpdatedAt) {
 		_ = s.createTimelineEvent(
 			record,
 			"common_medical_record_updated",

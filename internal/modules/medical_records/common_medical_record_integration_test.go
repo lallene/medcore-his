@@ -180,7 +180,7 @@ func TestCommonMedicalRecordProfileOnlyRoundTripPreservesEveryCollection(t *test
 
 	profession := "Nouvelle profession"
 	req := UpdateCommonMedicalRecordRequest{ExpectedUpdatedAt: &before.MedicalRecord.UpdatedAt, Profile: &PatientMedicalProfileRequest{Profession: &profession}}
-	if err := repo.SaveCommonMedicalRecord(&before.MedicalRecord, req, 99); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&before.MedicalRecord, req, 99); err != nil {
 		t.Fatal(err)
 	}
 	after := snapshotCommonRecord(t, repo, f.record.ID)
@@ -224,7 +224,7 @@ func TestCommonMedicalRecordAbsentAndEmptyCollectionsAreNoOp(t *testing.T) {
 	f := seedCommonFixture(t, db, 102)
 	repo := NewRepository(db)
 	before := snapshotCommonRecord(t, repo, f.record.ID)
-	if err := repo.SaveCommonMedicalRecord(&before.MedicalRecord, UpdateCommonMedicalRecordRequest{}, 99); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&before.MedicalRecord, UpdateCommonMedicalRecordRequest{}, 99); err != nil {
 		t.Fatal(err)
 	}
 	emptyJSON := []string{"allergies", "medical_histories", "surgical_histories", "family_medical_histories", "regular_treatments", "vaccinations", "disabilities", "medical_devices", "vital_signs", "documents"}
@@ -234,7 +234,7 @@ func TestCommonMedicalRecordAbsentAndEmptyCollectionsAreNoOp(t *testing.T) {
 			if err := json.Unmarshal([]byte(fmt.Sprintf(`{"%s":{"upsert":[],"delete_ids":[]}}`, field)), &req); err != nil {
 				t.Fatal(err)
 			}
-			if err := repo.SaveCommonMedicalRecord(&before.MedicalRecord, req, 99); err != nil {
+			if _, err := repo.SaveCommonMedicalRecord(&before.MedicalRecord, req, 99); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -308,7 +308,7 @@ func TestCommonMedicalRecordTargetedUpdatesPreserveIdentityAndAudit(t *testing.T
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			beforeID, beforeCreated, beforeBy, _ := tc.load()
-			if err := repo.SaveCommonMedicalRecord(&f.record, tc.req, 99); err != nil {
+			if _, err := repo.SaveCommonMedicalRecord(&f.record, tc.req, 99); err != nil {
 				t.Fatal(err)
 			}
 			afterID, afterCreated, afterBy, value := tc.load()
@@ -404,14 +404,26 @@ func TestMedicalDocumentUpdatePreservesUploadedByAndAttributesModifier(t *testin
 	if document.FileName != f.document.FileName || document.FileURL != f.document.FileURL {
 		t.Fatalf("métadonnées binaires altérées: %#v", document)
 	}
-	var event MedicalTimelineEvent
-	if err := db.Where("event_type = ? AND medical_record_id = ?", "common_medical_record_updated", f.record.ID).
-		Order("id DESC").First(&event).Error; err != nil {
-		t.Fatalf("timeline modificateur absente: %v", err)
+	// LOT28E-B1: document-only metadata edit must not emit generic CMR noise.
+	var genericCount int64
+	if err := db.Model(&MedicalTimelineEvent{}).
+		Where("event_type = ? AND medical_record_id = ?", "common_medical_record_updated", f.record.ID).
+		Count(&genericCount).Error; err != nil {
+		t.Fatal(err)
 	}
-	if event.CreatedBy != modifierB {
-		t.Fatalf("timeline CreatedBy=%d want %d", event.CreatedBy, modifierB)
+	if genericCount != 0 {
+		t.Fatalf("generic CMR event after document-only metadata edit: %d", genericCount)
 	}
+	var docUpdated int64
+	if err := db.Model(&MedicalTimelineEvent{}).
+		Where("event_type = ? AND medical_record_id = ?", "document_updated", f.record.ID).
+		Count(&docUpdated).Error; err != nil {
+		t.Fatal(err)
+	}
+	if docUpdated != 0 {
+		t.Fatal("document_updated must not exist for metadata edit")
+	}
+	_ = modifierB // authenticated modifier remains server-owned via Update path (UploadedBy preserved)
 }
 
 func TestCommonMedicalRecordCreateAndExplicitDelete(t *testing.T) {
@@ -419,7 +431,7 @@ func TestCommonMedicalRecordCreateAndExplicitDelete(t *testing.T) {
 	f := seedCommonFixture(t, db, 104)
 	repo := NewRepository(db)
 	req := UpdateCommonMedicalRecordRequest{Allergies: PatchCollection[AllergyRequest]{Present: true, Upsert: []AllergyRequest{{AllergenType: str("food"), AllergenName: str("Nouvelle allergie")}}}}
-	if err := repo.SaveCommonMedicalRecord(&f.record, req, 77); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&f.record, req, 77); err != nil {
 		t.Fatal(err)
 	}
 	var allergies []Allergy
@@ -427,7 +439,7 @@ func TestCommonMedicalRecordCreateAndExplicitDelete(t *testing.T) {
 	if len(allergies) != 2 || allergies[1].ID == 0 || allergies[0].ID != f.allergy.ID {
 		t.Fatalf("création incorrecte: %#v", allergies)
 	}
-	if err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{Allergies: PatchCollection[AllergyRequest]{Present: true, DeleteIDs: []uint{allergies[1].ID}}}, 77); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{Allergies: PatchCollection[AllergyRequest]{Present: true, DeleteIDs: []uint{allergies[1].ID}}}, 77); err != nil {
 		t.Fatal(err)
 	}
 	db.Where("medical_record_id = ?", f.record.ID).Find(&allergies)
@@ -447,7 +459,7 @@ func TestCommonMedicalRecordForeignIDRollsBack(t *testing.T) {
 		Profile:   &PatientMedicalProfileRequest{Profession: str("ne doit pas persister")},
 		Allergies: PatchCollection[AllergyRequest]{Present: true, DeleteIDs: []uint{b.allergy.ID}},
 	}
-	err := repo.SaveCommonMedicalRecord(&a.record, req, 99)
+	_, err := repo.SaveCommonMedicalRecord(&a.record, req, 99)
 	if !errors.Is(err, ErrCommonMedicalRecordChild) {
 		t.Fatalf("erreur = %v", err)
 	}
@@ -456,7 +468,7 @@ func TestCommonMedicalRecordForeignIDRollsBack(t *testing.T) {
 	}
 
 	req.Allergies = PatchCollection[AllergyRequest]{Present: true, Upsert: []AllergyRequest{{ID: b.allergy.ID, Comment: str("intrusion")}}}
-	err = repo.SaveCommonMedicalRecord(&a.record, req, 99)
+	_, err = repo.SaveCommonMedicalRecord(&a.record, req, 99)
 	if !errors.Is(err, ErrCommonMedicalRecordChild) {
 		t.Fatalf("erreur update étranger = %v", err)
 	}
@@ -466,7 +478,7 @@ func TestCommonMedicalRecordAbsentFalseEmptyAndNullSemantics(t *testing.T) {
 	db := integrationDB(t)
 	f := seedCommonFixture(t, db, 107)
 	repo := NewRepository(db)
-	if err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{Allergies: PatchCollection[AllergyRequest]{Present: true, Upsert: []AllergyRequest{{ID: f.allergy.ID, Comment: str(""), IsActive: boolean(false)}}}, Documents: PatchCollection[MedicalDocumentRequest]{Present: true, Upsert: []MedicalDocumentRequest{{ID: f.document.ID, DocumentDate: NullableTimePatch{Set: true, Value: nil}}}}}, 99); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{Allergies: PatchCollection[AllergyRequest]{Present: true, Upsert: []AllergyRequest{{ID: f.allergy.ID, Comment: str(""), IsActive: boolean(false)}}}, Documents: PatchCollection[MedicalDocumentRequest]{Present: true, Upsert: []MedicalDocumentRequest{{ID: f.document.ID, DocumentDate: NullableTimePatch{Set: true, Value: nil}}}}}, 99); err != nil {
 		t.Fatal(err)
 	}
 	var allergy Allergy
@@ -487,16 +499,16 @@ func TestCommonMedicalRecordOptimisticConflictAndNoOp(t *testing.T) {
 	repo := NewRepository(db)
 	original := f.record.UpdatedAt
 	noOp := UpdateCommonMedicalRecordRequest{ExpectedUpdatedAt: &original}
-	if err := repo.SaveCommonMedicalRecord(&f.record, noOp, 99); err != nil || !f.record.UpdatedAt.Equal(original) {
+	if _, err := repo.SaveCommonMedicalRecord(&f.record, noOp, 99); err != nil || !f.record.UpdatedAt.Equal(original) {
 		t.Fatalf("no-op: err=%v updated_at=%v", err, f.record.UpdatedAt)
 	}
-	if err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{ExpectedUpdatedAt: &original, Profile: &PatientMedicalProfileRequest{Profession: str("première modification")}}, 99); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{ExpectedUpdatedAt: &original, Profile: &PatientMedicalProfileRequest{Profession: str("première modification")}}, 99); err != nil {
 		t.Fatal(err)
 	}
 	if f.record.UpdatedAt.Equal(original) {
 		t.Fatal("updated_at inchangé après modification réelle")
 	}
-	err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{ExpectedUpdatedAt: &original, Profile: &PatientMedicalProfileRequest{Profession: str("écriture obsolète")}}, 99)
+	_, err := repo.SaveCommonMedicalRecord(&f.record, UpdateCommonMedicalRecordRequest{ExpectedUpdatedAt: &original, Profile: &PatientMedicalProfileRequest{Profession: str("écriture obsolète")}}, 99)
 	if !errors.Is(err, ErrCommonMedicalRecordConflict) {
 		t.Fatalf("conflit attendu, reçu %v", err)
 	}
@@ -547,7 +559,7 @@ func TestCommonMedicalRecordLegacyArraysAreUpsertOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(payload), &req); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.SaveCommonMedicalRecord(&f.record, req, 99); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&f.record, req, 99); err != nil {
 		t.Fatal(err)
 	}
 	var allergyCount, historyCount int64
@@ -599,7 +611,7 @@ func TestCommonMedicalRecordIgnoresSpoofedAuthorsAndUsesJWTAuthor(t *testing.T) 
 		t.Fatal(err)
 	}
 	const jwtUserID uint = 77
-	if err := repo.SaveCommonMedicalRecord(&f.record, req, jwtUserID); err != nil {
+	if _, err := repo.SaveCommonMedicalRecord(&f.record, req, jwtUserID); err != nil {
 		t.Fatal(err)
 	}
 	var profile PatientMedicalProfile

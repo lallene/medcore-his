@@ -74,7 +74,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 	otherID := uint(802)
 
 	// W01 valid create
-	err := repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err := repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -101,7 +101,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 
 	// W02 invalid URL create
 	bad := "javascript:alert(1)"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -117,7 +117,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 
 	// W03 valid URL update
 	next := "https://docs.example.com/cr-v2.pdf?sig=1"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -142,7 +142,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 
 	// W04 invalid URL update
 	httpURL := "http://docs.example.com/x.pdf"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -156,7 +156,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 	}
 
 	// W05 same-patient association still accepted
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -170,7 +170,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 	}
 
 	// W06 cross-patient rejected
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -184,7 +184,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 	}
 
 	// W07 null consultation preserved
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -202,7 +202,7 @@ func TestLot28EC2A_W01_W09_DocumentWritePath(t *testing.T) {
 	_ = db.First(&after, created.ID)
 	beforeURL = after.FileURL
 	desc := "note clinique"
-	err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&record, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{

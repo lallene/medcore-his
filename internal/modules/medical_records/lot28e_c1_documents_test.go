@@ -185,7 +185,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 	fileURL := "https://docs.example.com/m01.pdf"
 
 	// M01 same patient
-	err := repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
+	_, err := repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -201,7 +201,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 	}
 
 	// M02 other patient
-	err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -217,7 +217,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 	}
 
 	// M03 unknown
-	err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -233,7 +233,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 	}
 
 	// M04 null consultation_id
-	err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -253,7 +253,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 	if err := db.Where("medical_record_id = ?", recordA.ID).Order("id desc").First(&doc).Error; err != nil {
 		t.Fatal(err)
 	}
-	err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{
@@ -267,7 +267,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 	}
 
 	// M06 other record cannot attach consultation of A via its patient path
-	err = repo.SaveCommonMedicalRecord(&recordB, UpdateCommonMedicalRecordRequest{
+	_, err = repo.SaveCommonMedicalRecord(&recordB, UpdateCommonMedicalRecordRequest{
 		Documents: PatchCollection[MedicalDocumentRequest]{
 			Present: true,
 			Upsert: []MedicalDocumentRequest{{

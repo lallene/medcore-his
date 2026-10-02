@@ -42,7 +42,7 @@ type Repository interface {
 		record *MedicalRecord,
 		req UpdateCommonMedicalRecordRequest,
 		authorID uint,
-	) error
+	) (CommonMedicalRecordSaveResult, error)
 }
 
 type repository struct {
@@ -289,7 +289,7 @@ func (r *repository) SaveCommonMedicalRecord(
 	record *MedicalRecord,
 	req UpdateCommonMedicalRecordRequest,
 	authorID uint,
-) error {
+) (CommonMedicalRecordSaveResult, error) {
 	return r.saveCommonMedicalRecordNonDestructive(record, req, authorID)
 }
 

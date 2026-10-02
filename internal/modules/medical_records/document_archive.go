@@ -17,7 +17,7 @@ func medicalDocumentIsActive(doc *MedicalDocument) bool {
 // (no hard delete). Caller must ensure Present==true and handle upsert separately.
 func archiveMedicalDocuments(
 	tx *gorm.DB,
-	recordID uint,
+	record *MedicalRecord,
 	authorID uint,
 	deleteIDs []uint,
 	upsertIDs map[uint]struct{},
@@ -39,7 +39,7 @@ func archiveMedicalDocuments(
 		}
 
 		var doc MedicalDocument
-		err := tx.Where("id = ? AND medical_record_id = ?", id, recordID).First(&doc).Error
+		err := tx.Where("id = ? AND medical_record_id = ?", id, record.ID).First(&doc).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, fmt.Errorf("%w: id=%d", ErrCommonMedicalRecordChild, id)
 		}
@@ -53,7 +53,7 @@ func archiveMedicalDocuments(
 
 		archBy := authorID
 		result := tx.Model(&MedicalDocument{}).
-			Where("id = ? AND medical_record_id = ? AND archived_at IS NULL", id, recordID).
+			Where("id = ? AND medical_record_id = ? AND archived_at IS NULL", id, record.ID).
 			Updates(map[string]any{
 				"archived_at": now,
 				"archived_by": archBy,
@@ -63,6 +63,18 @@ func archiveMedicalDocuments(
 		}
 		if result.RowsAffected != 1 {
 			return false, invalid("document", "document déjà archivé")
+		}
+		// LOT28E-B1: document_archived in same TX as archive.
+		if err := ensureDocumentTimelineEvent(
+			tx,
+			record,
+			TimelineEventDocumentArchived,
+			doc.ID,
+			doc.Label,
+			authorID,
+			now,
+		); err != nil {
+			return false, err
 		}
 		changed = true
 	}

@@ -21,8 +21,9 @@ func (r *repository) saveCommonMedicalRecordNonDestructive(
 	record *MedicalRecord,
 	req UpdateCommonMedicalRecordRequest,
 	authorID uint,
-) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+) (CommonMedicalRecordSaveResult, error) {
+	var result CommonMedicalRecordSaveResult
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var current MedicalRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&current, record.ID).Error; err != nil {
@@ -33,8 +34,8 @@ func (r *repository) saveCommonMedicalRecordNonDestructive(
 			return ErrCommonMedicalRecordConflict
 		}
 
-		changed := false
-		steps := []func(*gorm.DB, *MedicalRecord, UpdateCommonMedicalRecordRequest) (bool, error){
+		trusted := withTrustedAuthor(req, authorID)
+		nonDocumentSteps := []func(*gorm.DB, *MedicalRecord, UpdateCommonMedicalRecordRequest) (bool, error){
 			updateProfile,
 			updateAllergies,
 			updateMedicalHistories,
@@ -46,15 +47,28 @@ func (r *repository) saveCommonMedicalRecordNonDestructive(
 			updateLifestyle,
 			updateMedicalDevices,
 			updateVitalSigns,
-			updateDocuments,
 		}
 
-		for _, step := range steps {
-			stepChanged, err := step(tx, &current, withTrustedAuthor(req, authorID))
+		changed := false
+		for _, step := range nonDocumentSteps {
+			stepChanged, err := step(tx, &current, trusted)
 			if err != nil {
 				return err
 			}
-			changed = changed || stepChanged
+			if stepChanged {
+				result.NonDocumentChanged = true
+				changed = true
+			}
+		}
+
+		docResult, err := updateDocuments(tx, &current, trusted)
+		if err != nil {
+			return err
+		}
+		result.DocumentLifecycleChanged = docResult.DocumentLifecycleChanged
+		result.DocumentMetadataChanged = docResult.DocumentMetadataChanged
+		if docResult.DocumentLifecycleChanged || docResult.DocumentMetadataChanged {
+			changed = true
 		}
 
 		if !changed {
@@ -62,18 +76,19 @@ func (r *repository) saveCommonMedicalRecordNonDestructive(
 		}
 
 		now := time.Now()
-		result := tx.Model(&MedicalRecord{}).
+		cas := tx.Model(&MedicalRecord{}).
 			Where("id = ? AND updated_at = ?", current.ID, current.UpdatedAt).
 			Update("updated_at", now)
-		if result.Error != nil {
-			return result.Error
+		if cas.Error != nil {
+			return cas.Error
 		}
-		if result.RowsAffected != 1 {
+		if cas.RowsAffected != 1 {
 			return ErrCommonMedicalRecordConflict
 		}
 		record.UpdatedAt = now
 		return nil
 	})
+	return result, err
 }
 
 func withTrustedAuthor(req UpdateCommonMedicalRecordRequest, authorID uint) UpdateCommonMedicalRecordRequest {
@@ -349,10 +364,11 @@ func updateVitalSigns(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedica
 	})
 }
 
-func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedicalRecordRequest) (bool, error) {
+func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedicalRecordRequest) (CommonMedicalRecordSaveResult, error) {
+	var result CommonMedicalRecordSaveResult
 	patch := req.Documents
 	if !patch.Present {
-		return false, nil
+		return result, nil
 	}
 
 	upsertIDs := map[uint]struct{}{}
@@ -363,43 +379,59 @@ func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedical
 	}
 
 	// LOT28E-C2-B: delete_ids archive persisted MedicalDocuments (no hard delete).
-	changed, err := archiveMedicalDocuments(tx, record.ID, req.authorID, patch.DeleteIDs, upsertIDs)
+	archived, err := archiveMedicalDocuments(tx, record, req.authorID, patch.DeleteIDs, upsertIDs)
 	if err != nil {
-		return false, err
+		return result, err
+	}
+	if archived {
+		result.DocumentLifecycleChanged = true
 	}
 
 	for _, item := range patch.Upsert {
-		itemChanged, err := upsertMedicalDocument(tx, record, req, item)
+		kind, err := upsertMedicalDocument(tx, record, req, item)
 		if err != nil {
-			return false, err
+			return result, err
 		}
-		changed = changed || itemChanged
+		switch kind {
+		case documentMutationCreate:
+			result.DocumentLifecycleChanged = true
+		case documentMutationMetadata:
+			result.DocumentMetadataChanged = true
+		}
 	}
-	return changed, nil
+	return result, nil
 }
+
+type documentMutationKind int
+
+const (
+	documentMutationNone documentMutationKind = iota
+	documentMutationCreate
+	documentMutationMetadata
+)
 
 func upsertMedicalDocument(
 	tx *gorm.DB,
 	record *MedicalRecord,
 	req UpdateCommonMedicalRecordRequest,
 	item MedicalDocumentRequest,
-) (bool, error) {
+) (documentMutationKind, error) {
 	create := item.ID == 0
 	normalizeDocumentLabelType(&item)
 	// Order: archived guard → association (C1) → metadata bounds → external file_url trust (C2-A).
 	if !create {
 		if err := rejectArchivedMedicalDocumentMutation(tx, record.ID, item.ID); err != nil {
-			return false, err
+			return documentMutationNone, err
 		}
 	}
 	if err := validateDocumentConsultationAssociation(tx, record.PatientID, item.ConsultationID); err != nil {
-		return false, err
+		return documentMutationNone, err
 	}
 	if err := validateDocumentLabelTypeWrite(item, create); err != nil {
-		return false, err
+		return documentMutationNone, err
 	}
 	if err := validateDocumentFileURLWrite(item, create); err != nil {
-		return false, err
+		return documentMutationNone, err
 	}
 	updates := map[string]any{}
 	putNullableUint(updates, "consultation_id", item.ConsultationID)
@@ -412,7 +444,14 @@ func upsertMedicalDocument(
 	putString(updates, "description", item.Description)
 	if !create {
 		// AUTH-01b: preserve original UploadedBy; modifier is attributable via dossier timeline.
-		return updateChild(tx, &MedicalDocument{}, record.ID, item.ID, updates)
+		changed, err := updateChild(tx, &MedicalDocument{}, record.ID, item.ID, updates)
+		if err != nil {
+			return documentMutationNone, err
+		}
+		if changed {
+			return documentMutationMetadata, nil
+		}
+		return documentMutationNone, nil
 	}
 	entity := MedicalDocument{
 		MedicalRecordID: record.ID,
@@ -422,7 +461,26 @@ func upsertMedicalDocument(
 		UploadedBy:      req.authorID,
 	}
 	applyDocument(&entity, item)
-	return true, tx.Create(&entity).Error
+	if err := tx.Create(&entity).Error; err != nil {
+		return documentMutationNone, err
+	}
+	eventAt := entity.CreatedAt
+	if eventAt.IsZero() {
+		eventAt = time.Now()
+	}
+	// LOT28E-B1: document_added in same TX as create.
+	if err := ensureDocumentTimelineEvent(
+		tx,
+		record,
+		TimelineEventDocumentAdded,
+		entity.ID,
+		entity.Label,
+		req.authorID,
+		eventAt,
+	); err != nil {
+		return documentMutationNone, err
+	}
+	return documentMutationCreate, nil
 }
 
 // validateDocumentConsultationAssociation enforces C1-03: optional consultation_id must
