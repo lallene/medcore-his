@@ -125,11 +125,48 @@ func (s *Service) Admit(id uint, req AdmitRequest, authorID uint) (*Hospitalizat
 		now := time.Now()
 		at = &now
 	}
-	err = s.transition(id, StatusPlanned, StatusAdmitted, authorID, "hospitalization_admitted", "Patient admis", *at, func(item *Hospitalization) {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Lock order (LOT28D): patient → hospitalization → bed → timeline.
+		var peek Hospitalization
+		if e := tx.Select("id, patient_id").First(&peek, id).Error; e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return coreerrors.NotFound("HOSPITALIZATION")
+			}
+			return e
+		}
+		if e := lockPatientForAdmission(tx, peek.PatientID); e != nil {
+			return e
+		}
+		item, e := lockByID(tx, id)
+		if errors.Is(e, gorm.ErrRecordNotFound) {
+			return coreerrors.NotFound("HOSPITALIZATION")
+		}
+		if e != nil {
+			return e
+		}
+		if item.Status != StatusPlanned {
+			return coreerrors.Conflict(fmt.Sprintf("transition %s vers %s interdite", item.Status, StatusAdmitted))
+		}
+		if e := rejectIfSiblingAdmitted(tx, item.PatientID, item.ID); e != nil {
+			return e
+		}
 		item.AdmittedAt = at
 		if strings.TrimSpace(req.AdmissionDiagnosis) != "" {
 			item.AdmissionDiagnosis = strings.TrimSpace(req.AdmissionDiagnosis)
 		}
+		item.Status = StatusAdmitted
+		updatedBy := authorID
+		item.UpdatedBy = &updatedBy
+		if e := tx.Save(item).Error; e != nil {
+			if isDuplicate(e) {
+				return coreerrors.Conflict("le patient a déjà une hospitalisation active")
+			}
+			return e
+		}
+		if e := s.syncBedForTransition(tx, item, StatusAdmitted, authorID, *at); e != nil {
+			return e
+		}
+		return createTimeline(tx, item, "hospitalization_admitted", "Patient admis", authorID, *at)
 	})
 	if err != nil {
 		return nil, err
@@ -195,6 +232,32 @@ func (s *Service) transition(id uint, from, to string, authorID uint, eventType,
 		}
 		return createTimeline(tx, item, eventType, title, authorID, eventDate)
 	})
+}
+
+// lockPatientForAdmission serializes cross-row Admit races for one patient (LOT28D).
+func lockPatientForAdmission(tx *gorm.DB, patientID uint) error {
+	var id uint
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Table("patients").Select("id").Where("id = ?", patientID).Take(&id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return coreerrors.NotFound("PATIENT")
+	}
+	return err
+}
+
+// rejectIfSiblingAdmitted enforces at most one ADMITTED hospitalization per patient.
+func rejectIfSiblingAdmitted(tx *gorm.DB, patientID, excludeID uint) error {
+	var n int64
+	err := tx.Model(&Hospitalization{}).
+		Where("patient_id = ? AND status = ? AND id <> ? AND deleted_at IS NULL", patientID, StatusAdmitted, excludeID).
+		Count(&n).Error
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return coreerrors.Conflict("le patient a déjà une hospitalisation active")
+	}
+	return nil
 }
 
 func (s *Service) syncBedForTransition(tx *gorm.DB, item *Hospitalization, to string, authorID uint, at time.Time) error {

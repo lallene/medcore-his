@@ -169,13 +169,15 @@ func seedDemoBedsAndAssignments(db *gorm.DB, actor uint, now time.Time) {
 	cancelledHospitalization := hospitalizations.Hospitalization{PatientID: cancelledConsult.PatientID, MedicalRecordID: cancelledRecord.ID, SourceConsultationID: cancelledConsult.ID, AdmissionNumber: "HOSP-DEMO-CANCELLED", HospitalizationType: "Médicale", AdmissionReason: "Admission annulée DEMO", Department: "ORL", Status: hospitalizations.StatusCancelled}
 	must(db.Where("admission_number=?", cancelledHospitalization.AdmissionNumber).FirstOrCreate(&cancelledHospitalization).Error)
 	ensureDemoTimeline(db, cancelledHospitalization.PatientID, "hospitalization_cancelled", "hospitalization", "Hospitalisation annulée", cancelledHospitalization.AdmissionNumber, "hospitalization", cancelledHospitalization.ID, actor, now)
-	var admittedPatient patients.Patient
-	must(db.Where("code_patient=?", "P-DEMO-006").First(&admittedPatient).Error)
-	withoutBedConsult := consultations.Consultation{PatientID: admittedPatient.ID, DoctorName: "Dr DEMO", Service: "Médecine", Status: consultations.ConsultationStatusCompleted, Diagnosis: "DEMO-HOSPITALIZATION-WITHOUT-BED", Observations: "Admission autorisée sans lit"}
-	must(db.Where("patient_id=? AND diagnosis=?", admittedPatient.ID, withoutBedConsult.Diagnosis).FirstOrCreate(&withoutBedConsult).Error)
-	var admittedRecord medical_records.MedicalRecord
-	must(db.Where("patient_id=?", admittedPatient.ID).First(&admittedRecord).Error)
-	withoutBed := hospitalizations.Hospitalization{PatientID: admittedPatient.ID, MedicalRecordID: admittedRecord.ID, SourceConsultationID: withoutBedConsult.ID, AdmissionNumber: "HOSP-DEMO-ADMITTED-NO-BED", HospitalizationType: "Médicale", AdmissionReason: "Admission sans lit DEMO", Department: "Médecine", Status: hospitalizations.StatusAdmitted, AdmittedAt: &now}
+	// LOT28D: no-bed ADMITTED fixture must not share the patient with HOSP-DEMO-002
+	// (profiles[5] / P-DEMO-006). P-DEMO-001 has no other hospitalization fixture.
+	var noBedPatient patients.Patient
+	must(db.Where("code_patient=?", "P-DEMO-001").First(&noBedPatient).Error)
+	withoutBedConsult := consultations.Consultation{PatientID: noBedPatient.ID, DoctorName: "Dr DEMO", Service: "Médecine", Status: consultations.ConsultationStatusCompleted, Diagnosis: "DEMO-HOSPITALIZATION-WITHOUT-BED", Observations: "Admission autorisée sans lit"}
+	must(db.Where("patient_id=? AND diagnosis=?", noBedPatient.ID, withoutBedConsult.Diagnosis).FirstOrCreate(&withoutBedConsult).Error)
+	var noBedRecord medical_records.MedicalRecord
+	must(db.Where("patient_id=?", noBedPatient.ID).First(&noBedRecord).Error)
+	withoutBed := hospitalizations.Hospitalization{PatientID: noBedPatient.ID, MedicalRecordID: noBedRecord.ID, SourceConsultationID: withoutBedConsult.ID, AdmissionNumber: "HOSP-DEMO-ADMITTED-NO-BED", HospitalizationType: "Médicale", AdmissionReason: "Admission sans lit DEMO", Department: "Médecine", Status: hospitalizations.StatusAdmitted, AdmittedAt: &now}
 	must(db.Where("admission_number=?", withoutBed.AdmissionNumber).FirstOrCreate(&withoutBed).Error)
 	ensureDemoTimeline(db, withoutBed.PatientID, "hospitalization_admitted", "hospitalization", "Admission sans lit", withoutBed.AdmissionNumber, "hospitalization", withoutBed.ID, actor, now)
 

@@ -58,6 +58,9 @@ func hospitalizationDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("CREATE UNIQUE INDEX ux_test_active_stay ON hospitalization_bed_assignments (hospitalization_id) WHERE released_at IS NULL AND deleted_at IS NULL").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := EnsureHospitalizationIndexes(db); err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 

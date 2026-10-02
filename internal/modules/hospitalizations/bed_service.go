@@ -469,6 +469,11 @@ func (s *Service) ReleaseBed(hid, author uint) (*BedAssignment, error) {
 		if err != nil {
 			return coreerrors.NotFound("HOSPITALIZATION")
 		}
+		// Public ReleaseBed is hospitalization-bound: only ADMITTED stays (LOT28D).
+		// Discharge/Cancel use releaseActiveAssignment internally without this gate.
+		if h.Status != StatusAdmitted {
+			return coreerrors.Conflict("libération de lit réservée aux hospitalisations admises")
+		}
 		return releaseActiveAssignment(tx, h, author, time.Now(), "bed_released", "Lit libéré", &released)
 	})
 	if err != nil {

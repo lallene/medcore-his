@@ -129,6 +129,12 @@ func TestApplyMigrationsIncludesRequiredEnsureHelpers(t *testing.T) {
 	if !strings.Contains(body, `return fmt.Errorf("EnsureAuthorizationIndexes: %w", err)`) {
 		t.Fatal("applyMigrations must propagate EnsureAuthorizationIndexes failures")
 	}
+	if !strings.Contains(body, "hospitalizations.EnsureHospitalizationIndexes") {
+		t.Fatal("applyMigrations must call hospitalizations.EnsureHospitalizationIndexes")
+	}
+	if !strings.Contains(body, `return fmt.Errorf("EnsureHospitalizationIndexes: %w", err)`) {
+		t.Fatal("applyMigrations must propagate EnsureHospitalizationIndexes failures")
+	}
 }
 
 func TestMainFailsClosedOnApplyMigrationsError(t *testing.T) {

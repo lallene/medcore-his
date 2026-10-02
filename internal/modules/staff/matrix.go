@@ -4,9 +4,10 @@ import "github.com/lallene/medcore-his/backend/internal/core/rbac"
 
 var FunctionLabels = map[string]string{
 	"DIRECTEUR_MEDICAL": "Directeur médical", "DIRECTEUR_ADMINISTRATIF": "Directeur administratif",
-	"ACCUEIL": "Agent d'accueil",
+	"ACCUEIL":    "Agent d'accueil",
 	"SAGE_FEMME": "Sage-femme", "INFIRMIER": "Infirmier", "AIDE_SOIGNANT": "Aide-soignant",
-	"COMPTABLE": "Comptable", "CAISSIER": "Caissier / Caissière", "BIOLOGISTE": "Biologiste",
+	"PHARMACIEN": "Pharmacien",
+	"COMPTABLE":  "Comptable", "CAISSIER": "Caissier / Caissière", "BIOLOGISTE": "Biologiste",
 	"FACTURATION": "Facturation", "RADIOLOGIE": "Radiologie",
 	"SUPPORT_AGENT": "Agent support", "SUPPORT_MANAGER": "Responsable support",
 }

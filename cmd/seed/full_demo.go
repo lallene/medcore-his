@@ -413,6 +413,7 @@ func seedDemoStaff(db *gorm.DB, actor uint) {
 		{"DEMO-BIOLOGISTE", "Biologiste DEMO", "demo.biologiste@medcore.local", "Biologiste", "Laboratoire", []string{"BIOLOGISTE"}, nil, nil, ""},
 		{"DEMO-FACTURATION", "Agent facturation DEMO", "demo.facturation@medcore.local", "Facturation", "Facturation", []string{"FACTURATION"}, nil, nil, ""},
 		{"DEMO-RADIOLOGIE", "Radiologue DEMO", "demo.radiologie@medcore.local", "Radiologie", "Radiologie", []string{"RADIOLOGIE"}, nil, []string{"XRAY", "ULTRASOUND", "CT"}, ""},
+		{"DEMO-PHARMACIEN", "Pharmacien DEMO", "demo.pharmacien@medcore.local", "Pharmacien", "Pharmacie", []string{"PHARMACIEN"}, nil, nil, ""},
 		{"DEMO-MULTIROLE", "Facturation Caisse DEMO", "demo.multirole@medcore.local", "Facturation et caisse", "Facturation", []string{"FACTURATION", "CAISSIER"}, nil, nil, ""},
 		{"DEMO-SUPPORT-AGENT", "Agent support DEMO", "demo.support.agent@medcore.local", "Agent support", "Urgences", []string{"SUPPORT_AGENT"}, nil, nil, "URG"},
 		{"DEMO-SUPPORT-MANAGER", "Responsable support DEMO", "demo.support.manager@medcore.local", "Responsable support", "Administration", []string{"SUPPORT_MANAGER"}, nil, nil, "ADMIN"},

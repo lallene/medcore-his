@@ -3,6 +3,7 @@ package rbac
 var StaffPhysicianPermissions = []string{
 	"patients:read", "patients:create", "patients:update", "patients.360.read", "medical_records.read", "medical_records.update",
 	"consultations.read", "consultations.create", "consultations.update", "hospitalizations.read", "hospitalizations.create",
+	"hospitalizations.discharge", "hospitalizations.cancel",
 	"rooms.read", "beds.read", "bed_assignments.read", "laboratory.read", "imaging.read", "pharmacy.stock.read",
 	"insurance.authorization.read", "insurance.authorization.create",
 	"insurance.authorization.submit", "insurance.authorization.decide", "insurance.authorization.link_act",
@@ -35,6 +36,12 @@ var StaffFunctionPermissions = map[string][]string{
 		"patients:read", "patients.360.read", "medical_records.read", "vital_signs.create", "consultations.read", "hospitalizations.read", "hospitalizations.update", "beds.read", "bed_assignments.read", "pharmacy.dispensation.read",
 		"act_catalog.read", "performed_acts.read", "performed_acts.create",
 		"queue.triage.read", "queue.triage.update", "queue.priority.update",
+	},
+	// LOT28D: operational pharmacy write actor — pharmacy permissions only.
+	"PHARMACIEN": {
+		"pharmacy.stock.read", "pharmacy.stock.manage",
+		"pharmacy.dispensation.read", "pharmacy.dispensation.create",
+		"pharmacy.references.manage",
 	},
 	"BIOLOGISTE":  {"patients:read", "patients.360.read", "laboratory.read", "laboratory.collect", "laboratory.process", "laboratory.result.write", "laboratory.validate", "act_catalog.read", "performed_acts.read", "performed_acts.create"},
 	"RADIOLOGIE":  {"patients:read", "patients.360.read", "imaging.read", "imaging.schedule", "imaging.perform", "imaging.report.write", "imaging.validate", "act_catalog.read", "performed_acts.read", "performed_acts.create"},
