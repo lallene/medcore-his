@@ -182,6 +182,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 	unknownID := uint(99999)
 	label := "Doc"
 	typ := "REPORT"
+	fileURL := "https://docs.example.com/m01.pdf"
 
 	// M01 same patient
 	err := repo.SaveCommonMedicalRecord(&recordA, UpdateCommonMedicalRecordRequest{
@@ -190,6 +191,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 			Upsert: []MedicalDocumentRequest{{
 				Label:          &label,
 				Type:           &typ,
+				FileURL:        &fileURL,
 				ConsultationID: NullableUintPatch{Set: true, Value: &sameID},
 			}},
 		},
@@ -205,6 +207,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 			Upsert: []MedicalDocumentRequest{{
 				Label:          &label,
 				Type:           &typ,
+				FileURL:        &fileURL,
 				ConsultationID: NullableUintPatch{Set: true, Value: &otherID},
 			}},
 		},
@@ -220,6 +223,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 			Upsert: []MedicalDocumentRequest{{
 				Label:          &label,
 				Type:           &typ,
+				FileURL:        &fileURL,
 				ConsultationID: NullableUintPatch{Set: true, Value: &unknownID},
 			}},
 		},
@@ -235,6 +239,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 			Upsert: []MedicalDocumentRequest{{
 				Label:          &label,
 				Type:           &typ,
+				FileURL:        &fileURL,
 				ConsultationID: NullableUintPatch{Set: true, Value: nil},
 			}},
 		},
@@ -268,6 +273,7 @@ func TestLot28EC1_M01_M06_DocumentConsultationAssociation(t *testing.T) {
 			Upsert: []MedicalDocumentRequest{{
 				Label:          &label,
 				Type:           &typ,
+				FileURL:        &fileURL,
 				ConsultationID: NullableUintPatch{Set: true, Value: &sameID},
 			}},
 		},

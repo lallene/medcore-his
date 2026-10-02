@@ -592,7 +592,7 @@ func TestCommonMedicalRecordIgnoresSpoofedAuthorsAndUsesJWTAuthor(t *testing.T) 
 		"profile":{"profession":"JWT only"},
 		"allergies":{"upsert":[{"allergen_type":"food","allergen_name":"JWT allergy","created_by":999}]},
 		"vital_signs":{"upsert":[{"comment":"JWT vital","measured_by":999}]},
-		"documents":{"upsert":[{"type":"pdf","label":"JWT document","uploaded_by":999}]}
+		"documents":{"upsert":[{"type":"pdf","label":"JWT document","file_url":"https://docs.example.com/jwt.pdf","uploaded_by":999}]}
 	}`
 	var req UpdateCommonMedicalRecordRequest
 	if err := json.Unmarshal([]byte(payload), &req); err != nil {

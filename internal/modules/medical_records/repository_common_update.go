@@ -351,7 +351,16 @@ func updateVitalSigns(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedica
 
 func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedicalRecordRequest) (bool, error) {
 	return applyCollection(tx, record.ID, req.Documents, &MedicalDocument{}, func(item MedicalDocumentRequest) (bool, error) {
+		create := item.ID == 0
+		normalizeDocumentLabelType(&item)
+		// Order: association (C1) → metadata bounds → external file_url trust (C2-A).
 		if err := validateDocumentConsultationAssociation(tx, record.PatientID, item.ConsultationID); err != nil {
+			return false, err
+		}
+		if err := validateDocumentLabelTypeWrite(item, create); err != nil {
+			return false, err
+		}
+		if err := validateDocumentFileURLWrite(item, create); err != nil {
 			return false, err
 		}
 		updates := map[string]any{}
@@ -363,12 +372,9 @@ func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedical
 		putString(updates, "mime_type", item.MimeType)
 		putString(updates, "file_url", item.FileURL)
 		putString(updates, "description", item.Description)
-		if item.ID > 0 {
+		if !create {
 			// AUTH-01b: preserve original UploadedBy; modifier is attributable via dossier timeline.
 			return updateChild(tx, &MedicalDocument{}, record.ID, item.ID, updates)
-		}
-		if item.Label == nil || *item.Label == "" || item.Type == nil || *item.Type == "" {
-			return false, invalid("document", "label et type sont obligatoires")
 		}
 		entity := MedicalDocument{MedicalRecordID: record.ID, PatientID: record.PatientID, Label: *item.Label, Type: *item.Type, UploadedBy: req.authorID}
 		applyDocument(&entity, item)
