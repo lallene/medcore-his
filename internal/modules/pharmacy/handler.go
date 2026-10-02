@@ -19,6 +19,23 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+func access(c *gin.Context) (Access, bool) {
+	id, err := rbac.CurrentUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return Access{}, false
+	}
+	a := Access{UserID: id, Permissions: map[string]bool{}}
+	if p, ok := c.Get(rbac.ContextPermissions); ok {
+		if values, ok := p.([]string); ok {
+			for _, v := range values {
+				a.Permissions[v] = true
+			}
+		}
+	}
+	return a, true
+}
+
 // GetFamilies godoc
 //
 //	@Summary	Liste des familles thérapeutiques
@@ -729,9 +746,14 @@ func (h *Handler) GetPrescriptionDispensationStatus(c *gin.Context) {
 		})
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 
 	status, err := h.service.GetPrescriptionDispensationStatus(
 		uint(prescriptionID),
+		a,
 	)
 	if err != nil {
 		if errors.Is(err, ErrPrescriptionNotFound) {

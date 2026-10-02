@@ -651,7 +651,11 @@ func (s *Service) CreateDispensation(
 
 func (s *Service) GetPrescriptionDispensationStatus(
 	prescriptionID uint,
+	a Access,
 ) (*PrescriptionDispensationStatusResponse, error) {
+	if err := s.assertCanAccessPrescriptionService(prescriptionID, a); err != nil {
+		return nil, err
+	}
 	prescription, err := s.repo.FindConsultationPrescriptionByID(prescriptionID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

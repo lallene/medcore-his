@@ -35,6 +35,23 @@ func authorID(c *gin.Context) (uint, bool) {
 	return id, true
 }
 
+func access(c *gin.Context) (Access, bool) {
+	id, err := rbac.CurrentUserID(c)
+	if err != nil {
+		response.Error(c, err)
+		return Access{}, false
+	}
+	a := Access{UserID: id, Permissions: map[string]bool{}}
+	if p, ok := c.Get(rbac.ContextPermissions); ok {
+		if values, ok := p.([]string); ok {
+			for _, v := range values {
+				a.Permissions[v] = true
+			}
+		}
+	}
+	return a, true
+}
+
 func (h *Handler) Create(c *gin.Context) {
 	author, ok := authorID(c)
 	if !ok {
@@ -61,7 +78,11 @@ func (h *Handler) FindByID(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.service.FindByID(id)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.FindByID(id, a)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -73,7 +94,11 @@ func (h *Handler) FindByConsultation(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.service.FindByConsultation(id)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.FindByConsultation(id, a)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -81,6 +106,10 @@ func (h *Handler) FindByConsultation(c *gin.Context) {
 	response.Success(c, "Hospitalisation trouvée", item)
 }
 func (h *Handler) List(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	p := pagination.FromContext(c)
 	filter := ListFilter{Page: p.Page, Limit: p.Limit, Status: strings.ToUpper(c.Query("status")), Department: c.Query("department")}
 	if raw := c.Query("serviceId"); raw != "" {
@@ -115,7 +144,7 @@ func (h *Handler) List(c *gin.Context) {
 		endExclusive := filter.To.AddDate(0, 0, 1)
 		filter.To = &endExclusive
 	}
-	result, err := h.service.List(filter)
+	result, err := h.service.List(filter, a)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -133,13 +162,13 @@ func (h *Handler) ListByPatient(c *gin.Context) {
 	h.List(c)
 }
 func (h *Handler) Admit(c *gin.Context) {
-	h.withRequest(c, func() any { return &AdmitRequest{} }, func(id, author uint, raw any) (*Hospitalization, error) {
-		return h.service.Admit(id, *raw.(*AdmitRequest), author)
+	h.withRequest(c, func() any { return &AdmitRequest{} }, func(id, author uint, a Access, raw any) (*Hospitalization, error) {
+		return h.service.Admit(id, *raw.(*AdmitRequest), author, a)
 	}, "Patient admis")
 }
 func (h *Handler) Discharge(c *gin.Context) {
-	h.withRequest(c, func() any { return &DischargeRequest{} }, func(id, author uint, raw any) (*Hospitalization, error) {
-		return h.service.Discharge(id, *raw.(*DischargeRequest), author)
+	h.withRequest(c, func() any { return &DischargeRequest{} }, func(id, author uint, a Access, raw any) (*Hospitalization, error) {
+		return h.service.Discharge(id, *raw.(*DischargeRequest), author, a)
 	}, "Sortie enregistrée")
 }
 func (h *Handler) Cancel(c *gin.Context) {
@@ -151,14 +180,18 @@ func (h *Handler) Cancel(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.service.Cancel(id, author)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.Cancel(id, author, a)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
 	response.Success(c, "Hospitalisation annulée", item)
 }
-func (h *Handler) withRequest(c *gin.Context, request func() any, action func(uint, uint, any) (*Hospitalization, error), message string) {
+func (h *Handler) withRequest(c *gin.Context, request func() any, action func(uint, uint, Access, any) (*Hospitalization, error), message string) {
 	id, ok := idParam(c, "id")
 	if !ok {
 		return
@@ -167,12 +200,16 @@ func (h *Handler) withRequest(c *gin.Context, request func() any, action func(ui
 	if !ok {
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	req := request()
 	if err := c.ShouldBindJSON(req); err != nil && err.Error() != "EOF" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	item, err := action(id, author, req)
+	item, err := action(id, author, a, req)
 	if err != nil {
 		response.Error(c, err)
 		return

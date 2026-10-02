@@ -146,7 +146,7 @@ func TestPrescriptionDoesNotTouchStockAndDispensationIsFEFOJWTPartialIdempotent(
 	if err != nil || again.ID != d.ID {
 		t.Fatal("idempotence absente")
 	}
-	status, _ := s.GetPrescriptionDispensationStatus(p.ID)
+	status, _ := s.GetPrescriptionDispensationStatus(p.ID, UnrestrictedAccess(userID))
 	if status.IsFullyDispensed || status.RemainingQuantity != 4 {
 		t.Fatalf("statut partiel=%#v", status)
 	}

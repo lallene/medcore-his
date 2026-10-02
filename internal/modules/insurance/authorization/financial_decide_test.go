@@ -23,12 +23,12 @@ func TestDecideRequiresRequestedAmount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(created.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(created.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Decide(created.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "X", ExternalDecisionDate: "2026-10-01", ApprovedRate: f(80),
-	}, 3); err == nil {
+	}, 3, UnrestrictedAccess(3)); err == nil {
 		t.Fatal("missing RequestedAmount must fail Decide for PERFORMED_ACT")
 	}
 
@@ -39,12 +39,12 @@ func TestDecideRequiresRequestedAmount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(legacy.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(legacy.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Decide(legacy.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "Y", ExternalDecisionDate: "2026-10-01", ApprovedRate: f(80),
-	}, 3); err == nil {
+	}, 3, UnrestrictedAccess(3)); err == nil {
 		t.Fatal("missing RequestedAmount must fail Decide for CONSULTATION")
 	}
 }
@@ -61,7 +61,7 @@ func TestDecidePatientAmountEcho(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(created.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(created.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	rate := 80.0
@@ -69,7 +69,7 @@ func TestDecidePatientAmountEcho(t *testing.T) {
 	decided, err := s.Decide(created.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "ECHO-OK", ExternalDecisionDate: "2026-10-01",
 		ApprovedRate: &rate, PatientAmount: &okEcho,
-	}, 3)
+	}, 3, UnrestrictedAccess(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +86,14 @@ func TestDecidePatientAmountEcho(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(created2.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(created2.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	bad := 2500.0
 	if _, err := s.Decide(created2.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "ECHO-BAD", ExternalDecisionDate: "2026-10-01",
 		ApprovedRate: &rate, PatientAmount: &bad,
-	}, 3); !IsConflict(err) {
+	}, 3, UnrestrictedAccess(3)); !IsConflict(err) {
 		t.Fatalf("mismatch echo must conflict: %v", err)
 	}
 
@@ -106,14 +106,14 @@ func TestDecidePatientAmountEcho(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(created3.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(created3.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	boundary := 2000.01
 	if _, err := s.Decide(created3.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "ECHO-TOL", ExternalDecisionDate: "2026-10-01",
 		ApprovedRate: &rate, PatientAmount: &boundary,
-	}, 3); err != nil {
+	}, 3, UnrestrictedAccess(3)); err != nil {
 		t.Fatalf("tolerance 0.01 must accept: %v", err)
 	}
 }
@@ -133,10 +133,10 @@ func TestDecideFullPartialRejectAndImmutability(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.Submit(c.ID, SubmitRequest{}, 2); err != nil {
+		if _, err := s.Submit(c.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.MarkPending(c.ID, 2); err != nil {
+		if _, err := s.MarkPending(c.ID, 2, UnrestrictedAccess(2)); err != nil {
 			t.Fatal(err)
 		}
 		return c.ID
@@ -144,7 +144,7 @@ func TestDecideFullPartialRejectAndImmutability(t *testing.T) {
 
 	approved, err := s.Decide(mk(fx.act.ID), DecisionRequest{
 		Status: StatusApproved, ExternalReference: "FULL", ExternalDecisionDate: "2026-10-01", ApprovedRate: &rate,
-	}, 3)
+	}, 3, UnrestrictedAccess(3))
 	if err != nil || *approved.InsuranceAmount != 8000 || *approved.PatientAmount != 2000 {
 		t.Fatalf("full: %#v err=%v", approved, err)
 	}
@@ -155,7 +155,7 @@ func TestDecideFullPartialRejectAndImmutability(t *testing.T) {
 	partial, err := s.Decide(mk(actP.ID), DecisionRequest{
 		Status: StatusPartiallyApproved, ExternalReference: "PART", ExternalDecisionDate: "2026-10-01",
 		ApprovedRate: &rate, CeilingAmount: &ceiling,
-	}, 3)
+	}, 3, UnrestrictedAccess(3))
 	if err != nil || *partial.InsuranceAmount != 5000 || *partial.PatientAmount != 5000 {
 		t.Fatalf("partial: %#v err=%v", partial, err)
 	}
@@ -167,7 +167,7 @@ func TestDecideFullPartialRejectAndImmutability(t *testing.T) {
 		Status: StatusRejected, ExternalReference: "REJ", ExternalDecisionDate: "2026-10-01",
 		ApprovedRate: &staleRate, ApprovedAmount: &staleFixed, CeilingAmount: &staleCeil,
 		RejectionReason: "refus assureur",
-	}, 3)
+	}, 3, UnrestrictedAccess(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestDecideFullPartialRejectAndImmutability(t *testing.T) {
 
 	if _, err := s.Decide(rejected.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "AGAIN", ExternalDecisionDate: "2026-10-01", ApprovedRate: &rate,
-	}, 4); !IsConflict(err) {
+	}, 4, UnrestrictedAccess(4)); !IsConflict(err) {
 		t.Fatalf("final immutability: %v", err)
 	}
 }
@@ -205,16 +205,16 @@ func TestDecidePerformedActSplitWithoutCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(created.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(created.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.MarkPending(created.ID, 2); err != nil {
+	if _, err := s.MarkPending(created.ID, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	rate := 50.0
 	decided, err := s.Decide(created.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "PA-FIN", ExternalDecisionDate: "2026-10-01", ApprovedRate: &rate,
-	}, 3)
+	}, 3, UnrestrictedAccess(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,13 +251,13 @@ func TestDecideDoesNotMutateFinancialSideTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(created.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(created.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	rate := 70.0
 	if _, err := s.Decide(created.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "FW", ExternalDecisionDate: "2026-10-01", ApprovedRate: &rate,
-	}, 3); err != nil {
+	}, 3, UnrestrictedAccess(3)); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {
@@ -280,12 +280,12 @@ func TestDecideRejectRequiresReason(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Submit(created.ID, SubmitRequest{}, 2); err != nil {
+	if _, err := s.Submit(created.ID, SubmitRequest{}, 2, UnrestrictedAccess(2)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Decide(created.ID, DecisionRequest{
 		Status: StatusRejected, ExternalReference: "R", ExternalDecisionDate: "2026-10-01",
-	}, 3); err == nil {
+	}, 3, UnrestrictedAccess(3)); err == nil {
 		t.Fatal("missing rejection reason accepted")
 	}
 }

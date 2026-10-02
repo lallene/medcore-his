@@ -299,7 +299,7 @@ func TestPerformedActPECIdempotencyAndCancelledRecreate(t *testing.T) {
 	}, 1); !IsConflict(err) {
 		t.Fatalf("duplicate=%v", err)
 	}
-	cancelled, err := s.Cancel(first.ID, 2)
+	cancelled, err := s.Cancel(first.ID, 2, UnrestrictedAccess(2))
 	if err != nil || cancelled.Status != StatusCancelled {
 		t.Fatalf("cancel=%#v err=%v", cancelled, err)
 	}
@@ -425,18 +425,18 @@ func TestPerformedActPECLifecycleCompatible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := s.Submit(created.ID, SubmitRequest{}, 2)
+	submitted, err := s.Submit(created.ID, SubmitRequest{}, 2, UnrestrictedAccess(2))
 	if err != nil || submitted.Status != StatusSubmitted {
 		t.Fatalf("submit=%#v err=%v", submitted, err)
 	}
-	pending, err := s.MarkPending(created.ID, 2)
+	pending, err := s.MarkPending(created.ID, 2, UnrestrictedAccess(2))
 	if err != nil || pending.Status != StatusPending {
 		t.Fatalf("pending=%#v err=%v", pending, err)
 	}
 	rate := 80.0
 	decided, err := s.Decide(created.ID, DecisionRequest{
 		Status: StatusApproved, ExternalReference: "ASSUR-PA-1", ExternalDecisionDate: "2026-10-01", ApprovedRate: &rate,
-	}, 3)
+	}, 3, UnrestrictedAccess(3))
 	if err != nil {
 		t.Fatal(err)
 	}

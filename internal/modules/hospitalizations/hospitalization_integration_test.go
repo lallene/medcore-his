@@ -127,7 +127,7 @@ func TestBedReservationAdmissionTransferReleaseAndTimeline(t *testing.T) {
 	if bed, _ := service.FindBed(first.ID); bed.Status != BedReserved {
 		t.Fatalf("statut après réservation=%s", bed.Status)
 	}
-	if _, err = service.Admit(stay.ID, AdmitRequest{}, 42); err != nil {
+	if _, err = service.Admit(stay.ID, AdmitRequest{}, 42, UnrestrictedAccess(42)); err != nil {
 		t.Fatal(err)
 	}
 	items, _ := service.ListAssignments(stay.ID)
@@ -192,7 +192,7 @@ func TestBedIntegrityRulesAndAutomaticRelease(t *testing.T) {
 	if _, err := service.UpdateRoom(room.ID, UpdateRoomRequest{IsActive: &inactive}, 55); err == nil {
 		t.Fatal("chambre avec réservation désactivée")
 	}
-	if _, err := service.Cancel(s1.ID, 56); err != nil {
+	if _, err := service.Cancel(s1.ID, 56, UnrestrictedAccess(56)); err != nil {
 		t.Fatal(err)
 	}
 	if bed, _ := service.FindBed(first.ID); bed.Status != BedAvailable {
@@ -209,13 +209,13 @@ func TestDischargeReleasesOccupiedBedAndAdmissionWithoutBedIsAllowed(t *testing.
 	f := seedHospitalization(t, db, "BED-D", true)
 	_, bed, _ := seedRoomAndBeds(t, db)
 	stay, _, _ := service.Create(CreateRequest{PatientID: f.patient.ID, SourceConsultationID: f.consultation.ID}, 60)
-	if _, err := service.Admit(stay.ID, AdmitRequest{}, 61); err != nil {
+	if _, err := service.Admit(stay.ID, AdmitRequest{}, 61, UnrestrictedAccess(61)); err != nil {
 		t.Fatalf("admission sans lit refusée: %v", err)
 	}
 	if _, err := service.AssignBed(stay.ID, bed.ID, 62); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Discharge(stay.ID, DischargeRequest{DischargeDiagnosis: "OK", DischargeSummary: "Sortie"}, 63); err != nil {
+	if _, err := service.Discharge(stay.ID, DischargeRequest{DischargeDiagnosis: "OK", DischargeSummary: "Sortie"}, 63, UnrestrictedAccess(63)); err != nil {
 		t.Fatal(err)
 	}
 	items, _ := service.ListAssignments(stay.ID)
@@ -341,7 +341,7 @@ func TestBedAdministrationSafeTransitions(t *testing.T) {
 	if _, err := service.UpdateBed(first.ID, UpdateBedRequest{RoomID: &otherRoom.ID}, 87); err == nil {
 		t.Fatal("lit réservé déplacé")
 	}
-	if _, err := service.Admit(s1.ID, AdmitRequest{}, 88); err != nil {
+	if _, err := service.Admit(s1.ID, AdmitRequest{}, 88, UnrestrictedAccess(88)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.UpdateBed(first.ID, UpdateBedRequest{Status: &off}, 89); err == nil {
@@ -520,18 +520,18 @@ func TestLifecycleTransitionsAndTimeline(t *testing.T) {
 	f := seedHospitalization(t, db, "LIFE", true)
 	service := NewService(db, NewRepository(db))
 	item, _, _ := service.Create(CreateRequest{PatientID: f.patient.ID, SourceConsultationID: f.consultation.ID}, 10)
-	admitted, err := service.Admit(item.ID, AdmitRequest{AdmissionDiagnosis: "Admission"}, 11)
+	admitted, err := service.Admit(item.ID, AdmitRequest{AdmissionDiagnosis: "Admission"}, 11, UnrestrictedAccess(11))
 	if err != nil || admitted.Status != StatusAdmitted || admitted.UpdatedBy == nil || *admitted.UpdatedBy != 11 {
 		t.Fatalf("admission: %#v %v", admitted, err)
 	}
-	if _, err := service.Admit(item.ID, AdmitRequest{}, 12); err == nil {
+	if _, err := service.Admit(item.ID, AdmitRequest{}, 12, UnrestrictedAccess(12)); err == nil {
 		t.Fatal("double admission acceptée")
 	}
-	discharged, err := service.Discharge(item.ID, DischargeRequest{DischargeDiagnosis: "Guéri", DischargeSummary: "Retour domicile"}, 13)
+	discharged, err := service.Discharge(item.ID, DischargeRequest{DischargeDiagnosis: "Guéri", DischargeSummary: "Retour domicile"}, 13, UnrestrictedAccess(13))
 	if err != nil || discharged.Status != StatusDischarged || discharged.DischargedAt == nil {
 		t.Fatalf("sortie: %#v %v", discharged, err)
 	}
-	if _, err := service.Cancel(item.ID, 14); err == nil {
+	if _, err := service.Cancel(item.ID, 14, UnrestrictedAccess(14)); err == nil {
 		t.Fatal("annulation après sortie acceptée")
 	}
 	var events []medical_records.MedicalTimelineEvent
@@ -547,7 +547,7 @@ func TestCancellationValidationAndFilters(t *testing.T) {
 	planned := seedHospitalization(t, db, "CANCEL", true)
 	noDecision := seedHospitalization(t, db, "NO", false)
 	item, _, _ := service.Create(CreateRequest{PatientID: planned.patient.ID, SourceConsultationID: planned.consultation.ID}, 20)
-	cancelled, err := service.Cancel(item.ID, 21)
+	cancelled, err := service.Cancel(item.ID, 21, UnrestrictedAccess(21))
 	if err != nil || cancelled.Status != StatusCancelled || cancelled.UpdatedBy == nil || *cancelled.UpdatedBy != 21 {
 		t.Fatalf("annulation: %#v %v", cancelled, err)
 	}
@@ -568,7 +568,7 @@ func TestCancellationValidationAndFilters(t *testing.T) {
 		t.Fatal("consultation d'un autre patient acceptée")
 	}
 	status := StatusCancelled
-	result, err := service.List(ListFilter{Page: 1, Limit: 20, PatientID: &planned.patient.ID, Status: status, Department: "médecine"})
+	result, err := service.List(ListFilter{Page: 1, Limit: 20, PatientID: &planned.patient.ID, Status: status, Department: "médecine"}, UnrestrictedAccess(1))
 	if err != nil || result.Total != 1 || len(result.Data) != 1 {
 		t.Fatalf("filtres: %#v %v", result, err)
 	}

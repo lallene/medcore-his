@@ -290,14 +290,21 @@ func (s *Service) Create(req CreateRequest, userID uint) (*Response, error) {
 	return s.FindByID(createdID)
 }
 
-func (s *Service) Update(id uint, req UpdateRequest, userID uint) (*Response, error) {
+func (s *Service) Update(id uint, req UpdateRequest, userID uint, a Access) (*Response, error) {
 	if err := nonNegative(req.RequestedAmount, "Le montant demandé"); err != nil {
 		return nil, err
 	}
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var item InsuranceAuthorization
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
 			return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
+		}
+		if err := assertServiceMembership(&item, unrestricted, ids); err != nil {
+			return err
 		}
 		if item.Status != StatusDraft {
 			return coreerrors.Conflict("Seule une PEC en brouillon peut être modifiée")
@@ -323,11 +330,18 @@ func (s *Service) Update(id uint, req UpdateRequest, userID uint) (*Response, er
 	return s.FindByID(id)
 }
 
-func (s *Service) Submit(id uint, req SubmitRequest, userID uint) (*Response, error) {
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+func (s *Service) Submit(id uint, req SubmitRequest, userID uint, a Access) (*Response, error) {
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var item InsuranceAuthorization
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
 			return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
+		}
+		if err := assertServiceMembership(&item, unrestricted, ids); err != nil {
+			return err
 		}
 		if item.Status != StatusDraft {
 			return coreerrors.Conflict("La PEC ne peut plus être envoyée")
@@ -356,11 +370,18 @@ func (s *Service) Submit(id uint, req SubmitRequest, userID uint) (*Response, er
 	return s.FindByID(id)
 }
 
-func (s *Service) MarkPending(id uint, userID uint) (*Response, error) {
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+func (s *Service) MarkPending(id uint, userID uint, a Access) (*Response, error) {
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var item InsuranceAuthorization
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
 			return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
+		}
+		if err := assertServiceMembership(&item, unrestricted, ids); err != nil {
+			return err
 		}
 		if item.Status != StatusSubmitted {
 			return coreerrors.Conflict("Seule une PEC envoyée peut être placée en attente")
@@ -375,7 +396,7 @@ func (s *Service) MarkPending(id uint, userID uint) (*Response, error) {
 	return s.FindByID(id)
 }
 
-func (s *Service) Decide(id uint, req DecisionRequest, userID uint) (*Response, error) {
+func (s *Service) Decide(id uint, req DecisionRequest, userID uint, a Access) (*Response, error) {
 	status := strings.ToUpper(strings.TrimSpace(req.Status))
 	if !finalStatuses[status] {
 		return nil, coreerrors.BadRequest("Décision finale invalide")
@@ -390,10 +411,17 @@ func (s *Service) Decide(id uint, req DecisionRequest, userID uint) (*Response, 
 	if err := nonNegative(req.PatientAmount, "La part patient"); err != nil {
 		return nil, err
 	}
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
+	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var item InsuranceAuthorization
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
 			return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
+		}
+		if err := assertServiceMembership(&item, unrestricted, ids); err != nil {
+			return err
 		}
 		if finalStatuses[item.Status] || item.Status == StatusCancelled {
 			return coreerrors.Conflict("La décision finale est immuable")
@@ -445,8 +473,19 @@ func (s *Service) Decide(id uint, req DecisionRequest, userID uint) (*Response, 
 	return s.FindByID(id)
 }
 
-func (s *Service) Cancel(id uint, userID uint) (*Response, error) {
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+func (s *Service) Cancel(id uint, userID uint, a Access) (*Response, error) {
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var item InsuranceAuthorization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
+			return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
+		}
+		if err := assertServiceMembership(&item, unrestricted, ids); err != nil {
+			return err
+		}
 		return s.cancelAuthorizationTx(tx, id, userID)
 	})
 	if err != nil {
@@ -519,6 +558,18 @@ func (s *Service) FindByID(id uint) (*Response, error) {
 		return nil, coreerrors.NotFound("INSURANCE_AUTHORIZATION")
 	}
 	return &rows[0], nil
+}
+
+// FindByIDForAccess is the HTTP by-ID gate: domain permission (middleware) + service scope when ServiceID is set.
+func (s *Service) FindByIDForAccess(id uint, a Access) (*Response, error) {
+	item, err := s.FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.assertCanAccessAuthorization(&item.InsuranceAuthorization, a); err != nil {
+		return nil, err
+	}
+	return item, nil
 }
 
 func (s *Service) FindAuthorizationForAct(patientID, coverageID uint, referenceType string, referenceID uint) (*ActMatch, error) {
@@ -594,12 +645,19 @@ func (s *Service) EligibleActs(patientID, coverageID uint, referenceType, search
 	return result, nil
 }
 
-func (s *Service) LinkAct(id uint, req ActRequest, userID uint) (*ActResponse, error) {
+func (s *Service) LinkAct(id uint, req ActRequest, userID uint, a Access) (*ActResponse, error) {
 	var result ActResponse
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var item InsuranceAuthorization
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
 			return coreerrors.NotFound("INSURANCE_AUTHORIZATION")
+		}
+		if err := assertServiceMembership(&item, unrestricted, ids); err != nil {
+			return err
 		}
 		if item.Status == StatusCancelled {
 			return coreerrors.Conflict("Une PEC annulée ne peut pas couvrir un nouvel acte")

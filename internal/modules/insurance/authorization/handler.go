@@ -1,12 +1,13 @@
 package authorization
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/core/response"
 	"github.com/lallene/medcore-his/backend/internal/core/validator"
-	"strconv"
 )
 
 type Handler struct{ service *Service }
@@ -22,6 +23,22 @@ func user(c *gin.Context) (uint, error) {
 		return 0, coreerrors.Unauthorized("Utilisateur JWT requis")
 	}
 	return u, nil
+}
+func access(c *gin.Context) (Access, bool) {
+	id, err := rbac.CurrentUserID(c)
+	if err != nil {
+		response.Error(c, err)
+		return Access{}, false
+	}
+	a := Access{UserID: id, Permissions: map[string]bool{}}
+	if p, ok := c.Get(rbac.ContextPermissions); ok {
+		if values, ok := p.([]string); ok {
+			for _, v := range values {
+				a.Permissions[v] = true
+			}
+		}
+	}
+	return a, true
 }
 func (h *Handler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -41,7 +58,11 @@ func (h *Handler) Find(c *gin.Context) {
 		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
 		return
 	}
-	result, e := h.service.FindByID(n)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	result, e := h.service.FindByIDForAccess(n, a)
 	if e != nil {
 		response.Error(c, e)
 		return
@@ -88,12 +109,16 @@ func (h *Handler) LinkAct(c *gin.Context) {
 		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	var req ActRequest
 	if e = validator.Bind(c, &req); e != nil {
 		response.Error(c, e)
 		return
 	}
-	result, e := h.service.LinkAct(n, req, u)
+	result, e := h.service.LinkAct(n, req, u, a)
 	if e != nil {
 		response.Error(c, e)
 		return
@@ -129,12 +154,16 @@ func (h *Handler) Update(c *gin.Context) {
 		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	var req UpdateRequest
 	if e = validator.Bind(c, &req); e != nil {
 		response.Error(c, e)
 		return
 	}
-	result, e := h.service.Update(n, req, u)
+	result, e := h.service.Update(n, req, u, a)
 	if e != nil {
 		response.Error(c, e)
 		return
@@ -152,12 +181,16 @@ func (h *Handler) Submit(c *gin.Context) {
 		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	var req SubmitRequest
 	if e = validator.Bind(c, &req); e != nil {
 		response.Error(c, e)
 		return
 	}
-	result, e := h.service.Submit(n, req, u)
+	result, e := h.service.Submit(n, req, u, a)
 	if e != nil {
 		response.Error(c, e)
 		return
@@ -175,7 +208,11 @@ func (h *Handler) Pending(c *gin.Context) {
 		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
 		return
 	}
-	result, e := h.service.MarkPending(n, u)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	result, e := h.service.MarkPending(n, u, a)
 	if e != nil {
 		response.Error(c, e)
 		return
@@ -193,12 +230,16 @@ func (h *Handler) Decide(c *gin.Context) {
 		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
 		return
 	}
+	a, ok := access(c)
+	if !ok {
+		return
+	}
 	var req DecisionRequest
 	if e = validator.Bind(c, &req); e != nil {
 		response.Error(c, e)
 		return
 	}
-	result, e := h.service.Decide(n, req, u)
+	result, e := h.service.Decide(n, req, u, a)
 	if e != nil {
 		response.Error(c, e)
 		return
@@ -216,7 +257,11 @@ func (h *Handler) Cancel(c *gin.Context) {
 		response.Error(c, coreerrors.BadRequest("ID PEC invalide"))
 		return
 	}
-	result, e := h.service.Cancel(n, u)
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	result, e := h.service.Cancel(n, u, a)
 	if e != nil {
 		response.Error(c, e)
 		return

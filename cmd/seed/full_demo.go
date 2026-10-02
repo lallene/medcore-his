@@ -696,13 +696,14 @@ func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service
 				if err != nil {
 					log.Fatal(err)
 				}
-				if _, err = authorizationService.Submit(created.ID, authorization.SubmitRequest{ExternalReference: "DEMO-PEC-LOT13B"}, user); err != nil {
+				authAccess := authorization.UnrestrictedAccess(user)
+				if _, err = authorizationService.Submit(created.ID, authorization.SubmitRequest{ExternalReference: "DEMO-PEC-LOT13B"}, user, authAccess); err != nil {
 					log.Fatal(err)
 				}
-				if _, err = authorizationService.MarkPending(created.ID, user); err != nil {
+				if _, err = authorizationService.MarkPending(created.ID, user, authAccess); err != nil {
 					log.Fatal(err)
 				}
-				if _, err = authorizationService.Decide(created.ID, authorization.DecisionRequest{Status: authorization.StatusApproved, ExternalReference: "DEMO-PEC-LOT13B", ExternalDecisionDate: time.Now().Format("2006-01-02"), ApprovedRate: approvedRate}, user); err != nil {
+				if _, err = authorizationService.Decide(created.ID, authorization.DecisionRequest{Status: authorization.StatusApproved, ExternalReference: "DEMO-PEC-LOT13B", ExternalDecisionDate: time.Now().Format("2006-01-02"), ApprovedRate: approvedRate}, user, authAccess); err != nil {
 					log.Fatal(err)
 				}
 			}
@@ -952,7 +953,7 @@ func seedDemoPharmacyWorkflow(db *gorm.DB, user uint, consultation *consultation
 	if _, err := service.CreateDispensation(pharmacy.CreateDispensationRequest{PresentationID: presentation.ID, PrescriptionID: &prescription.ID, PatientID: &patientID, Quantity: 8, Notes: "Première délivrance partielle DEMO", IdempotencyKey: "DEMO-PHARMACY-PARTIAL-8"}, user); err != nil {
 		log.Fatal(err)
 	}
-	partial, err := service.GetPrescriptionDispensationStatus(prescription.ID)
+	partial, err := service.GetPrescriptionDispensationStatus(prescription.ID, pharmacy.UnrestrictedAccess(user))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -964,7 +965,7 @@ func seedDemoPharmacyWorkflow(db *gorm.DB, user uint, consultation *consultation
 	if _, err := service.CreateDispensation(pharmacy.CreateDispensationRequest{PresentationID: presentation.ID, PrescriptionID: &prescription.ID, PatientID: &patientID, Quantity: 4, Notes: "Délivrance du reliquat DEMO", IdempotencyKey: "DEMO-PHARMACY-REMAINDER-4"}, user); err != nil {
 		log.Fatal(err)
 	}
-	completed, err := service.GetPrescriptionDispensationStatus(prescription.ID)
+	completed, err := service.GetPrescriptionDispensationStatus(prescription.ID, pharmacy.UnrestrictedAccess(user))
 	if err != nil {
 		log.Fatal(err)
 	}

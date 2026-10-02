@@ -20,7 +20,7 @@ import (
 
 type authorizationConsultation struct {
 	ID, PatientID               uint
-	ServiceID                   *uint  `gorm:"index"`
+	ServiceID                   *uint `gorm:"index"`
 	Service, DoctorName, Status string
 	CreatedAt                   time.Time
 }
@@ -167,7 +167,7 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 	if err != nil || none.MatchType != "NONE" {
 		t.Fatalf("none=%#v err=%v", none, err)
 	}
-	linked, err := s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: imaging.ID}, 72)
+	linked, err := s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: imaging.ID}, 72, UnrestrictedAccess(72))
 	if err != nil || linked.CreatedBy != 72 || linked.ReferenceLabel != exam.Name {
 		t.Fatalf("linked=%#v err=%v", linked, err)
 	}
@@ -175,13 +175,13 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 	if err != nil || covered.MatchType != "COVERED" || covered.Authorization.ID != primary.ID || len(covered.Authorization.CoveredActs) != 1 {
 		t.Fatalf("covered=%#v err=%v", covered, err)
 	}
-	again, err := s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: imaging.ID}, 99)
+	again, err := s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: imaging.ID}, 99, UnrestrictedAccess(99))
 	if err != nil || again.ID != linked.ID {
 		t.Fatalf("idempotent=%#v err=%v", again, err)
 	}
 	foreignImaging := authorizationImagingOrder{PatientID: f.other.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID}
 	db.Create(&foreignImaging)
-	if _, err = s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: foreignImaging.ID}, 72); !IsConflict(err) {
+	if _, err = s.LinkAct(primary.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: foreignImaging.ID}, 72, UnrestrictedAccess(72)); !IsConflict(err) {
 		t.Fatalf("foreign act=%v", err)
 	}
 	var events []medical_records.MedicalTimelineEvent
@@ -213,7 +213,7 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 		wg.Add(1)
 		go func(candidate uint) {
 			defer wg.Done()
-			_, linkErr := s.LinkAct(candidate, ActRequest{ReferenceType: "IMAGING", ReferenceID: concurrentImaging.ID}, 72)
+			_, linkErr := s.LinkAct(candidate, ActRequest{ReferenceType: "IMAGING", ReferenceID: concurrentImaging.ID}, 72, UnrestrictedAccess(72))
 			results <- linkErr
 		}(authorizationID)
 	}
@@ -345,23 +345,23 @@ func TestAuthorizationWorkflowCoverageSeparationJWTAndTimeline(t *testing.T) {
 	if _, e = s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: f.act.ID, RequestedAmount: &amount}, 41); !IsConflict(e) {
 		t.Fatalf("duplicate=%v", e)
 	}
-	submitted, e := s.Submit(created.ID, SubmitRequest{}, 42)
+	submitted, e := s.Submit(created.ID, SubmitRequest{}, 42, UnrestrictedAccess(42))
 	if e != nil || submitted.SubmittedBy == nil || *submitted.SubmittedBy != 42 {
 		t.Fatalf("submitted=%#v %v", submitted, e)
 	}
-	pending, e := s.MarkPending(created.ID, 42)
+	pending, e := s.MarkPending(created.ID, 42, UnrestrictedAccess(42))
 	if e != nil || pending.Status != StatusPending {
 		t.Fatalf("pending=%#v %v", pending, e)
 	}
 	rate := 70.0
-	decided, e := s.Decide(created.ID, DecisionRequest{Status: StatusApproved, ExternalReference: "DEMO-ASSUR-000001", ExternalDecisionDate: "2026-08-11", ApprovedRate: &rate}, 43)
+	decided, e := s.Decide(created.ID, DecisionRequest{Status: StatusApproved, ExternalReference: "DEMO-ASSUR-000001", ExternalDecisionDate: "2026-08-11", ApprovedRate: &rate}, 43, UnrestrictedAccess(43))
 	if e != nil {
 		t.Fatal(e)
 	}
 	if *decided.InsuranceAmount != 35000 || *decided.PatientAmount != 15000 || *decided.ApprovedRate != 70 || decided.ContractRate != 80 || decided.DecidedBy == nil || *decided.DecidedBy != 43 {
 		t.Fatalf("decision=%#v", decided)
 	}
-	if _, e = s.Decide(created.ID, DecisionRequest{Status: StatusRejected, ExternalReference: "X", ExternalDecisionDate: "2026-08-11", RejectionReason: "X"}, 44); !IsConflict(e) {
+	if _, e = s.Decide(created.ID, DecisionRequest{Status: StatusRejected, ExternalReference: "X", ExternalDecisionDate: "2026-08-11", RejectionReason: "X"}, 44, UnrestrictedAccess(44)); !IsConflict(e) {
 		t.Fatalf("final mutation=%v", e)
 	}
 	var events []medical_records.MedicalTimelineEvent
@@ -395,7 +395,7 @@ func TestConcurrentFinalDecisionProducesOneWinner(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.Submit(item.ID, SubmitRequest{}, 1); e != nil {
+	if _, e = s.Submit(item.ID, SubmitRequest{}, 1, UnrestrictedAccess(1)); e != nil {
 		t.Fatal(e)
 	}
 	rate := 50.0
@@ -405,7 +405,7 @@ func TestConcurrentFinalDecisionProducesOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func(user uint) {
 			defer wg.Done()
-			_, e := s.Decide(item.ID, DecisionRequest{Status: StatusApproved, ExternalReference: fmt.Sprintf("EXT-%d", user), ExternalDecisionDate: "2026-08-11", ApprovedRate: &rate}, user)
+			_, e := s.Decide(item.ID, DecisionRequest{Status: StatusApproved, ExternalReference: fmt.Sprintf("EXT-%d", user), ExternalDecisionDate: "2026-08-11", ApprovedRate: &rate}, user, UnrestrictedAccess(user))
 			results <- e
 		}(uint(i + 2))
 	}

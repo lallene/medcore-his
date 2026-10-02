@@ -100,23 +100,35 @@ func (s *Service) Create(req CreateRequest, authorID uint) (*Hospitalization, bo
 	return item, true, err
 }
 
-func (s *Service) FindByID(id uint) (*Hospitalization, error) {
-	item, err := s.repo.FindByID(id)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, coreerrors.NotFound("HOSPITALIZATION")
-	}
-	return item, err
+func (s *Service) FindByID(id uint, a Access) (*Hospitalization, error) {
+	return s.loadHospitalizationForAccess(id, a)
 }
-func (s *Service) FindByConsultation(id uint) (*Hospitalization, error) {
+func (s *Service) FindByConsultation(id uint, a Access) (*Hospitalization, error) {
 	item, err := s.repo.FindByConsultation(id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, coreerrors.NotFound("HOSPITALIZATION")
 	}
-	return item, err
+	if err != nil {
+		return nil, err
+	}
+	if err := s.assertCanAccessHospitalization(item, a); err != nil {
+		return nil, err
+	}
+	return item, nil
 }
-func (s *Service) List(filter ListFilter) (*ListResult, error) { return s.repo.List(filter) }
+func (s *Service) List(filter ListFilter, a Access) (*ListResult, error) {
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
+	}
+	if !unrestricted {
+		filter.ServiceScopeActive = true
+		filter.AssignedServiceIDs = ids
+	}
+	return s.repo.List(filter)
+}
 
-func (s *Service) Admit(id uint, req AdmitRequest, authorID uint) (*Hospitalization, error) {
+func (s *Service) Admit(id uint, req AdmitRequest, authorID uint, a Access) (*Hospitalization, error) {
 	at, err := parseOptionalDate(req.AdmittedAt)
 	if err != nil {
 		return nil, err
@@ -124,6 +136,10 @@ func (s *Service) Admit(id uint, req AdmitRequest, authorID uint) (*Hospitalizat
 	if at == nil {
 		now := time.Now()
 		at = &now
+	}
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return nil, err
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// Lock order (LOT28D): patient → hospitalization → bed → timeline.
@@ -142,6 +158,9 @@ func (s *Service) Admit(id uint, req AdmitRequest, authorID uint) (*Hospitalizat
 			return coreerrors.NotFound("HOSPITALIZATION")
 		}
 		if e != nil {
+			return e
+		}
+		if e := assertHospServiceMembership(item, unrestricted, ids); e != nil {
 			return e
 		}
 		if item.Status != StatusPlanned {
@@ -173,7 +192,7 @@ func (s *Service) Admit(id uint, req AdmitRequest, authorID uint) (*Hospitalizat
 	}
 	return s.repo.FindByID(id)
 }
-func (s *Service) Discharge(id uint, req DischargeRequest, authorID uint) (*Hospitalization, error) {
+func (s *Service) Discharge(id uint, req DischargeRequest, authorID uint, a Access) (*Hospitalization, error) {
 	at, err := parseOptionalDate(req.DischargedAt)
 	if err != nil {
 		return nil, err
@@ -182,14 +201,14 @@ func (s *Service) Discharge(id uint, req DischargeRequest, authorID uint) (*Hosp
 		now := time.Now()
 		at = &now
 	}
-	current, err := s.FindByID(id)
+	current, err := s.FindByID(id, a)
 	if err != nil {
 		return nil, err
 	}
 	if current.AdmittedAt != nil && at.Before(*current.AdmittedAt) {
 		return nil, coreerrors.BadRequest("la sortie ne peut pas précéder l'admission")
 	}
-	err = s.transition(id, StatusAdmitted, StatusDischarged, authorID, "hospitalization_discharged", "Sortie du patient enregistrée", *at, func(item *Hospitalization) {
+	err = s.transition(id, StatusAdmitted, StatusDischarged, authorID, a, "hospitalization_discharged", "Sortie du patient enregistrée", *at, func(item *Hospitalization) {
 		item.DischargedAt = at
 		item.DischargeDiagnosis = strings.TrimSpace(req.DischargeDiagnosis)
 		item.DischargeSummary = strings.TrimSpace(req.DischargeSummary)
@@ -199,22 +218,29 @@ func (s *Service) Discharge(id uint, req DischargeRequest, authorID uint) (*Hosp
 	}
 	return s.repo.FindByID(id)
 }
-func (s *Service) Cancel(id uint, authorID uint) (*Hospitalization, error) {
+func (s *Service) Cancel(id uint, authorID uint, a Access) (*Hospitalization, error) {
 	now := time.Now()
-	err := s.transition(id, StatusPlanned, StatusCancelled, authorID, "hospitalization_cancelled", "Hospitalisation annulée", now, func(*Hospitalization) {})
+	err := s.transition(id, StatusPlanned, StatusCancelled, authorID, a, "hospitalization_cancelled", "Hospitalisation annulée", now, func(*Hospitalization) {})
 	if err != nil {
 		return nil, err
 	}
 	return s.repo.FindByID(id)
 }
 
-func (s *Service) transition(id uint, from, to string, authorID uint, eventType, title string, eventDate time.Time, mutate func(*Hospitalization)) error {
+func (s *Service) transition(id uint, from, to string, authorID uint, a Access, eventType, title string, eventDate time.Time, mutate func(*Hospitalization)) error {
+	unrestricted, ids, err := s.assignedServiceIDs(a)
+	if err != nil {
+		return err
+	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		item, err := lockByID(tx, id)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return coreerrors.NotFound("HOSPITALIZATION")
 		}
 		if err != nil {
+			return err
+		}
+		if err := assertHospServiceMembership(item, unrestricted, ids); err != nil {
 			return err
 		}
 		if item.Status != from {

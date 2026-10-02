@@ -55,7 +55,7 @@ func TestPostgresLOT28DActiveAdmissionInvariant(t *testing.T) {
 	svc, id, patientID := planStay(t, db, "H01")
 
 	// H01 PLANNED → ADMITTED
-	out, err := svc.Admit(id, AdmitRequest{}, 7)
+	out, err := svc.Admit(id, AdmitRequest{}, 7, UnrestrictedAccess(7))
 	if err != nil || out.Status != StatusAdmitted || out.AdmittedAt == nil {
 		t.Fatalf("H01: %#v err=%v", out, err)
 	}
@@ -68,16 +68,16 @@ func TestPostgresLOT28DActiveAdmissionInvariant(t *testing.T) {
 	// H05 multiple PLANNED allowed while one ADMITTED
 	otherPlan := secondPlanSamePatient(t, db, patientID, "H05")
 	var planned *Hospitalization
-	planned, err = svc.FindByID(otherPlan)
+	planned, err = svc.FindByID(otherPlan, UnrestrictedAccess(1))
 	if err != nil || planned.Status != StatusPlanned {
 		t.Fatalf("H05 planned: %#v err=%v", planned, err)
 	}
 
 	// H02 sibling ADMITTED → Conflict
-	if _, err = svc.Admit(otherPlan, AdmitRequest{}, 8); !isHospConflict(err) {
+	if _, err = svc.Admit(otherPlan, AdmitRequest{}, 8, UnrestrictedAccess(8)); !isHospConflict(err) {
 		t.Fatalf("H02 want conflict got %v", err)
 	}
-	if planned, _ = svc.FindByID(otherPlan); planned.Status != StatusPlanned {
+	if planned, _ = svc.FindByID(otherPlan, UnrestrictedAccess(1)); planned.Status != StatusPlanned {
 		t.Fatalf("H02 loser status=%s", planned.Status)
 	}
 
@@ -100,7 +100,7 @@ func TestPostgresLOT28DActiveAdmissionInvariant(t *testing.T) {
 	}
 
 	// H10/H18 discharge
-	dis, err := svc.Discharge(id, DischargeRequest{DischargeSummary: "ok"}, 9)
+	dis, err := svc.Discharge(id, DischargeRequest{DischargeSummary: "ok"}, 9, UnrestrictedAccess(9))
 	if err != nil || dis.Status != StatusDischarged || dis.DischargedAt == nil {
 		t.Fatalf("H10: %#v err=%v", dis, err)
 	}
@@ -111,12 +111,12 @@ func TestPostgresLOT28DActiveAdmissionInvariant(t *testing.T) {
 	}
 
 	// H12 DISCHARGED cannot Admit
-	if _, err = svc.Admit(id, AdmitRequest{}, 1); !isHospConflict(err) {
+	if _, err = svc.Admit(id, AdmitRequest{}, 1, UnrestrictedAccess(1)); !isHospConflict(err) {
 		t.Fatalf("H12 want conflict got %v", err)
 	}
 
 	// After discharge, sibling may admit (H02 reverse)
-	if _, err = svc.Admit(otherPlan, AdmitRequest{}, 1); err != nil {
+	if _, err = svc.Admit(otherPlan, AdmitRequest{}, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatalf("admit after sibling discharge: %v", err)
 	}
 }
@@ -125,10 +125,10 @@ func TestPostgresLOT28DDifferentPatientsBothAdmitted(t *testing.T) {
 	db := hospitalizationDB(t)
 	svcA, idA, _ := planStay(t, db, "H06A")
 	svcB, idB, _ := planStay(t, db, "H06B")
-	if _, err := svcA.Admit(idA, AdmitRequest{}, 1); err != nil {
+	if _, err := svcA.Admit(idA, AdmitRequest{}, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svcB.Admit(idB, AdmitRequest{}, 1); err != nil {
+	if _, err := svcB.Admit(idB, AdmitRequest{}, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatal(err)
 	}
 	var n int64
@@ -141,7 +141,7 @@ func TestPostgresLOT28DDifferentPatientsBothAdmitted(t *testing.T) {
 func TestPostgresLOT28DCancelledCannotAdmit(t *testing.T) {
 	db := hospitalizationDB(t)
 	svc, id, _ := planStay(t, db, "H13")
-	if _, err := svc.Cancel(id, 1); err != nil {
+	if _, err := svc.Cancel(id, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatal(err)
 	}
 	var cancelEvents int64
@@ -149,7 +149,7 @@ func TestPostgresLOT28DCancelledCannotAdmit(t *testing.T) {
 	if cancelEvents != 1 {
 		t.Fatalf("H19 cancel timeline=%d", cancelEvents)
 	}
-	if _, err := svc.Admit(id, AdmitRequest{}, 1); !isHospConflict(err) {
+	if _, err := svc.Admit(id, AdmitRequest{}, 1, UnrestrictedAccess(1)); !isHospConflict(err) {
 		t.Fatalf("H13 want conflict got %v", err)
 	}
 }
@@ -163,7 +163,7 @@ func TestPostgresLOT28DSameRowAdmitRace(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func() {
 			defer wg.Done()
-			_, err := svc.Admit(id, AdmitRequest{}, 1)
+			_, err := svc.Admit(id, AdmitRequest{}, 1, UnrestrictedAccess(1))
 			errs <- err
 		}()
 	}
@@ -196,8 +196,16 @@ func TestPostgresLOT28DTwoRowSamePatientAdmitRace(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	wg.Add(2)
-	go func() { defer wg.Done(); _, err := svc.Admit(idA, AdmitRequest{}, 1); errs <- err }()
-	go func() { defer wg.Done(); _, err := svc.Admit(idB, AdmitRequest{}, 1); errs <- err }()
+	go func() {
+		defer wg.Done()
+		_, err := svc.Admit(idA, AdmitRequest{}, 1, UnrestrictedAccess(1))
+		errs <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := svc.Admit(idB, AdmitRequest{}, 1, UnrestrictedAccess(1))
+		errs <- err
+	}()
 	wg.Wait()
 	close(errs)
 	var ok int
@@ -228,8 +236,12 @@ func TestPostgresLOT28DAdmitVsCancelRace(t *testing.T) {
 	}
 	out := make(chan res, 2)
 	wg.Add(2)
-	go func() { defer wg.Done(); _, err := svc.Admit(id, AdmitRequest{}, 1); out <- res{"admit", err} }()
-	go func() { defer wg.Done(); _, err := svc.Cancel(id, 1); out <- res{"cancel", err} }()
+	go func() {
+		defer wg.Done()
+		_, err := svc.Admit(id, AdmitRequest{}, 1, UnrestrictedAccess(1))
+		out <- res{"admit", err}
+	}()
+	go func() { defer wg.Done(); _, err := svc.Cancel(id, 1, UnrestrictedAccess(1)); out <- res{"cancel", err} }()
 	wg.Wait()
 	close(out)
 	var winners []string
@@ -243,7 +255,7 @@ func TestPostgresLOT28DAdmitVsCancelRace(t *testing.T) {
 	if len(winners) != 1 {
 		t.Fatalf("H09 winners=%v", winners)
 	}
-	item, _ := svc.FindByID(id)
+	item, _ := svc.FindByID(id, UnrestrictedAccess(1))
 	switch winners[0] {
 	case "admit":
 		if item.Status != StatusAdmitted {
@@ -259,7 +271,7 @@ func TestPostgresLOT28DAdmitVsCancelRace(t *testing.T) {
 func TestPostgresLOT28DConcurrentDischarge(t *testing.T) {
 	db := hospitalizationDB(t)
 	svc, id, _ := planStay(t, db, "H11")
-	if _, err := svc.Admit(id, AdmitRequest{}, 1); err != nil {
+	if _, err := svc.Admit(id, AdmitRequest{}, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
@@ -268,7 +280,7 @@ func TestPostgresLOT28DConcurrentDischarge(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func() {
 			defer wg.Done()
-			_, err := svc.Discharge(id, DischargeRequest{DischargeSummary: "x"}, 1)
+			_, err := svc.Discharge(id, DischargeRequest{DischargeSummary: "x"}, 1, UnrestrictedAccess(1))
 			errs <- err
 		}()
 	}
@@ -314,7 +326,7 @@ func TestPostgresLOT28DReleaseBedRequiresAdmitted(t *testing.T) {
 	if _, err = svc.ReleaseBed(id, 1); !isHospConflict(err) {
 		t.Fatalf("H14 planned release want conflict got %v", err)
 	}
-	if _, err = svc.Admit(id, AdmitRequest{}, 1); err != nil {
+	if _, err = svc.Admit(id, AdmitRequest{}, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = svc.ReleaseBed(id, 1); err != nil {
@@ -329,10 +341,10 @@ func TestPostgresLOT28DReleaseBedRequiresAdmitted(t *testing.T) {
 	if _, err = svc2.AssignBed(id2, bed2.ID, 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = svc2.Admit(id2, AdmitRequest{}, 1); err != nil {
+	if _, err = svc2.Admit(id2, AdmitRequest{}, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = svc2.Discharge(id2, DischargeRequest{DischargeSummary: "out"}, 1); err != nil {
+	if _, err = svc2.Discharge(id2, DischargeRequest{DischargeSummary: "out"}, 1, UnrestrictedAccess(1)); err != nil {
 		t.Fatal(err)
 	}
 	var active int64
@@ -374,8 +386,16 @@ func TestPostgresLOT28DFailedAdmitRaceNoOrphanBed(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	wg.Add(2)
-	go func() { defer wg.Done(); _, err := svc.Admit(idA, AdmitRequest{}, 1); errs <- err }()
-	go func() { defer wg.Done(); _, err := svc.Admit(idB, AdmitRequest{}, 1); errs <- err }()
+	go func() {
+		defer wg.Done()
+		_, err := svc.Admit(idA, AdmitRequest{}, 1, UnrestrictedAccess(1))
+		errs <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := svc.Admit(idB, AdmitRequest{}, 1, UnrestrictedAccess(1))
+		errs <- err
+	}()
 	wg.Wait()
 	close(errs)
 	for err := range errs {

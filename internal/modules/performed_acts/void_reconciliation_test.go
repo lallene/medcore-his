@@ -694,7 +694,7 @@ func TestPostgresConcurrentVoidVsDecide(t *testing.T) {
 		<-start
 		_, err := authSvc.Decide(authID, authorization.DecisionRequest{
 			Status: authorization.StatusApproved, ExternalReference: "RACE-DEC", ExternalDecisionDate: "2026-10-01", ApprovedRate: &rate,
-		}, 4)
+		}, 4, authorization.UnrestrictedAccess(4))
 		errs <- err
 	}()
 	close(start)

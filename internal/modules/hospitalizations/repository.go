@@ -30,6 +30,15 @@ func (r *Repository) FindByConsultation(id uint) (*Hospitalization, error) {
 
 func (r *Repository) List(filter ListFilter) (*ListResult, error) {
 	query := r.db.Model(&Hospitalization{})
+	if filter.ServiceScopeActive {
+		if len(filter.AssignedServiceIDs) == 0 {
+			return &ListResult{Data: []Hospitalization{}, Page: filter.Page, Limit: filter.Limit, Total: 0, TotalPages: 0}, nil
+		}
+		if filter.ServiceID != nil && !containsServiceID(filter.AssignedServiceIDs, *filter.ServiceID) {
+			return &ListResult{Data: []Hospitalization{}, Page: filter.Page, Limit: filter.Limit, Total: 0, TotalPages: 0}, nil
+		}
+		query = query.Where("service_id IN ?", filter.AssignedServiceIDs)
+	}
 	if filter.PatientID != nil {
 		query = query.Where("patient_id = ?", *filter.PatientID)
 	}

@@ -135,6 +135,7 @@ func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 
 		pharmacy.GET(
 			"/prescriptions/:id/dispensation-status",
+			rbac.Permission("pharmacy.dispensation.read"),
 			handler.GetPrescriptionDispensationStatus,
 		)
 

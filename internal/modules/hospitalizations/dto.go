@@ -27,6 +27,10 @@ type ListFilter struct {
 	Department  string
 	ServiceID   *uint
 	From, To    *time.Time
+	// AssignedServiceIDs, when non-nil, restricts rows to those service_ids (server-authoritative).
+	// Nil means unrestricted (*). Empty non-nil means fail-closed (no rows).
+	AssignedServiceIDs []uint
+	ServiceScopeActive bool
 }
 
 type ListResult struct {
