@@ -585,6 +585,11 @@ func (h *Handler) GenerateSickLeavePDF(c *gin.Context) {
 		return
 	}
 
+	if !consultation.SickLeaveRequired {
+		c.JSON(http.StatusNotFound, gin.H{"error": "fiche de repos maladie indisponible pour cette consultation"})
+		return
+	}
+
 	content, err := GenerateSickLeavePDF(consultation)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -615,6 +620,11 @@ func (h *Handler) GenerateExamRequestPDF(c *gin.Context) {
 	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "consultation introuvable"})
+		return
+	}
+
+	if len(consultation.Exams) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "demande d'examens indisponible pour cette consultation"})
 		return
 	}
 
@@ -655,6 +665,13 @@ func (h *Handler) GeneratePrescriptionPDF(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "consultation introuvable",
+		})
+		return
+	}
+
+	if len(consultation.Prescriptions) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "ordonnance indisponible pour cette consultation",
 		})
 		return
 	}
@@ -766,6 +783,11 @@ func (h *Handler) GenerateHospitalizationPDF(c *gin.Context) {
 	consultation, err := h.service.GetConsultation(uint(id), a)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "consultation introuvable"})
+		return
+	}
+
+	if !consultation.HospitalizationRequired {
+		c.JSON(http.StatusNotFound, gin.H{"error": "fiche d'hospitalisation indisponible pour cette consultation"})
 		return
 	}
 

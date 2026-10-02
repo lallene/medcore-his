@@ -351,6 +351,9 @@ func updateVitalSigns(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedica
 
 func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedicalRecordRequest) (bool, error) {
 	return applyCollection(tx, record.ID, req.Documents, &MedicalDocument{}, func(item MedicalDocumentRequest) (bool, error) {
+		if err := validateDocumentConsultationAssociation(tx, record.PatientID, item.ConsultationID); err != nil {
+			return false, err
+		}
 		updates := map[string]any{}
 		putNullableUint(updates, "consultation_id", item.ConsultationID)
 		putString(updates, "type", item.Type)
@@ -371,6 +374,29 @@ func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedical
 		applyDocument(&entity, item)
 		return true, tx.Create(&entity).Error
 	})
+}
+
+// validateDocumentConsultationAssociation enforces C1-03: optional consultation_id must
+// reference an existing consultation belonging to the same patient as the medical record.
+// Unknown and cross-patient IDs share the same invalid response (anti-enumeration).
+func validateDocumentConsultationAssociation(tx *gorm.DB, patientID uint, patch NullableUintPatch) error {
+	if !patch.Set || patch.Value == nil {
+		return nil
+	}
+	consultationID := *patch.Value
+	if consultationID == 0 {
+		return invalid("document", "consultation_id invalide")
+	}
+	var count int64
+	if err := tx.Table("consultations").
+		Where("id = ? AND patient_id = ?", consultationID, patientID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return invalid("document", "consultation_id invalide")
+	}
+	return nil
 }
 
 func applyCollection[T any](tx *gorm.DB, recordID uint, patch PatchCollection[T], model any, upsert func(T) (bool, error)) (bool, error) {

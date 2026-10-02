@@ -323,7 +323,14 @@ func (h *Handler) GetPatientMedicalSummary(c *gin.Context) {
 		return
 	}
 
-	summary, err := h.service.GetPatientMedicalSummary(uint(patientID))
+	var permissions []string
+	if raw, ok := c.Get(rbac.ContextPermissions); ok {
+		if values, ok := raw.([]string); ok {
+			permissions = values
+		}
+	}
+
+	summary, err := h.service.GetPatientMedicalSummary(uint(patientID), permissions)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

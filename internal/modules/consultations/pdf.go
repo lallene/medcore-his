@@ -106,6 +106,10 @@ func hasConsultationVitals(c *Consultation) bool {
 // ---------------------------------------------------------------------
 
 func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
+	if !c.SickLeaveRequired {
+		return nil, fmt.Errorf("sick leave not required")
+	}
+
 	// NB : le domaine "branding" fourni ne définit pas de
 	// branding.DocumentType dédié aux repos maladie. On construit donc
 	// une référence lisible à partir du numéro de consultation plutôt
@@ -123,13 +127,9 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 
 	drawModernSectionLabel(pdf, "Repos maladie")
 
-	if !c.SickLeaveRequired {
-		drawModernParagraph(pdf, "Aucun repos maladie n'a été prescrit pour cette consultation.")
-	} else {
-		drawModernFieldRow(pdf, "Durée du repos :", fmt.Sprintf("%d jour(s)", c.SickLeaveDays))
-		drawModernFieldRow(pdf, "Date de début :", formatDatePDF(c.SickLeaveStartDate))
-		drawModernFieldRow(pdf, "Date de fin :", formatDatePDF(c.SickLeaveEndDate))
-	}
+	drawModernFieldRow(pdf, "Durée du repos :", fmt.Sprintf("%d jour(s)", c.SickLeaveDays))
+	drawModernFieldRow(pdf, "Date de début :", formatDatePDF(c.SickLeaveStartDate))
+	drawModernFieldRow(pdf, "Date de fin :", formatDatePDF(c.SickLeaveEndDate))
 
 	drawModernSectionLabel(pdf, "Diagnostic")
 	drawModernParagraph(pdf, c.Diagnosis)
@@ -171,6 +171,10 @@ func GenerateSickLeavePDF(c *Consultation) ([]byte, error) {
 // ---------------------------------------------------------------------
 
 func GenerateExamRequestPDF(c *Consultation) ([]byte, error) {
+	if len(c.Exams) == 0 {
+		return nil, fmt.Errorf("exam request not available")
+	}
+
 	reference := branding.DocumentReference(
 		branding.DocumentTypeExamRequest,
 		c.ID,
@@ -270,6 +274,10 @@ func GenerateExamRequestPDF(c *Consultation) ([]byte, error) {
 // ---------------------------------------------------------------------
 
 func GeneratePrescriptionPDF(c *Consultation) ([]byte, error) {
+	if len(c.Prescriptions) == 0 {
+		return nil, fmt.Errorf("prescription not available")
+	}
+
 	reference := branding.DocumentReference(
 		branding.DocumentTypePrescription,
 		c.ID,
@@ -517,6 +525,10 @@ func GenerateConsultationReportPDF(c *Consultation) ([]byte, error) {
 // ---------------------------------------------------------------------
 
 func GenerateHospitalizationPDF(c *Consultation) ([]byte, error) {
+	if !c.HospitalizationRequired {
+		return nil, fmt.Errorf("hospitalization not required")
+	}
+
 	// Même remarque que pour GenerateSickLeavePDF : pas de
 	// branding.DocumentType dédié fourni pour ce type de document.
 	reference := branding.DocumentReference(

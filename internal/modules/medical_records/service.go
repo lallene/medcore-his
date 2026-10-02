@@ -30,7 +30,7 @@ type Service interface {
 	RecordConsultationStatusChanged(patientID uint, consultationID uint, oldStatus string, newStatus string, authorID uint) error
 	RecordExamRequested(patientID uint, consultationID uint, examName string, service string, authorID uint) error
 	RecordMedicationPrescribed(patientID uint, consultationID uint, medicationName string, dosage string, service string, authorID uint) error
-	GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error)
+	GetPatientMedicalSummary(patientID uint, permissions []string) (*PatientMedicalSummaryResponse, error)
 	RecordConsultationSpecialtyUpdated(patientID uint, consultationID uint, specialtyCode string, updatedBy uint) error
 	GetPatientSummary(
 		patientID uint,
@@ -507,7 +507,16 @@ func (s *service) RecordMedicationPrescribed(
 	)
 }
 
-func (s *service) GetPatientMedicalSummary(patientID uint) (*PatientMedicalSummaryResponse, error) {
+func canProjectConsultationDocuments(permissions []string) bool {
+	for _, p := range permissions {
+		if p == "*" || p == "consultations.read" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *service) GetPatientMedicalSummary(patientID uint, permissions []string) (*PatientMedicalSummaryResponse, error) {
 	record, err := s.GetOrCreateMedicalRecord(patientID)
 	if err != nil {
 		return nil, err
@@ -534,52 +543,56 @@ func (s *service) GetPatientMedicalSummary(patientID uint) (*PatientMedicalSumma
 		return nil, err
 	}
 
+	// C1-01: generated consultation PDF URLs require consultations.read (or "*").
+	// medical_records.read alone must not enumerate those URLs.
+	// Remaining debt (LOT28F): summary does not yet apply PDF service-scope filtering.
 	documents := make([]MedicalSummaryDocumentItem, 0)
+	if canProjectConsultationDocuments(permissions) {
+		for _, consultation := range recentConsultations {
+			base := "/api/consultations/" + fmt.Sprintf("%d", consultation.ID)
 
-	for _, consultation := range recentConsultations {
-		base := "/api/consultations/" + fmt.Sprintf("%d", consultation.ID)
-
-		documents = append(documents, MedicalSummaryDocumentItem{
-			ConsultationID: consultation.ID,
-			Type:           "report",
-			Label:          "Compte rendu de consultation",
-			URL:            base + "/report/pdf",
-		})
-
-		if consultation.HasPrescriptions {
 			documents = append(documents, MedicalSummaryDocumentItem{
 				ConsultationID: consultation.ID,
-				Type:           "prescription",
-				Label:          "Ordonnance",
-				URL:            base + "/prescription/pdf",
+				Type:           "report",
+				Label:          "Compte rendu de consultation",
+				URL:            base + "/report/pdf",
 			})
-		}
 
-		if consultation.HasExams {
-			documents = append(documents, MedicalSummaryDocumentItem{
-				ConsultationID: consultation.ID,
-				Type:           "exam_request",
-				Label:          "Demande / autorisation d'examens",
-				URL:            base + "/exam-request/pdf",
-			})
-		}
+			if consultation.HasPrescriptions {
+				documents = append(documents, MedicalSummaryDocumentItem{
+					ConsultationID: consultation.ID,
+					Type:           "prescription",
+					Label:          "Ordonnance",
+					URL:            base + "/prescription/pdf",
+				})
+			}
 
-		if consultation.SickLeaveRequired {
-			documents = append(documents, MedicalSummaryDocumentItem{
-				ConsultationID: consultation.ID,
-				Type:           "sick_leave",
-				Label:          "Fiche de repos maladie",
-				URL:            base + "/sick-leave/pdf",
-			})
-		}
+			if consultation.HasExams {
+				documents = append(documents, MedicalSummaryDocumentItem{
+					ConsultationID: consultation.ID,
+					Type:           "exam_request",
+					Label:          "Demande / autorisation d'examens",
+					URL:            base + "/exam-request/pdf",
+				})
+			}
 
-		if consultation.HospitalizationRequired {
-			documents = append(documents, MedicalSummaryDocumentItem{
-				ConsultationID: consultation.ID,
-				Type:           "hospitalization",
-				Label:          "Fiche d'hospitalisation",
-				URL:            base + "/hospitalization/pdf",
-			})
+			if consultation.SickLeaveRequired {
+				documents = append(documents, MedicalSummaryDocumentItem{
+					ConsultationID: consultation.ID,
+					Type:           "sick_leave",
+					Label:          "Fiche de repos maladie",
+					URL:            base + "/sick-leave/pdf",
+				})
+			}
+
+			if consultation.HospitalizationRequired {
+				documents = append(documents, MedicalSummaryDocumentItem{
+					ConsultationID: consultation.ID,
+					Type:           "hospitalization",
+					Label:          "Fiche d'hospitalisation",
+					URL:            base + "/hospitalization/pdf",
+				})
+			}
 		}
 	}
 
