@@ -293,7 +293,14 @@ func (h *Handler) ListTimelineEvents(c *gin.Context) {
 		return
 	}
 
-	events, err := h.service.ListTimelineEvents(uint(recordID))
+	var permissions []string
+	if raw, ok := c.Get(rbac.ContextPermissions); ok {
+		if values, ok := raw.([]string); ok {
+			permissions = values
+		}
+	}
+
+	events, err := h.service.ListTimelineEvents(uint(recordID), permissions)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),

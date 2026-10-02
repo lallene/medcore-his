@@ -18,7 +18,7 @@ type Service interface {
 	AddAllergy(recordID uint, req CreateAllergyRequest, authorID uint) (*Allergy, error)
 	AddMedicalHistory(recordID uint, req CreateMedicalHistoryRequest, authorID uint) (*MedicalHistory, error)
 	AddVitalSign(recordID uint, req CreateVitalSignRequest, authorID uint) (*VitalSign, error)
-	ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error)
+	ListTimelineEvents(recordID uint, permissions []string) ([]MedicalTimelineEvent, error)
 	RecordConsultationSOAPUpdated(
 		patientID uint,
 		consultationID uint,
@@ -351,12 +351,17 @@ func formatFloatValue(value *float64, unit string) string {
 	return fmt.Sprintf("%.1f%s", *value, unit)
 }
 
-func (s *service) ListTimelineEvents(recordID uint) ([]MedicalTimelineEvent, error) {
+func (s *service) ListTimelineEvents(recordID uint, permissions []string) ([]MedicalTimelineEvent, error) {
 	if _, err := s.repo.GetMedicalRecordByID(recordID); err != nil {
 		return nil, err
 	}
 
-	return s.repo.ListTimelineEvents(recordID)
+	events, err := s.repo.ListTimelineEvents(recordID)
+	if err != nil {
+		return nil, err
+	}
+	// LOT28E-B2-B: AUTH-C read projection (stored rows unchanged).
+	return ProjectTimelineEventsForCaller(events, permissions), nil
 }
 
 func (s *service) RecordConsultationCreated(
@@ -533,10 +538,11 @@ func (s *service) GetPatientMedicalSummary(patientID uint, permissions []string)
 		return nil, err
 	}
 
-	timeline, err := s.repo.ListRecentTimelineEvents(record.ID, 20)
+	timelineRaw, err := s.repo.ListRecentTimelineEvents(record.ID, 20)
 	if err != nil {
 		return nil, err
 	}
+	timeline := ProjectTimelineEventsForCaller(timelineRaw, permissions)
 
 	recentConsultations, err := s.repo.ListRecentConsultations(patientID, 10)
 	if err != nil {
