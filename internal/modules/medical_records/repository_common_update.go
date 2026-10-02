@@ -350,36 +350,79 @@ func updateVitalSigns(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedica
 }
 
 func updateDocuments(tx *gorm.DB, record *MedicalRecord, req UpdateCommonMedicalRecordRequest) (bool, error) {
-	return applyCollection(tx, record.ID, req.Documents, &MedicalDocument{}, func(item MedicalDocumentRequest) (bool, error) {
-		create := item.ID == 0
-		normalizeDocumentLabelType(&item)
-		// Order: association (C1) → metadata bounds → external file_url trust (C2-A).
-		if err := validateDocumentConsultationAssociation(tx, record.PatientID, item.ConsultationID); err != nil {
+	patch := req.Documents
+	if !patch.Present {
+		return false, nil
+	}
+
+	upsertIDs := map[uint]struct{}{}
+	for _, item := range patch.Upsert {
+		if item.ID != 0 {
+			upsertIDs[item.ID] = struct{}{}
+		}
+	}
+
+	// LOT28E-C2-B: delete_ids archive persisted MedicalDocuments (no hard delete).
+	changed, err := archiveMedicalDocuments(tx, record.ID, req.authorID, patch.DeleteIDs, upsertIDs)
+	if err != nil {
+		return false, err
+	}
+
+	for _, item := range patch.Upsert {
+		itemChanged, err := upsertMedicalDocument(tx, record, req, item)
+		if err != nil {
 			return false, err
 		}
-		if err := validateDocumentLabelTypeWrite(item, create); err != nil {
+		changed = changed || itemChanged
+	}
+	return changed, nil
+}
+
+func upsertMedicalDocument(
+	tx *gorm.DB,
+	record *MedicalRecord,
+	req UpdateCommonMedicalRecordRequest,
+	item MedicalDocumentRequest,
+) (bool, error) {
+	create := item.ID == 0
+	normalizeDocumentLabelType(&item)
+	// Order: archived guard → association (C1) → metadata bounds → external file_url trust (C2-A).
+	if !create {
+		if err := rejectArchivedMedicalDocumentMutation(tx, record.ID, item.ID); err != nil {
 			return false, err
 		}
-		if err := validateDocumentFileURLWrite(item, create); err != nil {
-			return false, err
-		}
-		updates := map[string]any{}
-		putNullableUint(updates, "consultation_id", item.ConsultationID)
-		putString(updates, "type", item.Type)
-		putString(updates, "label", item.Label)
-		putNullableTime(updates, "document_date", item.DocumentDate)
-		putString(updates, "file_name", item.FileName)
-		putString(updates, "mime_type", item.MimeType)
-		putString(updates, "file_url", item.FileURL)
-		putString(updates, "description", item.Description)
-		if !create {
-			// AUTH-01b: preserve original UploadedBy; modifier is attributable via dossier timeline.
-			return updateChild(tx, &MedicalDocument{}, record.ID, item.ID, updates)
-		}
-		entity := MedicalDocument{MedicalRecordID: record.ID, PatientID: record.PatientID, Label: *item.Label, Type: *item.Type, UploadedBy: req.authorID}
-		applyDocument(&entity, item)
-		return true, tx.Create(&entity).Error
-	})
+	}
+	if err := validateDocumentConsultationAssociation(tx, record.PatientID, item.ConsultationID); err != nil {
+		return false, err
+	}
+	if err := validateDocumentLabelTypeWrite(item, create); err != nil {
+		return false, err
+	}
+	if err := validateDocumentFileURLWrite(item, create); err != nil {
+		return false, err
+	}
+	updates := map[string]any{}
+	putNullableUint(updates, "consultation_id", item.ConsultationID)
+	putString(updates, "type", item.Type)
+	putString(updates, "label", item.Label)
+	putNullableTime(updates, "document_date", item.DocumentDate)
+	putString(updates, "file_name", item.FileName)
+	putString(updates, "mime_type", item.MimeType)
+	putString(updates, "file_url", item.FileURL)
+	putString(updates, "description", item.Description)
+	if !create {
+		// AUTH-01b: preserve original UploadedBy; modifier is attributable via dossier timeline.
+		return updateChild(tx, &MedicalDocument{}, record.ID, item.ID, updates)
+	}
+	entity := MedicalDocument{
+		MedicalRecordID: record.ID,
+		PatientID:       record.PatientID,
+		Label:           *item.Label,
+		Type:            *item.Type,
+		UploadedBy:      req.authorID,
+	}
+	applyDocument(&entity, item)
+	return true, tx.Create(&entity).Error
 }
 
 // validateDocumentConsultationAssociation enforces C1-03: optional consultation_id must

@@ -227,7 +227,8 @@ func (r *repository) GetCommonMedicalRecord(
 			return db.Order("measured_at DESC")
 		}).
 		Preload("Documents", func(db *gorm.DB) *gorm.DB {
-			return db.Order("created_at DESC")
+			// LOT28E-C2-B: ordinary CMR reads expose ACTIVE documents only.
+			return db.Where("archived_at IS NULL").Order("created_at DESC")
 		}).
 		First(&record, recordID).
 		Error
@@ -415,6 +416,7 @@ func (r *repository) GetPatientSummaryStatistics(
 				SELECT COUNT(*)
 				FROM medical_documents
 				WHERE medical_record_id = ?
+					AND archived_at IS NULL
 			) AS documents
 	`,
 		patientID,

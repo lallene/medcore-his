@@ -287,7 +287,12 @@ type MedicalDocument struct {
 	Description  string     `json:"description" gorm:"type:text"`
 	DocumentDate *time.Time `json:"document_date"`
 
-	UploadedBy uint      `json:"uploaded_by"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	UploadedBy uint `json:"uploaded_by"`
+
+	// LOT28E-C2-B lifecycle: active iff ArchivedAt == nil. No soft-delete / versions.
+	ArchivedAt *time.Time `json:"archived_at"`
+	ArchivedBy *uint      `json:"archived_by"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
