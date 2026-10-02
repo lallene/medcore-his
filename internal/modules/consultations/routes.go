@@ -40,5 +40,6 @@ func RegisterRoutesWithHandler(router *gin.RouterGroup, handler *Handler) {
 	}
 
 	router.GET("/patients/:id/consultations", rbac.Permission("consultations.read"), handler.GetPatientConsultations)
-	router.GET("/patients/:id/360", rbac.Permission("patients.360.read"), handler.GetPatient360)
+	// LOT28E-A: legacy GET /patients/:id/360 removed — patients.360.read is shell-only
+	// (Model B composition). Clinical aggregates must use canonical module routes.
 }

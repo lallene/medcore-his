@@ -781,34 +781,6 @@ func (h *Handler) GenerateHospitalizationPDF(c *gin.Context) {
 	c.Data(http.StatusOK, "application/pdf", content)
 }
 
-// GetPatient360 godoc
-// @Summary Vue Patient 360
-// @Tags Patient 360
-// @Security BearerAuth
-// @Produce json
-// @Param id path int true "ID patient"
-// @Success 200 {object} Patient360Response
-// @Router /patients/{id}/360 [get]
-func (h *Handler) GetPatient360(c *gin.Context) {
-	patientID, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "identifiant patient invalide",
-		})
-		return
-	}
-
-	result, err := h.service.GetPatient360(uint(patientID))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, result)
-}
-
 // GetPhysicalExamAreas godoc
 //
 //	@Summary		Liste des zones d'examen physique

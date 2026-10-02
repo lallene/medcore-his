@@ -132,19 +132,6 @@ type UpdateConsultationRequest struct {
 	SickLeaveDays     *int  `json:"sickLeaveDays"`
 }
 
-type Patient360Response struct {
-	PatientID     uint                  `json:"patientId"`
-	Consultations []Consultation        `json:"consultations"`
-	Documents     []PatientDocumentItem `json:"documents"`
-}
-
-type PatientDocumentItem struct {
-	ConsultationID uint   `json:"consultationId"`
-	Type           string `json:"type"`
-	Label          string `json:"label"`
-	URL            string `json:"url"`
-}
-
 type ConsultationPrescriptionRequest struct {
 	PresentationID uint `json:"presentationId" binding:"required"`
 

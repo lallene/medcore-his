@@ -1197,9 +1197,14 @@ func (s *Service) GetByConsultationID(consultationID uint, a Access) (*TicketDTO
 }
 
 // GetActiveTicketForPatient returns the active doctor-stage ticket for a patient, if any.
+// LOT28E-A Model B: queue.* readers receive the full enriched ticket (service-scoped).
+// patients.360.read alone receives a MINIMAL active-care indicator (no vitals, reason,
+// doctor identity, consultation id, or other queue clinical detail).
 func (s *Service) GetActiveTicketForPatient(patientID uint, a Access) (*TicketDTO, error) {
-	if !s.has(a, "queue.doctor.read") && !s.has(a, "queue.read.service") && !s.has(a, "queue.read.all") &&
-		!s.has(a, "patients.360.read") && !s.has(a, "*") {
+	hasQueue := s.has(a, "queue.doctor.read") || s.has(a, "queue.read.service") ||
+		s.has(a, "queue.read.all") || s.has(a, "*")
+	has360 := s.has(a, "patients.360.read") || s.has(a, "*")
+	if !hasQueue && !has360 {
 		return nil, coreerrors.Forbidden("Lecture file refusée")
 	}
 	var t Ticket
@@ -1210,11 +1215,30 @@ func (s *Service) GetActiveTicketForPatient(patientID uint, a Access) (*TicketDT
 	if err != nil {
 		return nil, coreerrors.NotFound("Ticket")
 	}
-	if err := s.assertCanAccessTicket(t, a); err != nil {
-		return nil, err
+	if hasQueue {
+		if err := s.assertCanAccessTicket(t, a); err != nil {
+			return nil, err
+		}
+		d := s.enrichTicket(t)
+		return &d, nil
 	}
-	d := s.enrichTicket(t)
-	return &d, nil
+	return s.minimalActiveCareIndicator(t), nil
+}
+
+// minimalActiveCareIndicator is the patients.360.read-only projection for Patient360.
+func (s *Service) minimalActiveCareIndicator(t Ticket) *TicketDTO {
+	d := &TicketDTO{
+		Ticket: Ticket{
+			ID:        t.ID,
+			PatientID: t.PatientID,
+			ServiceID: t.ServiceID,
+			Reference: t.Reference,
+			Stage:     t.Stage,
+			Status:    t.Status,
+		},
+	}
+	_ = s.db.Raw(`SELECT name FROM organization_services WHERE id=?`, t.ServiceID).Scan(&d.ServiceName)
+	return d
 }
 
 func (s *Service) Cancel(id uint, r CancelRequest, a Access) (*Ticket, error) {

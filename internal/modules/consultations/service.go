@@ -3,7 +3,6 @@ package consultations
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -805,77 +804,6 @@ func (s *Service) UpdateConsultation(id uint, req UpdateConsultationRequest, aut
 	return s.loadConsultationForAccess(id, access)
 }
 
-func (s *Service) GetPatient360(patientID uint) (*Patient360Response, error) {
-	consultations, err := s.repo.FindByPatientID(patientID, true, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	documents := make([]PatientDocumentItem, 0)
-
-	for _, consultation := range consultations {
-		base := "/api/consultations/" + fmt.Sprintf("%d", consultation.ID)
-
-		documents = append(documents,
-			PatientDocumentItem{
-				ConsultationID: consultation.ID,
-				Type:           "report",
-				Label:          "Compte rendu de consultation",
-				URL:            base + "/report/pdf",
-			},
-		)
-
-		if consultation.SickLeaveRequired {
-			documents = append(documents,
-				PatientDocumentItem{
-					ConsultationID: consultation.ID,
-					Type:           "sick_leave",
-					Label:          "Fiche de repos maladie",
-					URL:            base + "/sick-leave/pdf",
-				},
-			)
-		}
-
-		if len(consultation.Exams) > 0 {
-			documents = append(documents,
-				PatientDocumentItem{
-					ConsultationID: consultation.ID,
-					Type:           "exam_request",
-					Label:          "Demande / autorisation d'examens",
-					URL:            base + "/exam-request/pdf",
-				},
-			)
-		}
-
-		if len(consultation.Prescriptions) > 0 {
-			documents = append(documents,
-				PatientDocumentItem{
-					ConsultationID: consultation.ID,
-					Type:           "prescription",
-					Label:          "Ordonnance",
-					URL:            base + "/prescription/pdf",
-				},
-			)
-		}
-
-		if consultation.HospitalizationRequired {
-			documents = append(documents,
-				PatientDocumentItem{
-					ConsultationID: consultation.ID,
-					Type:           "hospitalization",
-					Label:          "Fiche d'hospitalisation",
-					URL:            base + "/hospitalization/pdf",
-				},
-			)
-		}
-	}
-
-	return &Patient360Response{
-		PatientID:     patientID,
-		Consultations: consultations,
-		Documents:     documents,
-	}, nil
-}
 func (s *Service) GetPhysicalExamAreas() ([]PhysicalExamArea, error) {
 	return s.repo.FindPhysicalExamAreas()
 }
