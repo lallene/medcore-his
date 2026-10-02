@@ -274,7 +274,14 @@ func (h *Handler) ListVitalSigns(c *gin.Context) {
 
 // ListTimelineEvents godoc
 // @Summary      Obtenir la chronologie médicale
-// @Description  Retourne tous les événements médicaux du patient dans l'ordre chronologique inverse.
+// @Description  Returns projected MedicalTimelineEvent rows for a medical record (event_date DESC).
+// @Description  RBAC: medical_records.read (shell patients.360.read is NOT sufficient).
+// @Description  Response is a bare JSON array. Projection is backend-authoritative (AUTH-B/AUTH-C):
+// @Description  without billing.read financial rows become billing_event; without insurance.authorization.read
+// @Description  insurance rows become insurance_event; without performed_acts.read PA rows keep event_type/event_date
+// @Description  and generic titles but clear description/reference_type/reference_id (empty string / null).
+// @Description  EventType and Category are open strings (extensible). EventDate is clinical occurrence time;
+// @Description  CreatedAt is persistence time. See docs/CLINICAL_TIMELINE.md for vocabulary and TX policies.
 // @Tags         Medical Records
 // @Produce      json
 // @Security     BearerAuth
@@ -282,6 +289,7 @@ func (h *Handler) ListVitalSigns(c *gin.Context) {
 // @Success      200       {array}   MedicalTimelineEvent
 // @Failure      400       {object}  map[string]interface{}
 // @Failure      401       {object}  map[string]interface{}
+// @Failure      403       {object}  map[string]interface{}
 // @Failure      500       {object}  map[string]interface{}
 // @Router       /medical-records/{recordId}/timeline [get]
 func (h *Handler) ListTimelineEvents(c *gin.Context) {
@@ -313,7 +321,9 @@ func (h *Handler) ListTimelineEvents(c *gin.Context) {
 
 // GetPatientMedicalSummary godoc
 // @Summary      Obtenir le résumé médical complet d'un patient
-// @Description  Retourne le dossier médical, les alertes, les allergies, les antécédents, les dernières constantes et la chronologie récente.
+// @Description  Returns medical record overview plus recent timeline (last 20), after the same
+// @Description  ProjectTimelineEventsForCaller rules as GET /medical-records/{recordId}/timeline.
+// @Description  RBAC: medical_records.read. See docs/CLINICAL_TIMELINE.md.
 // @Tags         Medical Records
 // @Produce      json
 // @Security     BearerAuth
@@ -321,6 +331,7 @@ func (h *Handler) ListTimelineEvents(c *gin.Context) {
 // @Success      200  {object}  PatientMedicalSummaryResponse
 // @Failure      400  {object}  map[string]interface{}
 // @Failure      401  {object}  map[string]interface{}
+// @Failure      403  {object}  map[string]interface{}
 // @Failure      500  {object}  map[string]interface{}
 // @Router       /patients/{id}/medical-summary [get]
 func (h *Handler) GetPatientMedicalSummary(c *gin.Context) {

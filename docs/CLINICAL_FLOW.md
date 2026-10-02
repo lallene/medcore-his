@@ -33,7 +33,7 @@ Consultation completed + Ticket COMPLETED (transaction)
 | Lien ticket ↔ consultation | patient_queue + consultations | — | `patient_queue_tickets.consultation_id` | Partiel (1-way) | Reverse lookup | **GET by-consultation, queueTicketId sur GET consultation** |
 | Handoff triage | vital_signs, allergies | Panel médecin | `Get`, worklist enrich | ✅ lecture | — | Réutilisé |
 | Workspace clinique | consultations | `/consultations/:id` | `GET/PUT/PATCH consultations` | ✅ | Bouton terminer mort | **Terminer prise en charge + barre contexte** |
-| Patient 360 | patients | `/patients/:id` | `GET patients/360` | ✅ | Pas d’indicateur file | **PatientActiveCareBanner** |
+| Patient 360 | patients | `/patients/:id` | Shell: `patients.360.read` (no aggregate `GET …/360`; domain APIs remain authoritative — see `CLINICAL_TIMELINE.md`) | ✅ | Pas d’indicateur file | **PatientActiveCareBanner** |
 | Décision médicale | consultation_soaps | SOAP tab | disposition SOAP | ✅ champ | Pas dans clôture | **CompleteRequest.disposition** |
 | Clôture | patient_queue + consultations | worklist + consultation | `POST complete` | Ticket seul | Consultation orpheline | **Clôture transactionnelle** |
 | RBAC | rbac | guards LOT 21 | middleware | ✅ | — | `queue.doctor.take`, `consultations.update` réutilisés |

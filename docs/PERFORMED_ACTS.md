@@ -152,8 +152,23 @@ clinical-reference PECs via SourceType/SourceID.
 
 Medication PEC remains prescription-based (`MEDICATION` → `consultation_prescriptions`).
 
+## LOT28E-B3 — Clinical timeline (PerformedAct)
+
+Successful **create** and **void** persist timeline events in the **same business transaction**:
+
+| Transition | event_type | EventDate | Description |
+|---|---|---|---|
+| Create | `performed_act_performed` | `PerformedAt` | ActLabel catalogue snapshot |
+| Void | `performed_act_voided` | `VoidedAt` | empty (no VoidReason) |
+
+Category `performed_act`, reference `PerformedAct` / PA id (when AUTH-B allows).
+Timeline insert failure rolls back the corresponding PA create/void.
+Requires an existing MedicalRecord (lazy GetOrCreate via `GET /patients/:id/medical-record`); PA does **not** auto-create MR.
+Pre-B3 PA rows may have no timeline events (no backfill). Full contract: `CLINICAL_TIMELINE.md`.
+
 ## API / RBAC
 
 - `GET/POST /api/performed-acts`, `GET /api/performed-acts/:id`, `POST /api/performed-acts/:id/void`
 - `performed_acts.read` / `performed_acts.create` / `performed_acts.void`
+- Timeline detail under `medical_records.read` + AUTH-B (`performed_acts.read` for ActLabel/refs)
 - Schema owned by `cmd/migrate` only

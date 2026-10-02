@@ -107,26 +107,36 @@ type VitalSign struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+// MedicalTimelineEvent is one clinical timeline row as returned by timeline/summary APIs.
+// EventType and Category are open strings (module vocabulary evolves; not a closed enum).
+// After AUTH projection, Description/ReferenceType may be empty strings and ReferenceID null.
+// DepartmentID / ReferenceID serialize as JSON null when unset. See docs/CLINICAL_TIMELINE.md.
 type MedicalTimelineEvent struct {
 	ID              uint `json:"id" gorm:"primaryKey"`
 	MedicalRecordID uint `json:"medical_record_id" gorm:"not null;index"`
 	PatientID       uint `json:"patient_id" gorm:"not null;index"`
 
-	EventType string `json:"event_type" gorm:"not null;index"`
-	Category  string `json:"category" gorm:"not null;index"`
+	// EventType is an open string (e.g. performed_act_performed, document_added, billing_event).
+	EventType string `json:"event_type" gorm:"not null;index" example:"performed_act_performed"`
+	// Category is an open string (e.g. performed_act, document, billing).
+	Category string `json:"category" gorm:"not null;index" example:"performed_act"`
 
-	Title       string `json:"title" gorm:"not null"`
-	Description string `json:"description"`
+	Title       string `json:"title" gorm:"not null" example:"Acte réalisé"`
+	Description string `json:"description" example:""`
 
-	DepartmentID *uint `json:"department_id" gorm:"index"`
+	// DepartmentID is JSON null when unset.
+	DepartmentID *uint `json:"department_id" gorm:"index" extensions:"x-nullable"`
 
-	ReferenceType string `json:"reference_type" gorm:"index"`
-	ReferenceID   *uint  `json:"reference_id" gorm:"index"`
+	ReferenceType string `json:"reference_type" gorm:"index" example:"PerformedAct"`
+	// ReferenceID is JSON null when unset or redacted by AUTH projection.
+	ReferenceID *uint `json:"reference_id" gorm:"index" extensions:"x-nullable"`
 
-	Severity string `json:"severity" gorm:"default:info"`
+	Severity string `json:"severity" gorm:"default:info" example:"info"`
 
+	// EventDate is the clinical/business occurrence timestamp (not interchangeable with CreatedAt).
 	EventDate time.Time `json:"event_date" gorm:"not null;index"`
 	CreatedBy uint      `json:"created_by"`
+	// CreatedAt is the timeline persistence timestamp.
 	CreatedAt time.Time `json:"created_at"`
 }
 
