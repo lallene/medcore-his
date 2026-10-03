@@ -97,7 +97,7 @@ func voidReconDB(t *testing.T) *gorm.DB {
 		&company.InsuranceCompany{}, &guarantor.InsuranceGuarantor{}, &coverage.PatientCoverage{},
 		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
 		&authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{},
-		&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{},
+		&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -494,6 +494,71 @@ func TestPostgresVoidBlockedByPaidInvoice(t *testing.T) {
 	db.Model(&billing.Payment{}).Count(&payAfter)
 	if payAfter != payBefore {
 		t.Fatalf("payments mutated %d→%d", payBefore, payAfter)
+	}
+}
+
+// LOT29F-B: closes audit evidence gap — sessionless pay → reverse → cancel → void.
+// CreditNote is intentionally NOT required for this sequence.
+func TestPostgresSessionlessReverseCancelVoidSequence(t *testing.T) {
+	db := voidReconDB(t)
+	f := seedVoidFixture(t, db, "RCVSEQ")
+	act := createPerformed(t, db, f, "", nil)
+	tariffID := tariffPA(t, db, f.catalog.ID, "VR-RCV", 8000)
+	bill := billing.NewService(db)
+	inv, err := bill.CreateInvoice(billing.CreateInvoiceRequest{
+		PatientID: f.patient.ID,
+		Lines:     []billing.InvoiceLineRequest{{ActType: authorization.ReferencePerformedAct, ReferenceID: act.ID, TariffID: tariffID}},
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, err := bill.Issue(inv.ID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paid, err := bill.Pay(issued.ID, billing.PaymentRequest{
+		Amount: issued.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "rcv-seq-pay",
+	}, 3)
+	if err != nil || len(paid.Payments) != 1 {
+		t.Fatalf("pay %+v %v", paid, err)
+	}
+	if _, err := NewService(db).Void(act.ID, VoidRequest{Reason: "still billed"}, 4); !isConflictErr(err) {
+		t.Fatalf("void while paid want conflict got %v", err)
+	}
+	restored, err := bill.ReversePayment(paid.Payments[0].ID, billing.ReversePaymentRequest{
+		Reason: "Erreur de saisie sequence", IdempotencyKey: "rcv-seq-rev",
+	}, 5)
+	if err != nil || restored.Status != billing.InvoiceIssued || restored.PaidAmount != 0 {
+		t.Fatalf("reverse %+v %v", restored, err)
+	}
+	cancelled, err := bill.Cancel(issued.ID, "Après contrepassation", 6)
+	if err != nil || cancelled.Status != billing.InvoiceCancelled {
+		t.Fatalf("cancel %+v %v", cancelled, err)
+	}
+	var active int64
+	db.Model(&billing.InvoiceLine{}).Where("billable_key=? AND is_active", fmt.Sprintf("%s:%d", authorization.ReferencePerformedAct, act.ID)).Count(&active)
+	if active != 0 {
+		t.Fatalf("active lines after cancel=%d", active)
+	}
+	if _, err := NewService(db).Void(act.ID, VoidRequest{Reason: "after reverse cancel"}, 7); err != nil {
+		t.Fatal(err)
+	}
+	var pa Act
+	db.First(&pa, act.ID)
+	if pa.Status != StatusVoided {
+		t.Fatalf("pa=%s", pa.Status)
+	}
+	var payN, revN, lineN int64
+	db.Model(&billing.Payment{}).Where("invoice_id=?", issued.ID).Count(&payN)
+	db.Model(&billing.PaymentReversal{}).Count(&revN)
+	db.Model(&billing.InvoiceLine{}).Where("invoice_id=?", issued.ID).Count(&lineN)
+	if payN != 1 || revN != 1 || lineN == 0 {
+		t.Fatalf("history pay=%d rev=%d lines=%d", payN, revN, lineN)
+	}
+	var cnN int64
+	db.Model(&billing.CreditNote{}).Count(&cnN)
+	if cnN != 0 {
+		t.Fatal("sequence must not require CreditNote")
 	}
 }
 

@@ -40,6 +40,12 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	if !has(comptable, "insurance_settlements.allocate") || has(comptable, "consultations.update") {
 		t.Fatalf("comptable=%v", comptable)
 	}
+	if !has(comptable, "billing.credit_note.create") || !has(comptable, "billing.credit_note.read") {
+		t.Fatalf("comptable credit_note=%v", comptable)
+	}
+	if has(EffectiveStaffPermissions("staff", []string{"CAISSIER"}, nil), "billing.credit_note.create") {
+		t.Fatal("caissier must not create credit notes")
+	}
 	if !has(comptable, "act_catalog.read") {
 		t.Fatalf("comptable missing act_catalog.read=%v", comptable)
 	}

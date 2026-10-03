@@ -58,7 +58,7 @@ func receivablePostgres(t *testing.T) *gorm.DB {
 		_ = sqlDB.Close()
 		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
 	})
-	if err = db.AutoMigrate(&receivablePatient{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &cash.Receipt{}, &Metadata{}, &FollowUp{}); err != nil {
+	if err = db.AutoMigrate(&receivablePatient{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &cash.Receipt{}, &Metadata{}, &FollowUp{}); err != nil {
 		t.Fatal(err)
 	}
 	return db

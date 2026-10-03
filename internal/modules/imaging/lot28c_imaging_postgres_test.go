@@ -282,7 +282,7 @@ func TestPostgresLOT28CReportValidateNoExtraPA(t *testing.T) {
 // I14: Start (PA producer) vs legacy CreateInvoice must serialize on imaging source.
 func TestPostgresLOT28CStartVsLegacyInvoiceRace(t *testing.T) {
 	db := imagingProducerPG(t)
-	if err := db.AutoMigrate(&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}); err != nil {
+	if err := db.AutoMigrate(&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active=true")

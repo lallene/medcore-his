@@ -119,7 +119,7 @@ func insDB(t *testing.T) *gorm.DB {
 
 	assertInsDBIsolation(t, db, schema)
 
-	if e = db.AutoMigrate(&insPatient{}, &insCompany{}, &insAuthorization{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &Settlement{}, &SettlementAllocation{}, &ReceivableMetadata{}, &FollowUp{}, &SubmissionBatch{}, &SubmissionBatchItem{}); e != nil {
+	if e = db.AutoMigrate(&insPatient{}, &insCompany{}, &insAuthorization{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &Settlement{}, &SettlementAllocation{}, &ReceivableMetadata{}, &FollowUp{}, &SubmissionBatch{}, &SubmissionBatchItem{}); e != nil {
 		t.Fatal(e)
 	}
 	return db

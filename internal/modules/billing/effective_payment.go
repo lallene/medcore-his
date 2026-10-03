@@ -14,6 +14,13 @@ WHERE r.id IS NULL
 GROUP BY p.invoice_id
 `
 
+// EffectiveCreditedSubquery sums issued credit notes per invoice (LOT29F-B).
+const EffectiveCreditedSubquery = `
+SELECT invoice_id, SUM(amount) AS credited
+FROM billing_credit_notes
+GROUP BY invoice_id
+`
+
 // EffectivePaidOnInvoice returns the sum of non-reversed payments for an invoice.
 func EffectivePaidOnInvoice(tx *gorm.DB, invoiceID uint) (int64, error) {
 	var paid int64
@@ -24,6 +31,17 @@ func EffectivePaidOnInvoice(tx *gorm.DB, invoiceID uint) (int64, error) {
 		WHERE p.invoice_id = ? AND r.id IS NULL
 	`, invoiceID).Scan(&paid).Error
 	return paid, e
+}
+
+// CreditedOnInvoice returns the total credit-note amount for an invoice.
+func CreditedOnInvoice(tx *gorm.DB, invoiceID uint) (int64, error) {
+	var credited int64
+	e := tx.Raw(`
+		SELECT COALESCE(SUM(amount), 0)
+		FROM billing_credit_notes
+		WHERE invoice_id = ?
+	`, invoiceID).Scan(&credited).Error
+	return credited, e
 }
 
 // PaymentHasReversal reports whether a full reversal exists for paymentID.

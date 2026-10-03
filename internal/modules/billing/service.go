@@ -398,6 +398,7 @@ func (s *Service) GetInvoice(id uint) (*Invoice, error) {
 		s.decorate(&x)
 		s.attachReceipts(&x)
 		s.attachReversals(&x)
+		s.attachCreditNote(&x)
 	}
 	return &x, e
 }
@@ -603,6 +604,13 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 	if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
+	credited, err := CreditedOnInvoice(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if credited > 0 {
+		return nil, coreerrors.Conflict("La facture est corrigée par un avoir et n'accepte pas de paiement")
+	}
 	if x.BalanceAmount <= 0 {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
@@ -654,6 +662,13 @@ func (s *Service) Cancel(id uint, reason string, user uint) (*Invoice, error) {
 		var x Invoice
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
 			return coreerrors.NotFound("INVOICE")
+		}
+		credited, err := CreditedOnInvoice(tx, id)
+		if err != nil {
+			return err
+		}
+		if credited > 0 {
+			return coreerrors.Conflict("Cette facture est déjà corrigée par un avoir")
 		}
 		effectivePaid, err := EffectivePaidOnInvoice(tx, id)
 		if err != nil {

@@ -54,6 +54,11 @@ type Invoice struct {
 	Payments           []Payment     `gorm:"foreignKey:InvoiceID" json:"payments,omitempty"`
 	PatientName        string        `gorm:"-" json:"patientName"`
 	PatientCode        string        `gorm:"-" json:"patientCode"`
+	// LOT29F-B credit-note decorations (not columns).
+	CreditedAmount         int64             `json:"creditedAmount" gorm:"-"`
+	EffectivePatientAmount int64             `json:"effectivePatientAmount" gorm:"-"`
+	EffectiveBalanceAmount int64             `json:"effectiveBalanceAmount" gorm:"-"`
+	CreditNote             *CreditNotePublic `json:"creditNote,omitempty" gorm:"-"`
 }
 
 func (Invoice) TableName() string { return "billing_invoices" }
@@ -132,3 +137,31 @@ type PaymentReversal struct {
 }
 
 func (PaymentReversal) TableName() string { return "billing_payment_reversals" }
+
+// CreditNote is the immutable full-invoice accounting correction document (LOT29F-B).
+// It is not a payment, payment reversal, refund, or cash movement.
+type CreditNote struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	Number         string    `gorm:"size:30;not null;uniqueIndex" json:"number"`
+	InvoiceID      uint      `gorm:"not null;uniqueIndex" json:"invoiceId"`
+	Amount         int64     `gorm:"not null;check:billing_credit_note_amount_positive,amount > 0" json:"amount"`
+	Reason         string    `gorm:"size:500;not null" json:"reason"`
+	IssuedBy       uint      `gorm:"not null;index" json:"issuedBy"`
+	IssuedAt       time.Time `gorm:"not null;index" json:"issuedAt"`
+	IdempotencyKey string    `gorm:"size:120;not null;uniqueIndex" json:"idempotencyKey"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+func (CreditNote) TableName() string { return "billing_credit_notes" }
+
+// CreditNotePublic is the invoice-embedded / document projection.
+type CreditNotePublic struct {
+	ID        uint      `json:"id"`
+	Number    string    `json:"number"`
+	InvoiceID uint      `json:"invoiceId"`
+	Amount    int64     `json:"amount"`
+	Reason    string    `json:"reason"`
+	IssuedBy  uint      `json:"issuedBy"`
+	IssuedAt  time.Time `json:"issuedAt"`
+	CreatedAt time.Time `json:"createdAt"`
+}

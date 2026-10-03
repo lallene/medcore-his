@@ -25,7 +25,7 @@ func TestAllocateInsurance(t *testing.T) {
 	}
 }
 func TestFinancialTableNames(t *testing.T) {
-	cases := map[string]string{(Tariff{}).TableName(): "billing_tariffs", (Invoice{}).TableName(): "billing_invoices", (InvoiceLine{}).TableName(): "billing_invoice_lines", (AuthorizationAllocation{}).TableName(): "billing_authorization_allocations", (Payment{}).TableName(): "billing_payments", (PaymentReversal{}).TableName(): "billing_payment_reversals"}
+	cases := map[string]string{(Tariff{}).TableName(): "billing_tariffs", (Invoice{}).TableName(): "billing_invoices", (InvoiceLine{}).TableName(): "billing_invoice_lines", (AuthorizationAllocation{}).TableName(): "billing_authorization_allocations", (Payment{}).TableName(): "billing_payments", (PaymentReversal{}).TableName(): "billing_payment_reversals", (CreditNote{}).TableName(): "billing_credit_notes"}
 	for got, want := range cases {
 		if got != want {
 			t.Fatalf("got %s want %s", got, want)

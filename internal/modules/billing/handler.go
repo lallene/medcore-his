@@ -242,6 +242,42 @@ func (h *Handler) Cancel(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func (h *Handler) IssueCreditNote(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r CreditNoteRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Avoir invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.IssueCreditNote(n, r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+func (h *Handler) GetCreditNote(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.GetCreditNote(n)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
 func (h *Handler) KPIs(c *gin.Context) {
 	x, e := h.service.KPIs()
 	if e != nil {
