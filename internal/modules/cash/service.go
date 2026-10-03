@@ -2,6 +2,7 @@ package cash
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -32,10 +33,27 @@ func (s *Service) SaveRegister(id uint, r RegisterRequest, u uint) (*Register, e
 		if e := s.db.Create(&x).Error; e != nil {
 			return nil, coreerrors.Conflict("Code caisse déjà utilisé")
 		}
+		// GORM default:true skips bool false on insert — force inactive when requested.
+		if !active {
+			if e := s.db.Model(&x).Update("active", false).Error; e != nil {
+				return nil, e
+			}
+			x.Active = false
+		}
 	} else {
 		var old Register
 		if e := s.db.First(&old, id).Error; e != nil {
 			return nil, coreerrors.NotFound("CASH_REGISTER")
+		}
+		// Policy A: reject deactivation while an OPEN session exists.
+		if old.Active && !active {
+			var n int64
+			if e := s.db.Model(&Session{}).Where("cash_register_id=? AND status=?", old.ID, SessionOpen).Count(&n).Error; e != nil {
+				return nil, e
+			}
+			if n > 0 {
+				return nil, coreerrors.Conflict("Impossible de désactiver une caisse avec une session ouverte")
+			}
 		}
 		old.Name = x.Name
 		old.Location = x.Location
@@ -48,12 +66,29 @@ func (s *Service) SaveRegister(id uint, r RegisterRequest, u uint) (*Register, e
 	}
 	return &x, nil
 }
+
 func (s *Service) Open(r OpenRequest, u uint) (*SessionSummary, error) {
 	if r.OpeningFloat < 0 {
 		return nil, coreerrors.BadRequest("Fond initial négatif")
 	}
+	key, err := NormalizeSessionCommandKey(r.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	note := strings.TrimSpace(r.Note)
 	var id uint
 	e := s.db.Transaction(func(tx *gorm.DB) error {
+		var prior Session
+		if e := tx.Where("open_idempotency_key=?", key).First(&prior).Error; e == nil {
+			if e := openFingerprintConflict(prior, r.CashRegisterID, r.OpeningFloat, note); e != nil {
+				return e
+			}
+			id = prior.ID
+			return nil
+		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
+			return e
+		}
+
 		var reg Register
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&reg, r.CashRegisterID).Error; e != nil {
 			return coreerrors.NotFound("CASH_REGISTER")
@@ -61,8 +96,27 @@ func (s *Service) Open(r OpenRequest, u uint) (*SessionSummary, error) {
 		if !reg.Active {
 			return coreerrors.Conflict("Caisse inactive")
 		}
-		x := Session{CashRegisterID: reg.ID, OpenedBy: u, OpenedAt: time.Now(), OpeningFloat: r.OpeningFloat, OpeningNote: strings.TrimSpace(r.Note), Status: SessionOpen}
+		x := Session{
+			CashRegisterID:     reg.ID,
+			OpenedBy:           u,
+			OpenedAt:           time.Now(),
+			OpeningFloat:       r.OpeningFloat,
+			OpeningNote:        note,
+			OpenIdempotencyKey: key,
+			Status:             SessionOpen,
+		}
 		if e := tx.Create(&x).Error; e != nil {
+			if isSessionIdempotencyUniqueViolation(e) {
+				var raced Session
+				if load := tx.Where("open_idempotency_key=?", key).First(&raced).Error; load == nil {
+					if e := openFingerprintConflict(raced, r.CashRegisterID, r.OpeningFloat, note); e != nil {
+						return e
+					}
+					id = raced.ID
+					return nil
+				}
+				return coreerrors.Conflict("Cette caisse possède déjà une session ouverte")
+			}
 			return coreerrors.Conflict("Cette caisse possède déjà une session ouverte")
 		}
 		id = x.ID
@@ -73,6 +127,7 @@ func (s *Service) Open(r OpenRequest, u uint) (*SessionSummary, error) {
 	}
 	return s.Get(id)
 }
+
 func (s *Service) Current(user uint) (*SessionSummary, error) {
 	var x Session
 	e := s.db.Where("status=? AND opened_by=?", SessionOpen, user).Order("opened_at DESC").First(&x).Error
@@ -120,6 +175,7 @@ func (s *Service) Get(id uint) (*SessionSummary, error) {
 	z.ExpectedCash = x.OpeningFloat + z.CashPayments
 	return &z, nil
 }
+
 func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error) {
 	method := strings.ToUpper(strings.TrimSpace(r.PaymentMethod))
 	key, err := billing.NormalizePaymentIdempotencyKey(r.IdempotencyKey)
@@ -151,6 +207,12 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 		}
 		if session.Status != SessionOpen {
 			return coreerrors.Conflict("Session de caisse fermée")
+		}
+		if session.OpenedBy != u {
+			return coreerrors.Forbidden("Seule la caissière / le caissier ouvreur peut encaisser sur cette session")
+		}
+		if !session.Register.Active {
+			return coreerrors.Conflict("Caisse inactive")
 		}
 		// Recheck after the session lock: concurrent retries may both miss the fast path above.
 		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
@@ -209,23 +271,63 @@ func isCashReceiptPaymentUniqueViolation(err error) bool {
 	}
 	return false
 }
-func (s *Service) Close(id uint, r CloseRequest, u uint) (*SessionSummary, error) {
+
+// Close closes an OPEN session. canCloseAny allows non-opener recovery (requires note).
+func (s *Service) Close(id uint, r CloseRequest, u uint, canCloseAny bool) (*SessionSummary, error) {
 	if r.CountedCashAmount < 0 {
 		return nil, coreerrors.BadRequest("Montant compté négatif")
 	}
+	key, err := NormalizeSessionCommandKey(r.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	note := strings.TrimSpace(r.Note)
 	e := s.db.Transaction(func(tx *gorm.DB) error {
+		var priorByKey Session
+		if e := tx.Where("close_idempotency_key=?", key).First(&priorByKey).Error; e == nil {
+			if e := closeFingerprintConflict(priorByKey, id, r.CountedCashAmount, note); e != nil {
+				return e
+			}
+			return nil
+		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
+			return e
+		}
+
 		var x Session
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
 			return coreerrors.NotFound("CASH_SESSION")
 		}
+		if x.Status == SessionClosed {
+			if x.CloseIdempotencyKey != nil && *x.CloseIdempotencyKey == key {
+				if e := closeFingerprintConflict(x, id, r.CountedCashAmount, note); e != nil {
+					return e
+				}
+				return nil
+			}
+			return coreerrors.Conflict("Session déjà fermée")
+		}
 		if x.Status != SessionOpen {
 			return coreerrors.Conflict("Session déjà fermée")
 		}
+
+		isOwner := x.OpenedBy == u
+		if !isOwner && !canCloseAny {
+			return coreerrors.Forbidden("Seule la caissière / le caissier ouvreur peut clôturer cette session")
+		}
+		if !isOwner {
+			// Recovery: mandatory note even if difference is zero.
+			if note == "" {
+				return coreerrors.BadRequest("Justification obligatoire pour la clôture de récupération")
+			}
+		}
+
 		var cash int64
-		tx.Table("billing_payments").Where("cash_session_id=? AND payment_method='CASH'", id).Select("COALESCE(SUM(amount),0)").Scan(&cash)
+		if e := tx.Table("billing_payments").Where("cash_session_id=? AND payment_method='CASH'", id).Select("COALESCE(SUM(amount),0)").Scan(&cash).Error; e != nil {
+			return e
+		}
 		expected := x.OpeningFloat + cash
 		diff := r.CountedCashAmount - expected
-		if diff != 0 && strings.TrimSpace(r.Note) == "" {
+		if diff != 0 && note == "" {
 			return coreerrors.BadRequest("Justification obligatoire en cas d'écart")
 		}
 		now := time.Now()
@@ -235,14 +337,25 @@ func (s *Service) Close(id uint, r CloseRequest, u uint) (*SessionSummary, error
 		x.ExpectedCashAmount = &expected
 		x.CountedCashAmount = &r.CountedCashAmount
 		x.CashDifference = &diff
-		x.ClosingNote = strings.TrimSpace(r.Note)
-		return tx.Save(&x).Error
+		x.ClosingNote = note
+		x.CloseIdempotencyKey = &key
+		if e := tx.Save(&x).Error; e != nil {
+			if isSessionIdempotencyUniqueViolation(e) {
+				var raced Session
+				if load := tx.Where("close_idempotency_key=?", key).First(&raced).Error; load == nil {
+					return closeFingerprintConflict(raced, id, r.CountedCashAmount, note)
+				}
+			}
+			return e
+		}
+		return nil
 	})
 	if e != nil {
 		return nil, e
 	}
 	return s.Get(id)
 }
+
 func (s *Service) Receipt(id uint) (*Receipt, error) {
 	var x Receipt
 	if e := s.db.First(&x, id).Error; e != nil {
@@ -268,4 +381,16 @@ func (s *Service) Receipts(session uint) ([]Receipt, error) {
 	}
 	e := q.Find(&x).Error
 	return x, e
+}
+
+// EnsureSessionCommandKeys backfills open idempotency keys for legacy rows before NOT NULL uniqueness.
+func EnsureSessionCommandKeys(db *gorm.DB) error {
+	if err := db.Exec(`
+		UPDATE cash_sessions
+		SET open_idempotency_key = CONCAT('legacy-open-', id::text)
+		WHERE open_idempotency_key IS NULL OR open_idempotency_key = ''
+	`).Error; err != nil {
+		return fmt.Errorf("backfill open_idempotency_key: %w", err)
+	}
+	return nil
 }

@@ -109,6 +109,7 @@ func init() {
 	add("cash.session.read", "Lire les sessions de caisse", "Cash", "SERVICE")
 	add("cash.session.open", "Ouvrir une session de caisse", "Cash", "SERVICE")
 	add("cash.session.close", "Clôturer une session de caisse", "Cash", "SERVICE")
+	add("cash.session.close_any", "Clôturer toute session de caisse (récupération)", "Cash", "SERVICE")
 	add("cash.payment.read", "Lire les paiements", "Cash", "SERVICE")
 	add("cash.payment.create", "Enregistrer un paiement", "Cash", "SERVICE")
 	add("cash.receipt.read", "Lire les reçus", "Cash", "SERVICE")

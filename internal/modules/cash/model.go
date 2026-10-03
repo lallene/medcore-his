@@ -27,12 +27,14 @@ type Register struct {
 func (Register) TableName() string { return "cash_registers" }
 
 type Session struct {
-	ID                 uint       `gorm:"primaryKey" json:"id"`
-	CashRegisterID     uint       `gorm:"not null;index" json:"cashRegisterId"`
-	OpenedBy           uint       `gorm:"not null;index" json:"openedBy"`
-	OpenedAt           time.Time  `gorm:"not null;index" json:"openedAt"`
-	OpeningFloat       int64      `gorm:"not null;check:cash_session_opening_nonnegative,opening_float >= 0" json:"openingFloat"`
-	OpeningNote        string     `gorm:"type:text" json:"openingNote"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	CashRegisterID uint      `gorm:"not null;index" json:"cashRegisterId"`
+	OpenedBy       uint      `gorm:"not null;index" json:"openedBy"`
+	OpenedAt       time.Time `gorm:"not null;index" json:"openedAt"`
+	OpeningFloat   int64     `gorm:"not null;check:cash_session_opening_nonnegative,opening_float >= 0" json:"openingFloat"`
+	OpeningNote    string    `gorm:"type:text" json:"openingNote"`
+	// OpenIdempotencyKey namespaces OPEN intents (distinct from billing/close keys).
+	OpenIdempotencyKey string     `gorm:"size:120;uniqueIndex" json:"openIdempotencyKey,omitempty"`
 	Status             string     `gorm:"size:20;not null;index" json:"status"`
 	ClosedBy           *uint      `gorm:"index" json:"closedBy"`
 	ClosedAt           *time.Time `json:"closedAt"`
@@ -40,9 +42,11 @@ type Session struct {
 	CountedCashAmount  *int64     `json:"countedCashAmount"`
 	CashDifference     *int64     `json:"cashDifference"`
 	ClosingNote        string     `gorm:"type:text" json:"closingNote"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
-	Register           Register   `gorm:"foreignKey:CashRegisterID" json:"register"`
+	// CloseIdempotencyKey set only when CLOSED; unique when present.
+	CloseIdempotencyKey *string   `gorm:"size:120;uniqueIndex" json:"closeIdempotencyKey,omitempty"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
+	Register            Register  `gorm:"foreignKey:CashRegisterID" json:"register"`
 }
 
 func (Session) TableName() string { return "cash_sessions" }

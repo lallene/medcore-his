@@ -10,10 +10,14 @@ type OpenRequest struct {
 	CashRegisterID uint   `json:"cashRegisterId" binding:"required"`
 	OpeningFloat   int64  `json:"openingFloat"`
 	Note           string `json:"note"`
+	// IdempotencyKey may be supplied in JSON and/or Idempotency-Key header.
+	IdempotencyKey string `json:"idempotencyKey"`
 }
 type CloseRequest struct {
 	CountedCashAmount int64  `json:"countedCashAmount"`
 	Note              string `json:"note"`
+	// IdempotencyKey may be supplied in JSON and/or Idempotency-Key header.
+	IdempotencyKey string `json:"idempotencyKey"`
 }
 type PaymentRequest struct {
 	InvoiceID         uint   `json:"invoiceId" binding:"required"`

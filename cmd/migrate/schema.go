@@ -168,6 +168,10 @@ func applyMigrations(db *gorm.DB) error {
 	if err := cash.EnsureReceiptSessionNullable(db); err != nil {
 		return fmt.Errorf("EnsureReceiptSessionNullable: %w", err)
 	}
+	// LOT29E-B: durable open/close command keys on cash_sessions.
+	if err := cash.EnsureSessionCommandKeys(db); err != nil {
+		return fmt.Errorf("EnsureSessionCommandKeys: %w", err)
+	}
 	if err := patient_queue.EnsureAppointmentIndexes(db); err != nil {
 		return fmt.Errorf("EnsureAppointmentIndexes: %w", err)
 	}

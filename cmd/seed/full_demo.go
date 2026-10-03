@@ -550,7 +550,7 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 	}
 	var open cash.Session
 	if db.Where("cash_register_id=? AND status=?", register.ID, cash.SessionOpen).First(&open).Error != nil {
-		s, e := cashService.Open(cash.OpenRequest{CashRegisterID: register.ID, OpeningFloat: 50000, Note: "Session DEMO ouverte"}, user)
+		s, e := cashService.Open(cash.OpenRequest{CashRegisterID: register.ID, OpeningFloat: 50000, Note: "Session DEMO ouverte", IdempotencyKey: "demo-cash-open-primary"}, user)
 		if e != nil {
 			log.Fatal(e)
 		}
@@ -640,11 +640,11 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 			}
 			secondary = *updated
 		}
-		opened, err := cashService.Open(cash.OpenRequest{CashRegisterID: secondary.ID, OpeningFloat: 25000, Note: "Session DEMO équilibrée"}, user)
+		opened, err := cashService.Open(cash.OpenRequest{CashRegisterID: secondary.ID, OpeningFloat: 25000, Note: "Session DEMO équilibrée", IdempotencyKey: "demo-cash-open-secondary"}, user)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err = cashService.Close(opened.Session.ID, cash.CloseRequest{CountedCashAmount: 25000, Note: "Écart nul DEMO"}, user); err != nil {
+		if _, err = cashService.Close(opened.Session.ID, cash.CloseRequest{CountedCashAmount: 25000, Note: "Écart nul DEMO", IdempotencyKey: "demo-cash-close-secondary"}, user, false); err != nil {
 			log.Fatal(err)
 		}
 	}

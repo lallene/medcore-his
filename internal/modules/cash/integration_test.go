@@ -55,7 +55,7 @@ func cashDB(t *testing.T) *gorm.DB {
 	}
 	sqlDB, _ := db.DB()
 	t.Cleanup(func() { sqlDB.Close(); admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`) })
-	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.Payment{}, &billing.PaymentReversal{}, &Receipt{}); e != nil {
+	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &Receipt{}); e != nil {
 		t.Fatal(e)
 	}
 	if e = EnsureReceiptSessionNullable(db); e != nil {
@@ -75,11 +75,11 @@ func TestPostgresCashLifecycle(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	session, e := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 50000}, 9)
+	session, e := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 50000, IdempotencyKey: "open-cash-1"}, 9)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.Open(OpenRequest{CashRegisterID: reg.ID}, 9); e == nil {
+	if _, e = s.Open(OpenRequest{CashRegisterID: reg.ID, IdempotencyKey: "open-cash-2"}, 9); e == nil {
 		t.Fatal("double open accepted")
 	}
 	inv := billing.Invoice{Number: "INV-CASH", PatientID: 2, Status: billing.InvoiceIssued, GrossAmount: 50000, InsuranceAmount: 35000, PatientAmount: 15000, BalanceAmount: 15000, CreatedBy: 9, UpdatedBy: 9}
@@ -100,10 +100,10 @@ func TestPostgresCashLifecycle(t *testing.T) {
 	if summary.ExpectedCash != 55000 || summary.OperationCount != 1 {
 		t.Fatalf("summary=%+v", summary)
 	}
-	if _, e = s.Close(session.Session.ID, CloseRequest{CountedCashAmount: 53000}, 9); e == nil {
+	if _, e = s.Close(session.Session.ID, CloseRequest{CountedCashAmount: 53000, IdempotencyKey: "close-short"}, 9, false); e == nil {
 		t.Fatal("missing justification")
 	}
-	closed, e := s.Close(session.Session.ID, CloseRequest{CountedCashAmount: 55000}, 9)
+	closed, e := s.Close(session.Session.ID, CloseRequest{CountedCashAmount: 55000, IdempotencyKey: "close-ok"}, 9, false)
 	if e != nil || *closed.Session.CashDifference != 0 {
 		t.Fatal(e)
 	}
@@ -118,7 +118,7 @@ func TestPostgresConcurrentCashIdempotence(t *testing.T) {
 	db.Create(&cashPatient{ID: 2, Nom: "P", Prenoms: "C", CodePatient: "PC"})
 	s := NewService(db)
 	reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CONC", Name: "Concurrent"}, 9)
-	session, _ := s.Open(OpenRequest{CashRegisterID: reg.ID}, 9)
+	session, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, IdempotencyKey: "open-conc"}, 9)
 	inv := billing.Invoice{Number: "INV-CONC", PatientID: 2, Status: billing.InvoiceIssued, GrossAmount: 10000, PatientAmount: 10000, BalanceAmount: 10000, CreatedBy: 9, UpdatedBy: 9}
 	db.Create(&inv)
 	req := PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "same-key"}
@@ -153,7 +153,7 @@ func TestLOT29D_B_CashSessionReceiptUnchanged(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	session, e := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 50000}, 9)
+	session, e := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 50000, IdempotencyKey: "open-rb13"}, 9)
 	if e != nil {
 		t.Fatal(e)
 	}

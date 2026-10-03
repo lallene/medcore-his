@@ -84,11 +84,23 @@ func (h *Handler) UpdateRegister(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func perms(c *gin.Context) []string {
+	v, ok := c.Get(rbac.ContextPermissions)
+	if !ok {
+		return nil
+	}
+	p, _ := v.([]string)
+	return p
+}
+
 func (h *Handler) Open(c *gin.Context) {
 	var r OpenRequest
 	if c.ShouldBindJSON(&r) != nil {
 		bad(c, coreerrors.BadRequest("Ouverture invalide"))
 		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
 	}
 	u, ok := uid(c)
 	if !ok {
@@ -167,11 +179,15 @@ func (h *Handler) Close(c *gin.Context) {
 		bad(c, coreerrors.BadRequest("Clôture invalide"))
 		return
 	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
 	u, ok := uid(c)
 	if !ok {
 		return
 	}
-	x, e := h.s.Close(n, r, u)
+	canCloseAny := rbac.HasAnyPermission(perms(c), "cash.session.close_any", "*")
+	x, e := h.s.Close(n, r, u, canCloseAny)
 	if e != nil {
 		bad(c, e)
 		return
