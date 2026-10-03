@@ -115,6 +115,8 @@ func init() {
 	add("cash.payment.read", "Lire les paiements", "Cash", "SERVICE")
 	add("cash.payment.create", "Enregistrer un paiement", "Cash", "SERVICE")
 	add("cash.receipt.read", "Lire les reçus", "Cash", "SERVICE")
+	add("cash.movement.read", "Lire les mouvements de caisse", "Cash", "SERVICE")
+	add("cash.movement.create", "Enregistrer un mouvement de caisse", "Cash", "SERVICE")
 	add("insurance.authorization.read", "Lire les autorisations PEC", "Insurance", "SERVICE")
 	add("insurance.authorization.create", "Créer une autorisation PEC", "Insurance", "SERVICE")
 	add("insurance.authorization.submit", "Soumettre une autorisation PEC", "Insurance", "SERVICE")

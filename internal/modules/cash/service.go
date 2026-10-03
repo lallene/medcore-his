@@ -187,7 +187,11 @@ func (s *Service) Get(id uint) (*SessionSummary, error) {
 	if e != nil {
 		return nil, e
 	}
-	z := assembleSessionSummary(x, totals)
+	movements, e := loadSessionMovementTotals(s.db, id)
+	if e != nil {
+		return nil, e
+	}
+	z := assembleSessionSummary(x, totals, movements)
 	return &z, nil
 }
 
@@ -340,8 +344,12 @@ func (s *Service) Close(id uint, r CloseRequest, u uint, canCloseAny bool) (*Ses
 		if e != nil {
 			return e
 		}
+		movements, e := loadSessionMovementTotals(tx, id)
+		if e != nil {
+			return e
+		}
 		// Same authority as SessionSummary OPEN expected (no formula drift).
-		expected := liveExpectedCash(x.OpeningFloat, totals.Cash)
+		expected := liveExpectedCash(x.OpeningFloat, totals.Cash, movements.In, movements.Out)
 		diff := r.CountedCashAmount - expected
 		if diff != 0 && note == "" {
 			return coreerrors.BadRequest("Justification obligatoire en cas d'écart")

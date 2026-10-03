@@ -85,6 +85,48 @@ type Receipt struct {
 
 func (Receipt) TableName() string { return "cash_receipts" }
 
+// LOT29F-C CashMovement directions / V1 types (amount always > 0; direction carries sign).
+const (
+	MovementIn  = "IN"
+	MovementOut = "OUT"
+
+	MovementManualIn  = "MANUAL_IN"
+	MovementManualOut = "MANUAL_OUT"
+)
+
+// CashMovement is an append-only physical cash journal entry on an OPEN CashSession.
+// It is not a Payment, PaymentReversal, Refund, CreditNote, or Receipt.
+type CashMovement struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	CashSessionID  uint      `gorm:"not null;index" json:"cashSessionId"`
+	Direction      string    `gorm:"size:10;not null;index" json:"direction"`
+	Type           string    `gorm:"size:30;not null;index" json:"type"`
+	Amount         int64     `gorm:"not null;check:cash_movement_amount_positive,amount > 0" json:"amount"`
+	Reason         string    `gorm:"size:500;not null" json:"reason"`
+	CreatedBy      uint      `gorm:"not null;index" json:"createdBy"`
+	OccurredAt     time.Time `gorm:"not null;index" json:"occurredAt"`
+	IdempotencyKey string    `gorm:"size:120;not null;uniqueIndex" json:"idempotencyKey"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+func (CashMovement) TableName() string { return "cash_movements" }
+
+// CashMovementAudit is the mandatory financial evidence row for a movement (same TX).
+type CashMovementAudit struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	MovementID uint      `gorm:"not null;uniqueIndex" json:"movementId"`
+	EventType  string    `gorm:"size:40;not null" json:"eventType"`
+	SessionID  uint      `gorm:"not null;index" json:"sessionId"`
+	Direction  string    `gorm:"size:10;not null" json:"direction"`
+	Type       string    `gorm:"size:30;not null" json:"type"`
+	Amount     int64     `gorm:"not null" json:"amount"`
+	Reason     string    `gorm:"size:500;not null" json:"reason"`
+	ActorID    uint      `gorm:"not null;index" json:"actorId"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+func (CashMovementAudit) TableName() string { return "cash_movement_audits" }
+
 // VarianceKinds for CLOSED final reconciliation (server-authored semantics).
 const (
 	VarianceBalanced = "BALANCED"
@@ -95,8 +137,10 @@ const (
 // SessionSummary is the single backend-authoritative financial projection for a CashSession.
 // Collection totals come from billing_payments attached to the session (not receipts).
 // OpeningFloat is never part of TotalCollected.
-// ExpectedCash: OPEN = OpeningFloat + CASH collected; CLOSED = persisted ExpectedCashAmount snapshot.
+// ExpectedCash OPEN: OpeningFloat + CASH collected + movement IN − movement OUT.
+// ExpectedCash CLOSED: persisted ExpectedCashAmount snapshot.
 // LOT29E-D: Closed CashSession remains the reconciliation aggregate — no second CashReconciliation entity.
+// LOT29F-C: CashMovement totals are explicit and never part of CashCollected / TotalCollected.
 type SessionSummary struct {
 	Session Session `json:"session"`
 	// Canonical collection fields (LOT29E-C).
@@ -113,6 +157,10 @@ type SessionSummary struct {
 	TotalPayments  int64 `json:"totalPayments"`
 	OperationCount int64 `json:"operationCount"`
 	ExpectedCash   int64 `json:"expectedCash"`
+	// LOT29F-C movement totals (not revenue).
+	CashMovementIn  int64 `json:"cashMovementIn"`
+	CashMovementOut int64 `json:"cashMovementOut"`
+	NetCashMovement int64 `json:"netCashMovement"`
 	// LOT29E-D reconciliation metadata (projection over CashSession; not a second aggregate).
 	ClosingProofComplete bool   `json:"closingProofComplete"`
 	FinalReconciliation  bool   `json:"finalReconciliation"`

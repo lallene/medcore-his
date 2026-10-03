@@ -230,6 +230,8 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 			Cash: detail.CashCollected, Card: detail.CardPayments, MobileMoney: detail.MobileMoneyPayments,
 			BankTransfer: detail.BankTransferPayments, Check: detail.CheckPayments,
 			Total: detail.TotalCollected, Count: detail.OperationCount,
+		}, sessionMovementTotals{
+			In: detail.CashMovementIn, Out: detail.CashMovementOut,
 		})
 		if want.ExpectedCash != detail.ExpectedCash {
 			t.Fatal("SM21 assemble mismatch")

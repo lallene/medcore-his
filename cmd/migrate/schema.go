@@ -74,6 +74,8 @@ func schemaModels() []any {
 		&cash.Register{},
 		&cash.Session{},
 		&cash.Receipt{},
+		&cash.CashMovement{},
+		&cash.CashMovementAudit{},
 		&patients.Patient{},
 
 		&company.InsuranceCompany{},

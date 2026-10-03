@@ -225,6 +225,54 @@ func (h *Handler) Journal(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func (h *Handler) CreateMovement(c *gin.Context) {
+	n, ok := num(c)
+	if !ok {
+		return
+	}
+	var r MovementRequest
+	if c.ShouldBindJSON(&r) != nil {
+		bad(c, coreerrors.BadRequest("Mouvement de caisse invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := uid(c)
+	if !ok {
+		return
+	}
+	x, e := h.s.CreateMovement(n, r, u)
+	if e != nil {
+		bad(c, e)
+		return
+	}
+	c.JSON(201, x)
+}
+func (h *Handler) ListMovements(c *gin.Context) {
+	n, ok := num(c)
+	if !ok {
+		return
+	}
+	x, e := h.s.ListMovements(n)
+	if e != nil {
+		bad(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+func (h *Handler) GetMovement(c *gin.Context) {
+	n, ok := num(c)
+	if !ok {
+		return
+	}
+	x, e := h.s.GetMovement(n)
+	if e != nil {
+		bad(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
 func (h *Handler) Receipt(c *gin.Context) {
 	n, ok := num(c)
 	if !ok {

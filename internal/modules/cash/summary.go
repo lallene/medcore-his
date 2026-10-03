@@ -15,6 +15,11 @@ type sessionPaymentTotals struct {
 	Count        int64
 }
 
+type sessionMovementTotals struct {
+	In  int64
+	Out int64
+}
+
 // loadSessionPaymentTotals aggregates effective session payments from billing_payments only.
 // Sessionless (cash_session_id IS NULL) and other-session payments are excluded by the WHERE.
 func loadSessionPaymentTotals(db *gorm.DB, sessionID uint) (sessionPaymentTotals, error) {
@@ -50,10 +55,34 @@ func loadSessionPaymentTotals(db *gorm.DB, sessionID uint) (sessionPaymentTotals
 	return t, nil
 }
 
+func loadSessionMovementTotals(db *gorm.DB, sessionID uint) (sessionMovementTotals, error) {
+	var m sessionMovementTotals
+	rows := []struct {
+		Direction string
+		Total     int64
+	}{}
+	if e := db.Table("cash_movements").
+		Select("direction, COALESCE(SUM(amount),0) AS total").
+		Where("cash_session_id = ?", sessionID).
+		Group("direction").
+		Scan(&rows).Error; e != nil {
+		return m, e
+	}
+	for _, r := range rows {
+		switch r.Direction {
+		case MovementIn:
+			m.In = r.Total
+		case MovementOut:
+			m.Out = r.Total
+		}
+	}
+	return m, nil
+}
+
 // liveExpectedCash is the OPEN-session / pre-close drawer formula (E1):
-// OpeningFloat + SUM(CASH payments on session).
-func liveExpectedCash(openingFloat, cashCollected int64) int64 {
-	return openingFloat + cashCollected
+// OpeningFloat + SUM(CASH payments) + CashMovement IN − CashMovement OUT.
+func liveExpectedCash(openingFloat, cashCollected, movementIn, movementOut int64) int64 {
+	return openingFloat + cashCollected + movementIn - movementOut
 }
 
 // closingProofComplete reports whether a CLOSED session has a full immutable close snapshot.
@@ -80,7 +109,7 @@ func varianceKindFromDiff(diff int64) string {
 // assembleSessionSummary builds the single authoritative SessionSummary.
 // For CLOSED sessions with a complete snapshot, ExpectedCash uses persisted ExpectedCashAmount.
 // Incomplete legacy CLOSED rows do not fabricate a closing expected as authority.
-func assembleSessionSummary(session Session, t sessionPaymentTotals) SessionSummary {
+func assembleSessionSummary(session Session, t sessionPaymentTotals, m sessionMovementTotals) SessionSummary {
 	z := SessionSummary{
 		Session:              session,
 		CashCollected:        t.Cash,
@@ -93,6 +122,9 @@ func assembleSessionSummary(session Session, t sessionPaymentTotals) SessionSumm
 		CheckPayments:        t.Check,
 		TotalPayments:        t.Total,
 		OperationCount:       t.Count,
+		CashMovementIn:       m.In,
+		CashMovementOut:      m.Out,
+		NetCashMovement:      m.In - m.Out,
 	}
 	if session.Status == SessionClosed {
 		z.ClosingProofComplete = closingProofComplete(session)
@@ -109,6 +141,6 @@ func assembleSessionSummary(session Session, t sessionPaymentTotals) SessionSumm
 		}
 		return z
 	}
-	z.ExpectedCash = liveExpectedCash(session.OpeningFloat, t.Cash)
+	z.ExpectedCash = liveExpectedCash(session.OpeningFloat, t.Cash, m.In, m.Out)
 	return z
 }
