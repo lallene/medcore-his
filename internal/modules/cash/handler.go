@@ -126,7 +126,17 @@ func (h *Handler) Current(c *gin.Context) {
 	c.JSON(200, x)
 }
 func (h *Handler) Sessions(c *gin.Context) {
-	x, e := h.s.Sessions()
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	regID, _ := strconv.ParseUint(c.Query("cashRegisterId"), 10, 64)
+	x, e := h.s.ListSessions(SessionListFilter{
+		Status:         c.Query("status"),
+		CashRegisterID: uint(regID),
+		DateFrom:       c.Query("dateFrom"),
+		DateTo:         c.Query("dateTo"),
+		Page:           page,
+		Limit:          limit,
+	})
 	if e != nil {
 		bad(c, e)
 		return

@@ -139,10 +139,44 @@ func (s *Service) Current(user uint) (*SessionSummary, error) {
 	}
 	return s.Get(x.ID)
 }
-func (s *Service) Sessions() ([]Session, error) {
-	var x []Session
-	e := s.db.Preload("Register").Order("opened_at DESC").Find(&x).Error
-	return x, e
+
+// ListSessions returns historical CashSession rows with deterministic ordering and pagination.
+// Does not load journals or payment aggregates (history list is not financial authority).
+func (s *Service) ListSessions(f SessionListFilter) (*SessionListPage, error) {
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.Limit < 1 || f.Limit > 100 {
+		f.Limit = 20
+	}
+	q := s.db.Model(&Session{})
+	if st := strings.TrimSpace(strings.ToUpper(f.Status)); st != "" {
+		q = q.Where("status = ?", st)
+	}
+	if f.CashRegisterID > 0 {
+		q = q.Where("cash_register_id = ?", f.CashRegisterID)
+	}
+	if from := strings.TrimSpace(f.DateFrom); from != "" {
+		q = q.Where("opened_at::date >= ?", from)
+	}
+	if to := strings.TrimSpace(f.DateTo); to != "" {
+		q = q.Where("opened_at::date <= ?", to)
+	}
+	var total int64
+	if e := q.Count(&total).Error; e != nil {
+		return nil, e
+	}
+	var items []Session
+	e := q.Preload("Register").
+		Order("opened_at DESC, id DESC").
+		Offset((f.Page - 1) * f.Limit).
+		Limit(f.Limit).
+		Find(&items).Error
+	if e != nil {
+		return nil, e
+	}
+	pages := int((total + int64(f.Limit) - 1) / int64(f.Limit))
+	return &SessionListPage{Items: items, Page: f.Page, Limit: f.Limit, Total: total, TotalPages: pages}, nil
 }
 func (s *Service) Get(id uint) (*SessionSummary, error) {
 	var x Session

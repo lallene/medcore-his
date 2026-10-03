@@ -56,9 +56,30 @@ func liveExpectedCash(openingFloat, cashCollected int64) int64 {
 	return openingFloat + cashCollected
 }
 
+// closingProofComplete reports whether a CLOSED session has a full immutable close snapshot.
+func closingProofComplete(session Session) bool {
+	return session.Status == SessionClosed &&
+		session.ExpectedCashAmount != nil &&
+		session.CountedCashAmount != nil &&
+		session.CashDifference != nil &&
+		session.ClosedBy != nil &&
+		session.ClosedAt != nil
+}
+
+func varianceKindFromDiff(diff int64) string {
+	switch {
+	case diff == 0:
+		return VarianceBalanced
+	case diff < 0:
+		return VarianceShortage
+	default:
+		return VarianceSurplus
+	}
+}
+
 // assembleSessionSummary builds the single authoritative SessionSummary.
-// For CLOSED sessions, ExpectedCash uses the persisted closing snapshot (immutable proof).
-// Collection totals remain derived from payment rows (post-close mutation is blocked by product rules).
+// For CLOSED sessions with a complete snapshot, ExpectedCash uses persisted ExpectedCashAmount.
+// Incomplete legacy CLOSED rows do not fabricate a closing expected as authority.
 func assembleSessionSummary(session Session, t sessionPaymentTotals) SessionSummary {
 	z := SessionSummary{
 		Session:              session,
@@ -73,10 +94,21 @@ func assembleSessionSummary(session Session, t sessionPaymentTotals) SessionSumm
 		TotalPayments:        t.Total,
 		OperationCount:       t.Count,
 	}
-	if session.Status == SessionClosed && session.ExpectedCashAmount != nil {
-		z.ExpectedCash = *session.ExpectedCashAmount
-	} else {
-		z.ExpectedCash = liveExpectedCash(session.OpeningFloat, t.Cash)
+	if session.Status == SessionClosed {
+		z.ClosingProofComplete = closingProofComplete(session)
+		z.FinalReconciliation = z.ClosingProofComplete
+		if session.ClosedBy != nil && *session.ClosedBy != session.OpenedBy {
+			z.RecoveryClose = true
+		}
+		if session.ExpectedCashAmount != nil {
+			z.ExpectedCash = *session.ExpectedCashAmount
+		}
+		// Incomplete: leave ExpectedCash at 0 and FinalReconciliation=false — FE must not treat as proof.
+		if z.ClosingProofComplete && session.CashDifference != nil {
+			z.VarianceKind = varianceKindFromDiff(*session.CashDifference)
+		}
+		return z
 	}
+	z.ExpectedCash = liveExpectedCash(session.OpeningFloat, t.Cash)
 	return z
 }

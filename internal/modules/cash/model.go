@@ -85,10 +85,18 @@ type Receipt struct {
 
 func (Receipt) TableName() string { return "cash_receipts" }
 
+// VarianceKinds for CLOSED final reconciliation (server-authored semantics).
+const (
+	VarianceBalanced = "BALANCED"
+	VarianceShortage = "SHORTAGE"
+	VarianceSurplus  = "SURPLUS"
+)
+
 // SessionSummary is the single backend-authoritative financial projection for a CashSession.
 // Collection totals come from billing_payments attached to the session (not receipts).
 // OpeningFloat is never part of TotalCollected.
 // ExpectedCash: OPEN = OpeningFloat + CASH collected; CLOSED = persisted ExpectedCashAmount snapshot.
+// LOT29E-D: Closed CashSession remains the reconciliation aggregate — no second CashReconciliation entity.
 type SessionSummary struct {
 	Session Session `json:"session"`
 	// Canonical collection fields (LOT29E-C).
@@ -105,4 +113,9 @@ type SessionSummary struct {
 	TotalPayments  int64 `json:"totalPayments"`
 	OperationCount int64 `json:"operationCount"`
 	ExpectedCash   int64 `json:"expectedCash"`
+	// LOT29E-D reconciliation metadata (projection over CashSession; not a second aggregate).
+	ClosingProofComplete bool   `json:"closingProofComplete"`
+	FinalReconciliation  bool   `json:"finalReconciliation"`
+	RecoveryClose        bool   `json:"recoveryClose"`
+	VarianceKind         string `json:"varianceKind,omitempty"`
 }

@@ -1,6 +1,9 @@
 package cash
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestAssembleSessionSummary_OpenVsClosed(t *testing.T) {
 	open := Session{ID: 1, OpeningFloat: 10000, Status: SessionOpen}
@@ -9,20 +12,47 @@ func TestAssembleSessionSummary_OpenVsClosed(t *testing.T) {
 	if got.ExpectedCash != 30000 || got.CashCollected != 20000 || got.NonCashCollected != 30000 || got.TotalCollected != 50000 {
 		t.Fatalf("open summary %+v", got)
 	}
-	if got.TotalPayments != got.TotalCollected || got.CashPayments != got.CashCollected {
-		t.Fatal("compat mirrors")
+	if got.FinalReconciliation || got.ClosingProofComplete {
+		t.Fatal("open is not final reconciliation")
 	}
+}
 
+func TestAssembleSessionSummary_ClosedSnapshotAndRecovery(t *testing.T) {
 	exp, counted, diff := int64(30000), int64(29000), int64(-1000)
+	closer := uint(99)
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	closed := Session{
-		ID: 2, OpeningFloat: 10000, Status: SessionClosed,
+		ID: 2, OpeningFloat: 10000, Status: SessionClosed, OpenedBy: 11,
 		ExpectedCashAmount: &exp, CountedCashAmount: &counted, CashDifference: &diff,
+		ClosedBy: &closer, ClosedAt: &now, ClosingNote: "écart constaté",
 	}
-	// Even if payment totals were somehow different, CLOSED expected uses snapshot.
 	stale := sessionPaymentTotals{Cash: 99999, Total: 99999, Count: 9}
-	gotClosed := assembleSessionSummary(closed, stale)
-	if gotClosed.ExpectedCash != 30000 {
-		t.Fatalf("closed expected snapshot got %d", gotClosed.ExpectedCash)
+	got := assembleSessionSummary(closed, stale)
+	if got.ExpectedCash != 30000 {
+		t.Fatalf("closed expected snapshot got %d", got.ExpectedCash)
+	}
+	if !got.ClosingProofComplete || !got.FinalReconciliation {
+		t.Fatal("complete closed must be final reconciliation")
+	}
+	if !got.RecoveryClose {
+		t.Fatal("recovery close when ClosedBy != OpenedBy")
+	}
+	if got.VarianceKind != VarianceShortage {
+		t.Fatalf("variance %s", got.VarianceKind)
+	}
+}
+
+func TestAssembleSessionSummary_IncompleteClosedNoFakeAuthority(t *testing.T) {
+	incomplete := Session{ID: 3, OpeningFloat: 5000, Status: SessionClosed, OpenedBy: 1}
+	got := assembleSessionSummary(incomplete, sessionPaymentTotals{Cash: 1000, Total: 1000, Count: 1})
+	if got.FinalReconciliation || got.ClosingProofComplete {
+		t.Fatal("incomplete must not be final")
+	}
+	if got.ExpectedCash != 0 {
+		t.Fatalf("incomplete must not present live expected as close authority, got %d", got.ExpectedCash)
+	}
+	if got.VarianceKind != "" {
+		t.Fatal("no variance without proof")
 	}
 }
 
@@ -31,6 +61,18 @@ func TestLiveExpectedCash(t *testing.T) {
 		t.Fatal()
 	}
 	if liveExpectedCash(0, 0) != 0 {
+		t.Fatal()
+	}
+}
+
+func TestVarianceKind(t *testing.T) {
+	if varianceKindFromDiff(0) != VarianceBalanced {
+		t.Fatal()
+	}
+	if varianceKindFromDiff(-1) != VarianceShortage {
+		t.Fatal()
+	}
+	if varianceKindFromDiff(1) != VarianceSurplus {
 		t.Fatal()
 	}
 }

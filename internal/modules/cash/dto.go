@@ -6,6 +6,25 @@ type RegisterRequest struct {
 	Location string `json:"location"`
 	Active   *bool  `json:"active"`
 }
+
+// SessionListFilter supports historical session listing (status/register/date + pagination).
+type SessionListFilter struct {
+	Status         string
+	CashRegisterID uint
+	DateFrom       string // opened_at >= date (YYYY-MM-DD)
+	DateTo         string // opened_at < date+1 day
+	Page           int
+	Limit          int
+}
+
+// SessionListPage is a paginated list of CashSession rows (no journal / no payment sums).
+type SessionListPage struct {
+	Items      []Session `json:"items"`
+	Page       int       `json:"page"`
+	Limit      int       `json:"limit"`
+	Total      int64     `json:"total"`
+	TotalPages int       `json:"totalPages"`
+}
 type OpenRequest struct {
 	CashRegisterID uint   `json:"cashRegisterId" binding:"required"`
 	OpeningFloat   int64  `json:"openingFloat"`
