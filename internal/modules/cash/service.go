@@ -122,17 +122,24 @@ func (s *Service) Get(id uint) (*SessionSummary, error) {
 }
 func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error) {
 	method := strings.ToUpper(strings.TrimSpace(r.PaymentMethod))
-	if (method == "BANK_TRANSFER" || method == "CHECK") && strings.TrimSpace(r.ExternalReference) == "" {
+	key, err := billing.NormalizePaymentIdempotencyKey(r.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	r.IdempotencyKey = key
+	extRef := strings.TrimSpace(r.ExternalReference)
+	mobile := strings.TrimSpace(r.MobileOperator)
+	if (method == "BANK_TRANSFER" || method == "CHECK") && extRef == "" {
 		return nil, coreerrors.BadRequest("Référence obligatoire")
 	}
-	if method == "MOBILE_MONEY" && strings.TrimSpace(r.MobileOperator) == "" {
+	if method == "MOBILE_MONEY" && mobile == "" {
 		return nil, coreerrors.BadRequest("Opérateur Mobile Money obligatoire")
 	}
 	var receiptID uint
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var prior Receipt
-		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", r.IdempotencyKey).First(&prior).Error; e == nil {
-			if prior.InvoiceID != r.InvoiceID || prior.CashSessionID != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method {
+		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
+			if prior.InvoiceID != r.InvoiceID || prior.CashSessionID != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
 				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
 			}
 			receiptID = prior.ID
@@ -146,8 +153,8 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 			return coreerrors.Conflict("Session de caisse fermée")
 		}
 		// Recheck after the session lock: concurrent retries may both miss the fast path above.
-		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", r.IdempotencyKey).First(&prior).Error; e == nil {
-			if prior.InvoiceID != r.InvoiceID || prior.CashSessionID != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method {
+		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
+			if prior.InvoiceID != r.InvoiceID || prior.CashSessionID != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
 				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
 			}
 			receiptID = prior.ID
@@ -158,8 +165,15 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 			return coreerrors.NotFound("INVOICE")
 		}
 		before := inv.PaidAmount
-		p, e := s.billing.PayInTransaction(tx, r.InvoiceID, billing.PaymentRequest{Amount: r.Amount, PaymentMethod: method, Reference: r.ExternalReference, IdempotencyKey: r.IdempotencyKey, MobileOperator: r.MobileOperator}, u, &sessionID)
+		p, e := s.billing.PayInTransaction(tx, r.InvoiceID, billing.PaymentRequest{Amount: r.Amount, PaymentMethod: method, Reference: extRef, IdempotencyKey: key, MobileOperator: mobile}, u, &sessionID)
 		if e != nil {
+			return e
+		}
+		// Replay path: payment already had a receipt (concurrent same-key winner).
+		if e := tx.Where("payment_id=?", p.ID).First(&prior).Error; e == nil {
+			receiptID = prior.ID
+			return nil
+		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
 			return e
 		}
 		var patient struct{ Nom, Prenoms, CodePatient string }
@@ -168,6 +182,13 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 		tx.Table("users").Select("name").Where("id=?", u).Scan(&cashier)
 		rec := Receipt{ReceiptNumber: fmt.Sprintf("TMP-%d", time.Now().UnixNano()), PaymentID: p.ID, InvoiceID: inv.ID, PatientID: inv.PatientID, CashSessionID: sessionID, Amount: p.Amount, PaymentMethod: p.PaymentMethod, ExternalReference: p.Reference, MobileOperator: p.MobileOperator, IssuedBy: u, IssuedAt: time.Now(), InvoiceNumber: inv.Number, PatientName: strings.TrimSpace(patient.Prenoms + " " + patient.Nom), PatientCode: patient.CodePatient, CashierName: cashier.Name, RegisterCode: session.Register.Code, RegisterName: session.Register.Name, InvoiceGrossAmount: inv.GrossAmount, InsuranceAmount: inv.InsuranceAmount, PatientAmount: inv.PatientAmount, PaidBefore: before, BalanceAfter: inv.BalanceAmount - r.Amount}
 		if e := tx.Create(&rec).Error; e != nil {
+			if isCashReceiptPaymentUniqueViolation(e) {
+				var raced Receipt
+				if load := tx.Where("payment_id=?", p.ID).First(&raced).Error; load == nil {
+					receiptID = raced.ID
+					return nil
+				}
+			}
 			return e
 		}
 		rec.ReceiptNumber = fmt.Sprintf("REC-%06d", rec.ID)
@@ -181,6 +202,22 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 		return nil, e
 	}
 	return s.Receipt(receiptID)
+}
+
+func isCashReceiptPaymentUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, fragment := range []string{"duplicate key", "unique constraint", "sqlstate 23505", "payment_id"} {
+		if strings.Contains(msg, fragment) {
+			return true
+		}
+	}
+	return false
 }
 func (s *Service) Close(id uint, r CloseRequest, u uint) (*SessionSummary, error) {
 	if r.CountedCashAmount < 0 {

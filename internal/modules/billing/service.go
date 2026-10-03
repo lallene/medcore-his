@@ -464,17 +464,27 @@ func (s *Service) Pay(id uint, req PaymentRequest, user uint) (*Invoice, error) 
 
 // PayInTransaction is the single financial payment primitive used by Billing and Cash.
 func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, user uint, sessionID *uint) (*Payment, error) {
-	method := strings.ToUpper(req.PaymentMethod)
-	if !paymentMethods[method] || req.Amount <= 0 || strings.TrimSpace(req.IdempotencyKey) == "" {
+	method := strings.ToUpper(strings.TrimSpace(req.PaymentMethod))
+	key, err := NormalizePaymentIdempotencyKey(req.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if !paymentMethods[method] || req.Amount <= 0 {
 		return nil, coreerrors.BadRequest("Paiement invalide")
 	}
+	reference := strings.TrimSpace(req.Reference)
+	mobile := strings.TrimSpace(req.MobileOperator)
+
 	var prior Payment
-	if e := tx.Where("idempotency_key=?", req.IdempotencyKey).First(&prior).Error; e == nil {
-		if prior.InvoiceID != id || prior.Amount != req.Amount || prior.PaymentMethod != method {
-			return nil, coreerrors.Conflict("Clé d'idempotence déjà utilisée")
+	if e := tx.Where("idempotency_key=?", key).First(&prior).Error; e == nil {
+		if e := paymentFingerprintConflict(prior, id, req.Amount, method, reference, mobile); e != nil {
+			return nil, e
 		}
 		return &prior, nil
+	} else if !errors.Is(e, gorm.ErrRecordNotFound) {
+		return nil, e
 	}
+
 	var x Invoice
 	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
 		return nil, coreerrors.NotFound("INVOICE")
@@ -482,11 +492,28 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 	if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
+	if x.BalanceAmount <= 0 {
+		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
+	}
 	if req.Amount > x.BalanceAmount {
 		return nil, coreerrors.Conflict("Le paiement dépasse le reste dû")
 	}
-	p := Payment{InvoiceID: id, Amount: req.Amount, PaymentMethod: method, Reference: strings.TrimSpace(req.Reference), IdempotencyKey: req.IdempotencyKey, PaidAt: time.Now(), ReceivedBy: user, CashSessionID: sessionID, MobileOperator: strings.TrimSpace(req.MobileOperator)}
+	p := Payment{
+		InvoiceID: id, Amount: req.Amount, PaymentMethod: method, Reference: reference,
+		IdempotencyKey: key, PaidAt: time.Now(), ReceivedBy: user, CashSessionID: sessionID,
+		MobileOperator: mobile,
+	}
 	if e := tx.Create(&p).Error; e != nil {
+		// Concurrent same-key: unique index wins; recover original payment if fingerprint matches.
+		if isPaymentIdempotencyUniqueViolation(e) {
+			var raced Payment
+			if load := tx.Where("idempotency_key=?", key).First(&raced).Error; load == nil {
+				if e := paymentFingerprintConflict(raced, id, req.Amount, method, reference, mobile); e != nil {
+					return nil, e
+				}
+				return &raced, nil
+			}
+		}
 		return nil, e
 	}
 	x.PaidAmount += req.Amount

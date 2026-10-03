@@ -2,11 +2,13 @@ package cash
 
 import (
 	"errors"
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/core/response"
-	"strconv"
 )
 
 type Handler struct{ s *Service }
@@ -140,6 +142,9 @@ func (h *Handler) Pay(c *gin.Context) {
 	if c.ShouldBindJSON(&r) != nil {
 		bad(c, coreerrors.BadRequest("Paiement invalide"))
 		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
 	}
 	u, ok := uid(c)
 	if !ok {

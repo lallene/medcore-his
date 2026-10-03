@@ -2,12 +2,14 @@ package billing
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/core/response"
-	"net/http"
-	"strconv"
 )
 
 type Handler struct{ service *Service }
@@ -179,6 +181,10 @@ func (h *Handler) Pay(c *gin.Context) {
 	if c.ShouldBindJSON(&r) != nil {
 		fail(c, coreerrors.BadRequest("Paiement invalide"))
 		return
+	}
+	// Prefer Idempotency-Key header (canonical retry contract); fall back to body.
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
 	}
 	u, ok := current(c)
 	if !ok {

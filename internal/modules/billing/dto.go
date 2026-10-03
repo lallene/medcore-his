@@ -20,10 +20,11 @@ type CreateInvoiceRequest struct {
 	Lines     []InvoiceLineRequest `json:"lines" binding:"required,min=1"`
 }
 type PaymentRequest struct {
-	Amount         int64  `json:"amount" binding:"required"`
-	PaymentMethod  string `json:"paymentMethod" binding:"required"`
-	Reference      string `json:"reference"`
-	IdempotencyKey string `json:"idempotencyKey" binding:"required"`
+	Amount        int64  `json:"amount" binding:"required"`
+	PaymentMethod string `json:"paymentMethod" binding:"required"`
+	Reference     string `json:"reference"`
+	// IdempotencyKey may be supplied in JSON and/or Idempotency-Key header (handler merges).
+	IdempotencyKey string `json:"idempotencyKey"`
 	MobileOperator string `json:"mobileOperator"`
 }
 type CancelRequest struct {

@@ -21,5 +21,6 @@ type PaymentRequest struct {
 	PaymentMethod     string `json:"paymentMethod" binding:"required"`
 	ExternalReference string `json:"externalReference"`
 	MobileOperator    string `json:"mobileOperator"`
-	IdempotencyKey    string `json:"idempotencyKey" binding:"required"`
+	// IdempotencyKey may be supplied in JSON and/or Idempotency-Key header (handler merges).
+	IdempotencyKey string `json:"idempotencyKey"`
 }
