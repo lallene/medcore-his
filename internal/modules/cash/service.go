@@ -149,30 +149,11 @@ func (s *Service) Get(id uint) (*SessionSummary, error) {
 	if e := s.db.Preload("Register").First(&x, id).Error; e != nil {
 		return nil, coreerrors.NotFound("CASH_SESSION")
 	}
-	z := SessionSummary{Session: x}
-	rows := []struct {
-		Method string
-		Total  int64
-		Count  int64
-	}{}
-	s.db.Table("billing_payments").Select("payment_method method,COALESCE(SUM(amount),0) total,COUNT(*) count").Where("cash_session_id=?", id).Group("payment_method").Scan(&rows)
-	for _, r := range rows {
-		z.TotalPayments += r.Total
-		z.OperationCount += r.Count
-		switch r.Method {
-		case "CASH":
-			z.CashPayments = r.Total
-		case "CARD":
-			z.CardPayments = r.Total
-		case "MOBILE_MONEY":
-			z.MobileMoneyPayments = r.Total
-		case "BANK_TRANSFER":
-			z.BankTransferPayments = r.Total
-		case "CHECK":
-			z.CheckPayments = r.Total
-		}
+	totals, e := loadSessionPaymentTotals(s.db, id)
+	if e != nil {
+		return nil, e
 	}
-	z.ExpectedCash = x.OpeningFloat + z.CashPayments
+	z := assembleSessionSummary(x, totals)
 	return &z, nil
 }
 
@@ -321,11 +302,12 @@ func (s *Service) Close(id uint, r CloseRequest, u uint, canCloseAny bool) (*Ses
 			}
 		}
 
-		var cash int64
-		if e := tx.Table("billing_payments").Where("cash_session_id=? AND payment_method='CASH'", id).Select("COALESCE(SUM(amount),0)").Scan(&cash).Error; e != nil {
+		totals, e := loadSessionPaymentTotals(tx, id)
+		if e != nil {
 			return e
 		}
-		expected := x.OpeningFloat + cash
+		// Same authority as SessionSummary OPEN expected (no formula drift).
+		expected := liveExpectedCash(x.OpeningFloat, totals.Cash)
 		diff := r.CountedCashAmount - expected
 		if diff != 0 && note == "" {
 			return coreerrors.BadRequest("Justification obligatoire en cas d'écart")

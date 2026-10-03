@@ -85,14 +85,24 @@ type Receipt struct {
 
 func (Receipt) TableName() string { return "cash_receipts" }
 
+// SessionSummary is the single backend-authoritative financial projection for a CashSession.
+// Collection totals come from billing_payments attached to the session (not receipts).
+// OpeningFloat is never part of TotalCollected.
+// ExpectedCash: OPEN = OpeningFloat + CASH collected; CLOSED = persisted ExpectedCashAmount snapshot.
 type SessionSummary struct {
-	Session              Session `json:"session"`
-	CashPayments         int64   `json:"cashPayments"`
-	CardPayments         int64   `json:"cardPayments"`
-	MobileMoneyPayments  int64   `json:"mobileMoneyPayments"`
-	BankTransferPayments int64   `json:"bankTransferPayments"`
-	CheckPayments        int64   `json:"checkPayments"`
-	TotalPayments        int64   `json:"totalPayments"`
-	OperationCount       int64   `json:"operationCount"`
-	ExpectedCash         int64   `json:"expectedCash"`
+	Session Session `json:"session"`
+	// Canonical collection fields (LOT29E-C).
+	CashCollected    int64 `json:"cashCollected"`
+	NonCashCollected int64 `json:"nonCashCollected"`
+	TotalCollected   int64 `json:"totalCollected"`
+	// Method breakdown (authoritative; FE must not regroup from journal).
+	CashPayments         int64 `json:"cashPayments"`
+	CardPayments         int64 `json:"cardPayments"`
+	MobileMoneyPayments  int64 `json:"mobileMoneyPayments"`
+	BankTransferPayments int64 `json:"bankTransferPayments"`
+	CheckPayments        int64 `json:"checkPayments"`
+	// TotalPayments mirrors TotalCollected for compatibility with pre-29E-C clients.
+	TotalPayments  int64 `json:"totalPayments"`
+	OperationCount int64 `json:"operationCount"`
+	ExpectedCash   int64 `json:"expectedCash"`
 }
