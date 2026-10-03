@@ -32,6 +32,7 @@ type Payment struct {
 	PaidAt        time.Time `json:"paidAt"`
 	ReceiptID     uint      `json:"receiptId"`
 	ReceiptNumber string    `json:"receiptNumber"`
+	Reversed      bool      `json:"reversed"`
 }
 type Item struct {
 	InvoiceID       uint       `json:"invoiceId"`

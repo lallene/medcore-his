@@ -248,6 +248,16 @@ func (s *Service) Receipt(id uint) (*Receipt, error) {
 	if e := s.db.First(&x, id).Error; e != nil {
 		return nil, coreerrors.NotFound("CASH_RECEIPT")
 	}
+	var revAt *time.Time
+	var n int64
+	if e := s.db.Table("billing_payment_reversals").Where("original_payment_id=?", x.PaymentID).Count(&n).Error; e == nil && n > 0 {
+		x.PaymentReversed = true
+		var at time.Time
+		if e := s.db.Table("billing_payment_reversals").Select("reversed_at").Where("original_payment_id=?", x.PaymentID).Scan(&at).Error; e == nil {
+			revAt = &at
+			x.PaymentReversedAt = revAt
+		}
+	}
 	return &x, nil
 }
 func (s *Service) Receipts(session uint) ([]Receipt, error) {

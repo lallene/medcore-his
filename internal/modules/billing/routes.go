@@ -17,6 +17,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.GET("/invoices/:id", rbac.Permission("billing.read"), h.Get)
 	g.POST("/invoices/:id/issue", rbac.Permission("billing.issue"), h.Issue)
 	g.POST("/invoices/:id/payments", rbac.Permission("billing.payment.create"), h.Pay)
+	g.POST("/payments/:id/reverse", rbac.Permission("billing.payment.reverse"), h.ReversePayment)
 	g.POST("/invoices/:id/cancel", rbac.Permission("billing.cancel"), h.Cancel)
 	g.GET("/kpis", rbac.Permission("billing.read"), h.KPIs)
 	r.GET("/patients/:id/invoices", rbac.Permission("billing.read"), func(c *gin.Context) {

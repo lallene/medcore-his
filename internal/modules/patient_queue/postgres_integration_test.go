@@ -169,6 +169,16 @@ func queuePostgres(t *testing.T) *gorm.DB {
 	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS billing_payments (
 		id BIGSERIAL PRIMARY KEY, invoice_id BIGINT, amount BIGINT
 	)`)
+	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS billing_payment_reversals (
+		id BIGSERIAL PRIMARY KEY,
+		original_payment_id BIGINT NOT NULL UNIQUE,
+		amount BIGINT NOT NULL,
+		reason TEXT NOT NULL,
+		reversed_by BIGINT NOT NULL,
+		reversed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		idempotency_key TEXT NOT NULL UNIQUE,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	)`)
 	mustExecSQL(t, db, `CREATE TABLE IF NOT EXISTS vital_signs (
 		id BIGSERIAL PRIMARY KEY, medical_record_id BIGINT, patient_id BIGINT NOT NULL,
 		consultation_id BIGINT, comment TEXT,

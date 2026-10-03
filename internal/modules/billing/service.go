@@ -397,6 +397,7 @@ func (s *Service) GetInvoice(id uint) (*Invoice, error) {
 	if e == nil {
 		s.decorate(&x)
 		s.attachReceipts(&x)
+		s.attachReversals(&x)
 	}
 	return &x, e
 }
@@ -433,6 +434,36 @@ func (s *Service) attachReceipts(x *Invoice) {
 			id := r.ID
 			x.Payments[i].ReceiptID = &id
 			x.Payments[i].ReceiptNumber = r.ReceiptNumber
+		}
+	}
+}
+
+func (s *Service) attachReversals(x *Invoice) {
+	if x == nil || len(x.Payments) == 0 {
+		return
+	}
+	ids := make([]uint, 0, len(x.Payments))
+	for _, p := range x.Payments {
+		ids = append(ids, p.ID)
+	}
+	var rows []PaymentReversal
+	if e := s.db.Where("original_payment_id IN ?", ids).Find(&rows).Error; e != nil {
+		return
+	}
+	byPay := make(map[uint]PaymentReversal, len(rows))
+	for _, r := range rows {
+		byPay[r.OriginalPaymentID] = r
+	}
+	for i := range x.Payments {
+		if r, ok := byPay[x.Payments[i].ID]; ok {
+			id := r.ID
+			at := r.ReversedAt
+			by := r.ReversedBy
+			x.Payments[i].Reversed = true
+			x.Payments[i].ReversalID = &id
+			x.Payments[i].ReversedAt = &at
+			x.Payments[i].ReversalReason = r.Reason
+			x.Payments[i].ReversedBy = &by
 		}
 	}
 }
@@ -624,7 +655,11 @@ func (s *Service) Cancel(id uint, reason string, user uint) (*Invoice, error) {
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
 			return coreerrors.NotFound("INVOICE")
 		}
-		if x.PaidAmount > 0 {
+		effectivePaid, err := EffectivePaidOnInvoice(tx, id)
+		if err != nil {
+			return err
+		}
+		if effectivePaid > 0 {
 			return coreerrors.Conflict("Une facture encaissée nécessite un avoir/remboursement")
 		}
 		if x.Status != InvoiceDraft && x.Status != InvoiceIssued {

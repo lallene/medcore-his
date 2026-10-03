@@ -56,6 +56,7 @@ var SensitivePermissions = map[string]bool{
 	"staff.manage":                   true,
 	"staff.audit.read":               true,
 	"billing.cancel":                 true,
+	"billing.payment.reverse":        true,
 	"insurance.authorization.decide": true,
 	"insurance.authorization.cancel": true,
 	"cash.payment.cancel":            true,

@@ -227,7 +227,11 @@ func (s *Service) EvaluateFinance(patientID uint) (string, error) {
 		SELECT COALESCE(SUM(GREATEST(i.patient_amount - COALESCE(pay.paid,0), 0)), 0)
 		FROM billing_invoices i
 		LEFT JOIN (
-			SELECT invoice_id, SUM(amount) paid FROM billing_payments GROUP BY invoice_id
+			SELECT p.invoice_id, SUM(p.amount) paid
+			FROM billing_payments p
+			LEFT JOIN billing_payment_reversals r ON r.original_payment_id = p.id
+			WHERE r.id IS NULL
+			GROUP BY p.invoice_id
 		) pay ON pay.invoice_id = i.id
 		WHERE i.patient_id = ? AND i.status IN ('ISSUED','PARTIALLY_PAID','OVERDUE')
 	`, patientID).Scan(&bal).Error

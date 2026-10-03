@@ -74,6 +74,9 @@ type Receipt struct {
 	PaidBefore         int64     `json:"paidBefore"`
 	BalanceAfter       int64     `json:"balanceAfter"`
 	CreatedAt          time.Time `json:"createdAt"`
+	// LOT29D-C: underlying payment was fully reversed (decorated on read).
+	PaymentReversed   bool       `json:"paymentReversed" gorm:"-"`
+	PaymentReversedAt *time.Time `json:"paymentReversedAt,omitempty" gorm:"-"`
 }
 
 func (Receipt) TableName() string { return "cash_receipts" }

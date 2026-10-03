@@ -58,6 +58,7 @@ func schemaModels() []any {
 		&billing.InvoiceLine{},
 		&billing.AuthorizationAllocation{},
 		&billing.Payment{},
+		&billing.PaymentReversal{},
 		&act_catalog.Entry{},
 		&performed_acts.Act{},
 		&performed_acts.ProducerMap{},

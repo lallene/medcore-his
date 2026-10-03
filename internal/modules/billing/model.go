@@ -108,6 +108,27 @@ type Payment struct {
 	// Canonical cash_receipts identity (decorated on read; not a column).
 	ReceiptID     *uint  `json:"receiptId,omitempty" gorm:"-"`
 	ReceiptNumber string `json:"receiptNumber,omitempty" gorm:"-"`
+	// LOT29D-C full reversal decoration (not columns).
+	Reversed       bool       `json:"reversed" gorm:"-"`
+	ReversalID     *uint      `json:"reversalId,omitempty" gorm:"-"`
+	ReversedAt     *time.Time `json:"reversedAt,omitempty" gorm:"-"`
+	ReversalReason string     `json:"reversalReason,omitempty" gorm:"-"`
+	ReversedBy     *uint      `json:"reversedBy,omitempty" gorm:"-"`
 }
 
 func (Payment) TableName() string { return "billing_payments" }
+
+// PaymentReversal is the V1 linked counter-entry for a full payment reversal (LOT29D-C).
+// Original Payment rows remain immutable.
+type PaymentReversal struct {
+	ID                uint      `gorm:"primaryKey" json:"id"`
+	OriginalPaymentID uint      `gorm:"not null;uniqueIndex" json:"originalPaymentId"`
+	Amount            int64     `gorm:"not null;check:billing_payment_reversal_amount_positive,amount > 0" json:"amount"`
+	Reason            string    `gorm:"size:500;not null" json:"reason"`
+	ReversedBy        uint      `gorm:"not null;index" json:"reversedBy"`
+	ReversedAt        time.Time `gorm:"not null;index" json:"reversedAt"`
+	IdempotencyKey    string    `gorm:"size:120;not null;uniqueIndex" json:"idempotencyKey"`
+	CreatedAt         time.Time `json:"createdAt"`
+}
+
+func (PaymentReversal) TableName() string { return "billing_payment_reversals" }

@@ -197,6 +197,30 @@ func (h *Handler) Pay(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func (h *Handler) ReversePayment(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r ReversePaymentRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Contrepassation invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.ReversePayment(n, r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
 func (h *Handler) Cancel(c *gin.Context) {
 	n, ok := id(c)
 	if !ok {
