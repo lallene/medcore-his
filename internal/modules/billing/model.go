@@ -105,6 +105,9 @@ type Payment struct {
 	CashSessionID  *uint     `gorm:"index" json:"cashSessionId,omitempty"`
 	MobileOperator string    `gorm:"size:80" json:"mobileOperator,omitempty"`
 	CreatedAt      time.Time `json:"createdAt"`
+	// Canonical cash_receipts identity (decorated on read; not a column).
+	ReceiptID     *uint  `json:"receiptId,omitempty" gorm:"-"`
+	ReceiptNumber string `json:"receiptNumber,omitempty" gorm:"-"`
 }
 
 func (Payment) TableName() string { return "billing_payments" }

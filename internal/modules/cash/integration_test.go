@@ -58,6 +58,9 @@ func cashDB(t *testing.T) *gorm.DB {
 	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.Payment{}, &Receipt{}); e != nil {
 		t.Fatal(e)
 	}
+	if e = EnsureReceiptSessionNullable(db); e != nil {
+		t.Fatal(e)
+	}
 	if e = db.Exec("CREATE UNIQUE INDEX ux_cash_sessions_open_register ON cash_sessions(cash_register_id) WHERE status='OPEN'").Error; e != nil {
 		t.Fatal(e)
 	}
@@ -137,5 +140,42 @@ func TestPostgresConcurrentCashIdempotence(t *testing.T) {
 	db.Model(&Receipt{}).Count(&receipts)
 	if payments != 1 || receipts != 1 {
 		t.Fatalf("payments=%d receipts=%d", payments, receipts)
+	}
+}
+
+func TestLOT29D_B_CashSessionReceiptUnchanged(t *testing.T) {
+	// RB13 — cash-session payment → receipt remains session-bound after billing convergence.
+	db := cashDB(t)
+	db.Create(&cashUser{ID: 9, Name: "Caissier Test"})
+	db.Create(&cashPatient{ID: 2, Nom: "Patient", Prenoms: "Test", CodePatient: "P-CASH"})
+	s := NewService(db)
+	reg, e := s.SaveRegister(0, RegisterRequest{Code: "RB13", Name: "Principale"}, 9)
+	if e != nil {
+		t.Fatal(e)
+	}
+	session, e := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 50000}, 9)
+	if e != nil {
+		t.Fatal(e)
+	}
+	inv := billing.Invoice{Number: "INV-RB13", PatientID: 2, Status: billing.InvoiceIssued, GrossAmount: 50000, PatientAmount: 15000, BalanceAmount: 15000, CreatedBy: 9, UpdatedBy: 9}
+	db.Create(&inv)
+	rec, e := s.Pay(session.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "rb13"}, 9)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if rec.CashSessionID == nil || *rec.CashSessionID != session.Session.ID {
+		t.Fatalf("RB13 session %+v", rec)
+	}
+	if rec.RegisterCode != "RB13" || rec.RegisterName != "Principale" || rec.ReceiptNumber != "REC-000001" {
+		t.Fatalf("RB13 receipt %+v", rec)
+	}
+	again, e := s.Receipt(rec.ID)
+	if e != nil || again.ID != rec.ID || again.ReceiptNumber != rec.ReceiptNumber {
+		t.Fatalf("RB14 reprint/read mutated %+v %v", again, e)
+	}
+	var n int64
+	db.Model(&Receipt{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("RB14 receipts=%d", n)
 	}
 }

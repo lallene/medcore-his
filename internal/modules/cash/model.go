@@ -48,22 +48,24 @@ type Session struct {
 func (Session) TableName() string { return "cash_sessions" }
 
 type Receipt struct {
-	ID                 uint      `gorm:"primaryKey" json:"id"`
-	ReceiptNumber      string    `gorm:"size:30;not null;uniqueIndex" json:"receiptNumber"`
-	PaymentID          uint      `gorm:"not null;uniqueIndex" json:"paymentId"`
-	InvoiceID          uint      `gorm:"not null;index" json:"invoiceId"`
-	PatientID          uint      `gorm:"not null;index" json:"patientId"`
-	CashSessionID      uint      `gorm:"not null;index" json:"cashSessionId"`
-	Amount             int64     `gorm:"not null;check:cash_receipt_amount_positive,amount > 0" json:"amount"`
-	PaymentMethod      string    `gorm:"size:30;not null" json:"paymentMethod"`
-	ExternalReference  string    `gorm:"size:120" json:"externalReference"`
-	MobileOperator     string    `gorm:"size:80" json:"mobileOperator"`
-	IssuedBy           uint      `gorm:"not null;index" json:"issuedBy"`
-	IssuedAt           time.Time `gorm:"not null;index" json:"issuedAt"`
-	InvoiceNumber      string    `gorm:"size:30;not null" json:"invoiceNumber"`
-	PatientName        string    `gorm:"size:250;not null" json:"patientName"`
-	PatientCode        string    `gorm:"size:50" json:"patientCode"`
-	CashierName        string    `gorm:"size:150;not null" json:"cashierName"`
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	ReceiptNumber string `gorm:"size:30;not null;uniqueIndex" json:"receiptNumber"`
+	PaymentID     uint   `gorm:"not null;uniqueIndex" json:"paymentId"`
+	InvoiceID     uint   `gorm:"not null;index" json:"invoiceId"`
+	PatientID     uint   `gorm:"not null;index" json:"patientId"`
+	// CashSessionID is set for cash-session collection; nil for sessionless billing collection (LOT29D-B).
+	CashSessionID     *uint     `gorm:"index" json:"cashSessionId,omitempty"`
+	Amount            int64     `gorm:"not null;check:cash_receipt_amount_positive,amount > 0" json:"amount"`
+	PaymentMethod     string    `gorm:"size:30;not null" json:"paymentMethod"`
+	ExternalReference string    `gorm:"size:120" json:"externalReference"`
+	MobileOperator    string    `gorm:"size:80" json:"mobileOperator"`
+	IssuedBy          uint      `gorm:"not null;index" json:"issuedBy"`
+	IssuedAt          time.Time `gorm:"not null;index" json:"issuedAt"`
+	InvoiceNumber     string    `gorm:"size:30;not null" json:"invoiceNumber"`
+	PatientName       string    `gorm:"size:250;not null" json:"patientName"`
+	PatientCode       string    `gorm:"size:50" json:"patientCode"`
+	CashierName       string    `gorm:"size:150;not null" json:"cashierName"`
+	// RegisterCode/RegisterName are cash-register snapshots; empty for sessionless billing receipts.
 	RegisterCode       string    `gorm:"size:50;not null" json:"registerCode"`
 	RegisterName       string    `gorm:"size:150;not null" json:"registerName"`
 	InvoiceGrossAmount int64     `json:"invoiceGrossAmount"`

@@ -20,6 +20,43 @@ import (
 	"gorm.io/gorm"
 )
 
+type billingUser struct {
+	ID   uint `gorm:"primaryKey"`
+	Name string
+}
+
+func (billingUser) TableName() string { return "users" }
+
+// billingCashReceipt mirrors cash.Receipt for test AutoMigrate without importing cash (cycle).
+type billingCashReceipt struct {
+	ID                 uint `gorm:"primaryKey"`
+	ReceiptNumber      string
+	PaymentID          uint `gorm:"uniqueIndex"`
+	InvoiceID          uint
+	PatientID          uint
+	CashSessionID      *uint
+	Amount             int64
+	PaymentMethod      string
+	ExternalReference  string
+	MobileOperator     string
+	IssuedBy           uint
+	IssuedAt           time.Time
+	InvoiceNumber      string
+	PatientName        string
+	PatientCode        string
+	CashierName        string
+	RegisterCode       string
+	RegisterName       string
+	InvoiceGrossAmount int64
+	InsuranceAmount    int64
+	PatientAmount      int64
+	PaidBefore         int64
+	BalanceAfter       int64
+	CreatedAt          time.Time
+}
+
+func (billingCashReceipt) TableName() string { return "cash_receipts" }
+
 type billingConsultation struct {
 	ID, PatientID   uint
 	Service, Status string
@@ -191,8 +228,11 @@ func billingDB(t *testing.T) *gorm.DB {
 		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE").Error
 		_ = adminSQL.Close()
 	})
-	models := []any{&patients.Patient{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingHospitalization{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &billingPerformedAct{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}}
+	models := []any{&patients.Patient{}, &billingUser{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingHospitalization{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &billingPerformedAct{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}, &billingCashReceipt{}}
 	if e = db.AutoMigrate(models...); e != nil {
+		t.Fatal(e)
+	}
+	if e = db.Exec(`ALTER TABLE cash_receipts ALTER COLUMN cash_session_id DROP NOT NULL`).Error; e != nil {
 		t.Fatal(e)
 	}
 	if e = db.Exec("CREATE UNIQUE INDEX ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active=true").Error; e != nil {

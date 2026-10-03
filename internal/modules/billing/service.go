@@ -18,13 +18,31 @@ import (
 var actTypes = map[string]bool{"CONSULTATION": true, "LABORATORY": true, "IMAGING": true, "HOSPITALIZATION": true, "MEDICATION": true, "PERFORMED_ACT": true}
 var paymentMethods = map[string]bool{"CASH": true, "CARD": true, "MOBILE_MONEY": true, "BANK_TRANSFER": true, "CHECK": true, "OTHER": true}
 
+// ReceiptIssuer creates/recovers the canonical cash_receipts row for a billing payment (same TX).
+type ReceiptIssuer func(tx *gorm.DB, payment *Payment, invoice *Invoice, paidBefore, balanceAfter int64, user uint) error
+
+// defaultReceiptIssuer is set by cash.RegisterBillingReceiptIssuer (avoids import cycle).
+var defaultReceiptIssuer ReceiptIssuer
+
+// RegisterReceiptIssuer wires the canonical cash_receipts issuer for billing.Pay.
+func RegisterReceiptIssuer(fn ReceiptIssuer) {
+	defaultReceiptIssuer = fn
+}
+
 type Service struct {
 	db             *gorm.DB
 	authorizations *authorization.Service
+	issueReceipt   ReceiptIssuer
 }
 
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db, authorizations: authorization.NewService(db)}
+	return &Service{db: db, authorizations: authorization.NewService(db), issueReceipt: defaultReceiptIssuer}
+}
+
+// WithReceiptIssuer overrides the package default (tests / explicit wiring).
+func (s *Service) WithReceiptIssuer(fn ReceiptIssuer) *Service {
+	s.issueReceipt = fn
+	return s
 }
 
 func parseDay(raw string, fallback time.Time) (time.Time, error) {
@@ -370,12 +388,15 @@ func (s *Service) CreateInvoice(req CreateInvoiceRequest, user uint) (*Invoice, 
 }
 func (s *Service) GetInvoice(id uint) (*Invoice, error) {
 	var x Invoice
-	e := s.db.Preload("Lines").Preload("Payments").First(&x, id).Error
+	e := s.db.Preload("Lines").Preload("Payments", func(db *gorm.DB) *gorm.DB {
+		return db.Order("paid_at ASC, id ASC")
+	}).First(&x, id).Error
 	if errors.Is(e, gorm.ErrRecordNotFound) {
 		return nil, coreerrors.NotFound("INVOICE")
 	}
 	if e == nil {
 		s.decorate(&x)
+		s.attachReceipts(&x)
 	}
 	return &x, e
 }
@@ -384,6 +405,36 @@ func (s *Service) decorate(x *Invoice) {
 	s.db.Table("patients").Select("nom,prenoms,code_patient").Where("id=?", x.PatientID).Scan(&p)
 	x.PatientName = strings.TrimSpace(p.Prenoms + " " + p.Nom)
 	x.PatientCode = p.CodePatient
+}
+
+func (s *Service) attachReceipts(x *Invoice) {
+	if x == nil || len(x.Payments) == 0 {
+		return
+	}
+	ids := make([]uint, 0, len(x.Payments))
+	for _, p := range x.Payments {
+		ids = append(ids, p.ID)
+	}
+	type row struct {
+		ID            uint
+		PaymentID     uint
+		ReceiptNumber string
+	}
+	var rows []row
+	if e := s.db.Table("cash_receipts").Select("id, payment_id, receipt_number").Where("payment_id IN ?", ids).Scan(&rows).Error; e != nil {
+		return
+	}
+	byPay := make(map[uint]row, len(rows))
+	for _, r := range rows {
+		byPay[r.PaymentID] = r
+	}
+	for i := range x.Payments {
+		if r, ok := byPay[x.Payments[i].ID]; ok {
+			id := r.ID
+			x.Payments[i].ReceiptID = &id
+			x.Payments[i].ReceiptNumber = r.ReceiptNumber
+		}
+	}
 }
 func (s *Service) Issue(id, user uint) (*Invoice, error) {
 	e := s.db.Transaction(func(tx *gorm.DB) error {
@@ -453,8 +504,37 @@ func (s *Service) Issue(id, user uint) (*Invoice, error) {
 }
 func (s *Service) Pay(id uint, req PaymentRequest, user uint) (*Invoice, error) {
 	e := s.db.Transaction(func(tx *gorm.DB) error {
-		_, e := s.PayInTransaction(tx, id, req, user, nil)
-		return e
+		var snap Invoice
+		if e := tx.Select("id", "paid_amount").First(&snap, id).Error; e != nil {
+			return coreerrors.NotFound("INVOICE")
+		}
+		paidBeforeSnapshot := snap.PaidAmount
+		p, e := s.PayInTransaction(tx, id, req, user, nil)
+		if e != nil {
+			return e
+		}
+		if s.issueReceipt == nil {
+			return nil
+		}
+		var inv Invoice
+		if e := tx.First(&inv, id).Error; e != nil {
+			return e
+		}
+		paidBefore := paidBeforeSnapshot
+		balanceAfter := inv.BalanceAmount
+		if inv.PaidAmount == paidBeforeSnapshot {
+			// Idempotent replay: invoice unchanged; reconstruct snapshot only if ensure must create.
+			var earlier int64
+			if e := tx.Model(&Payment{}).
+				Where("invoice_id=? AND id<>? AND (paid_at < ? OR (paid_at = ? AND id < ?))",
+					p.InvoiceID, p.ID, p.PaidAt, p.PaidAt, p.ID).
+				Select("COALESCE(SUM(amount),0)").Scan(&earlier).Error; e != nil {
+				return e
+			}
+			paidBefore = earlier
+			balanceAfter = inv.PatientAmount - earlier - p.Amount
+		}
+		return s.issueReceipt(tx, p, &inv, paidBefore, balanceAfter, user)
 	})
 	if e != nil {
 		return nil, e

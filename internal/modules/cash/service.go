@@ -2,13 +2,13 @@ package cash
 
 import (
 	"errors"
-	"fmt"
+	"strings"
+	"time"
+
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"strings"
-	"time"
 )
 
 type Service struct {
@@ -139,7 +139,7 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var prior Receipt
 		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
-			if prior.InvoiceID != r.InvoiceID || prior.CashSessionID != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
+			if prior.InvoiceID != r.InvoiceID || receiptSessionID(prior.CashSessionID) != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
 				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
 			}
 			receiptID = prior.ID
@@ -154,7 +154,7 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 		}
 		// Recheck after the session lock: concurrent retries may both miss the fast path above.
 		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
-			if prior.InvoiceID != r.InvoiceID || prior.CashSessionID != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
+			if prior.InvoiceID != r.InvoiceID || receiptSessionID(prior.CashSessionID) != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
 				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
 			}
 			receiptID = prior.ID
@@ -169,30 +169,20 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 		if e != nil {
 			return e
 		}
-		// Replay path: payment already had a receipt (concurrent same-key winner).
-		if e := tx.Where("payment_id=?", p.ID).First(&prior).Error; e == nil {
-			receiptID = prior.ID
-			return nil
-		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
-			return e
-		}
 		var patient struct{ Nom, Prenoms, CodePatient string }
 		tx.Table("patients").Select("nom,prenoms,code_patient").Where("id=?", inv.PatientID).Scan(&patient)
 		var cashier struct{ Name string }
 		tx.Table("users").Select("name").Where("id=?", u).Scan(&cashier)
-		rec := Receipt{ReceiptNumber: fmt.Sprintf("TMP-%d", time.Now().UnixNano()), PaymentID: p.ID, InvoiceID: inv.ID, PatientID: inv.PatientID, CashSessionID: sessionID, Amount: p.Amount, PaymentMethod: p.PaymentMethod, ExternalReference: p.Reference, MobileOperator: p.MobileOperator, IssuedBy: u, IssuedAt: time.Now(), InvoiceNumber: inv.Number, PatientName: strings.TrimSpace(patient.Prenoms + " " + patient.Nom), PatientCode: patient.CodePatient, CashierName: cashier.Name, RegisterCode: session.Register.Code, RegisterName: session.Register.Name, InvoiceGrossAmount: inv.GrossAmount, InsuranceAmount: inv.InsuranceAmount, PatientAmount: inv.PatientAmount, PaidBefore: before, BalanceAfter: inv.BalanceAmount - r.Amount}
-		if e := tx.Create(&rec).Error; e != nil {
-			if isCashReceiptPaymentUniqueViolation(e) {
-				var raced Receipt
-				if load := tx.Where("payment_id=?", p.ID).First(&raced).Error; load == nil {
-					receiptID = raced.ID
-					return nil
-				}
-			}
-			return e
-		}
-		rec.ReceiptNumber = fmt.Sprintf("REC-%06d", rec.ID)
-		if e := tx.Model(&rec).Update("receipt_number", rec.ReceiptNumber).Error; e != nil {
+		sid := sessionID
+		rec, e := IssueReceiptInTx(tx, ReceiptIssueInput{
+			PaymentID: p.ID, InvoiceID: inv.ID, PatientID: inv.PatientID, CashSessionID: &sid,
+			Amount: p.Amount, PaymentMethod: p.PaymentMethod, ExternalReference: p.Reference, MobileOperator: p.MobileOperator,
+			IssuedBy: u, InvoiceNumber: inv.Number, PatientName: strings.TrimSpace(patient.Prenoms + " " + patient.Nom),
+			PatientCode: patient.CodePatient, CashierName: cashier.Name, RegisterCode: session.Register.Code, RegisterName: session.Register.Name,
+			InvoiceGrossAmount: inv.GrossAmount, InsuranceAmount: inv.InsuranceAmount, PatientAmount: inv.PatientAmount,
+			PaidBefore: before, BalanceAfter: inv.BalanceAmount - r.Amount,
+		})
+		if e != nil {
 			return e
 		}
 		receiptID = rec.ID

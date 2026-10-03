@@ -11,6 +11,7 @@ type Module struct{}
 func (Module) Register(app *application.Application) {
 	logger.Info("Chargement module", "module", "billing")
 	// Schema + partial unique indexes owned by cmd/migrate (LOT 26I-3).
+	// LOT29D-B: receipt issuer registered by cash package init (canonical cash_receipts).
 	h := NewHandler(NewService(app.DB))
 	g := app.API()
 	g.Use(auth.Middleware(app.Config.JWTSecret, app.DB))

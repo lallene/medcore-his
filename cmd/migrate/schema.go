@@ -163,6 +163,10 @@ func applyMigrations(db *gorm.DB) error {
 	if err := db.AutoMigrate(schemaModels()...); err != nil {
 		return fmt.Errorf("AutoMigrate: %w", err)
 	}
+	// LOT29D-B: sessionless billing receipts — cash_session_id must be nullable.
+	if err := cash.EnsureReceiptSessionNullable(db); err != nil {
+		return fmt.Errorf("EnsureReceiptSessionNullable: %w", err)
+	}
 	if err := patient_queue.EnsureAppointmentIndexes(db); err != nil {
 		return fmt.Errorf("EnsureAppointmentIndexes: %w", err)
 	}
