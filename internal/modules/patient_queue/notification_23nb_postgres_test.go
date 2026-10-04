@@ -19,7 +19,8 @@ func TestPostgresNotificationLifecycleBookRescheduleCancel23NB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	start := time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC) // Monday
+	// Keep >24h from wall clock so ReminderT24HEligible stays true (LOT29F-D unblock; was 2026-10-05).
+	start := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC) // Monday
 	appt := bookLife(t, svc, admin, 901, prac, start, at.ID)
 
 	var booked, reminders int64
@@ -59,7 +60,7 @@ func TestPostgresNotificationLifecycleBookRescheduleCancel23NB(t *testing.T) {
 	}
 
 	cur := mustReload(t, db, appt.ID)
-	newStart := time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC)
+	newStart := time.Date(2026, 11, 2, 14, 0, 0, 0, time.UTC)
 	req := rsReq(cur, newStart)
 	req.IdempotencyKey = "rs-notif-1"
 	if _, err := svc.RescheduleAppointment(appt.ID, req, admin); err != nil {
