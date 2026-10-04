@@ -398,6 +398,20 @@ func (s *Service) decorateReceiptReversal(x *Receipt) {
 		return
 	}
 	x.PostCloseCorrection = at.After(closedAt)
+	if !x.PostCloseCorrection {
+		return
+	}
+	var exec CashCorrectionExecution
+	if e := s.db.Where("original_payment_id=?", x.PaymentID).First(&exec).Error; e != nil {
+		return
+	}
+	x.CashCorrectionExecuted = true
+	id := exec.ID
+	host := exec.HostCashSessionID
+	atExec := exec.ExecutedAt
+	x.CashCorrectionExecutionID = &id
+	x.CashCorrectionHostSessionID = &host
+	x.CashCorrectionExecutedAt = &atExec
 }
 
 func (s *Service) Receipt(id uint) (*Receipt, error) {

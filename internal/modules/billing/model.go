@@ -123,6 +123,11 @@ type Payment struct {
 	ReversedBy     *uint      `json:"reversedBy,omitempty" gorm:"-"`
 	// LOT29F-E′: derived when ReversedAt is after the linked session ClosedAt.
 	PostCloseCorrection bool `json:"postCloseCorrection,omitempty" gorm:"-"`
+	// LOT29F-F: physical correction execution (decorated on read).
+	CashCorrectionExecuted      bool       `json:"cashCorrectionExecuted,omitempty" gorm:"-"`
+	CashCorrectionExecutionID   *uint      `json:"cashCorrectionExecutionId,omitempty" gorm:"-"`
+	CashCorrectionExecutedAt    *time.Time `json:"cashCorrectionExecutedAt,omitempty" gorm:"-"`
+	CashCorrectionHostSessionID *uint      `json:"cashCorrectionHostSessionId,omitempty" gorm:"-"`
 }
 
 func (Payment) TableName() string { return "billing_payments" }

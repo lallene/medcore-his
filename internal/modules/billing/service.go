@@ -517,6 +517,49 @@ func (s *Service) attachReversals(x *Invoice) {
 			}
 		}
 	}
+	s.attachCorrectionExecutions(x, byPay)
+}
+
+func (s *Service) attachCorrectionExecutions(x *Invoice, byPay map[uint]PaymentReversal) {
+	if x == nil || len(byPay) == 0 {
+		return
+	}
+	revIDs := make([]uint, 0, len(byPay))
+	for _, r := range byPay {
+		revIDs = append(revIDs, r.ID)
+	}
+	type execRow struct {
+		ID                uint
+		PaymentReversalID uint
+		HostCashSessionID uint
+		ExecutedAt        time.Time
+	}
+	var rows []execRow
+	_ = s.db.Table("cash_correction_executions").
+		Select("id, payment_reversal_id, host_cash_session_id, executed_at").
+		Where("payment_reversal_id IN ?", revIDs).
+		Scan(&rows)
+	byRev := map[uint]execRow{}
+	for _, r := range rows {
+		byRev[r.PaymentReversalID] = r
+	}
+	for i := range x.Payments {
+		rev, ok := byPay[x.Payments[i].ID]
+		if !ok {
+			continue
+		}
+		ex, ok := byRev[rev.ID]
+		if !ok {
+			continue
+		}
+		id := ex.ID
+		host := ex.HostCashSessionID
+		at := ex.ExecutedAt
+		x.Payments[i].CashCorrectionExecuted = true
+		x.Payments[i].CashCorrectionExecutionID = &id
+		x.Payments[i].CashCorrectionHostSessionID = &host
+		x.Payments[i].CashCorrectionExecutedAt = &at
+	}
 }
 
 func (s *Service) attachCashSessionStatus(x *Invoice) {

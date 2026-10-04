@@ -83,6 +83,11 @@ type Receipt struct {
 	PaymentReversedAt *time.Time `json:"paymentReversedAt,omitempty" gorm:"-"`
 	// LOT29F-E′: derived when reversal timestamp is after session ClosedAt.
 	PostCloseCorrection bool `json:"postCloseCorrection,omitempty" gorm:"-"`
+	// LOT29F-F: physical correction executed later on a host OPEN session.
+	CashCorrectionExecuted      bool       `json:"cashCorrectionExecuted,omitempty" gorm:"-"`
+	CashCorrectionExecutionID   *uint      `json:"cashCorrectionExecutionId,omitempty" gorm:"-"`
+	CashCorrectionExecutedAt    *time.Time `json:"cashCorrectionExecutedAt,omitempty" gorm:"-"`
+	CashCorrectionHostSessionID *uint      `json:"cashCorrectionHostSessionId,omitempty" gorm:"-"`
 }
 
 func (Receipt) TableName() string { return "cash_receipts" }
@@ -96,6 +101,8 @@ const (
 	MovementManualOut = "MANUAL_OUT"
 	// LOT29F-D: system-generated drawer effect of an OPEN CASH PaymentReversal (not MANUAL_OUT).
 	MovementPaymentReversal = "PAYMENT_REVERSAL"
+	// LOT29F-F: system OUT on OPEN host session for post-close physical correction (PCE1).
+	// Defined in correction_execution.go as MovementPostCloseCorrectionOut.
 
 	MovementRefPaymentReversal = "PAYMENT_REVERSAL"
 )
@@ -169,9 +176,10 @@ type SessionSummary struct {
 	CashMovementIn  int64 `json:"cashMovementIn"`
 	CashMovementOut int64 `json:"cashMovementOut"`
 	NetCashMovement int64 `json:"netCashMovement"`
-	// LOT29F-D OUT breakdown (same CashMovementOut authority; informational only).
-	CashMovementManualOut   int64 `json:"cashMovementManualOut"`
-	CashMovementReversalOut int64 `json:"cashMovementReversalOut"`
+	// LOT29F-D / F OUT breakdown (same CashMovementOut authority; informational only).
+	CashMovementManualOut              int64 `json:"cashMovementManualOut"`
+	CashMovementReversalOut            int64 `json:"cashMovementReversalOut"`
+	CashMovementPostCloseCorrectionOut int64 `json:"cashMovementPostCloseCorrectionOut"`
 	// LOT29E-D reconciliation metadata (projection over CashSession; not a second aggregate).
 	ClosingProofComplete bool   `json:"closingProofComplete"`
 	FinalReconciliation  bool   `json:"finalReconciliation"`

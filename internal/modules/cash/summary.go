@@ -16,10 +16,11 @@ type sessionPaymentTotals struct {
 }
 
 type sessionMovementTotals struct {
-	In          int64
-	Out         int64
-	ManualOut   int64
-	ReversalOut int64
+	In                     int64
+	Out                    int64
+	ManualOut              int64
+	ReversalOut            int64
+	PostCloseCorrectionOut int64
 }
 
 // loadSessionPaymentTotals aggregates effective session payments from billing_payments only.
@@ -82,6 +83,8 @@ func loadSessionMovementTotals(db *gorm.DB, sessionID uint) (sessionMovementTota
 				m.ManualOut += r.Total
 			case MovementPaymentReversal:
 				m.ReversalOut += r.Total
+			case MovementPostCloseCorrectionOut:
+				m.PostCloseCorrectionOut += r.Total
 			}
 		}
 	}
@@ -122,22 +125,23 @@ func varianceKindFromDiff(diff int64) string {
 // Incomplete legacy CLOSED rows do not fabricate a closing expected as authority.
 func assembleSessionSummary(session Session, t sessionPaymentTotals, m sessionMovementTotals) SessionSummary {
 	z := SessionSummary{
-		Session:                 session,
-		CashCollected:           t.Cash,
-		NonCashCollected:        t.Total - t.Cash,
-		TotalCollected:          t.Total,
-		CashPayments:            t.Cash,
-		CardPayments:            t.Card,
-		MobileMoneyPayments:     t.MobileMoney,
-		BankTransferPayments:    t.BankTransfer,
-		CheckPayments:           t.Check,
-		TotalPayments:           t.Total,
-		OperationCount:          t.Count,
-		CashMovementIn:          m.In,
-		CashMovementOut:         m.Out,
-		NetCashMovement:         m.In - m.Out,
-		CashMovementManualOut:   m.ManualOut,
-		CashMovementReversalOut: m.ReversalOut,
+		Session:                            session,
+		CashCollected:                      t.Cash,
+		NonCashCollected:                   t.Total - t.Cash,
+		TotalCollected:                     t.Total,
+		CashPayments:                       t.Cash,
+		CardPayments:                       t.Card,
+		MobileMoneyPayments:                t.MobileMoney,
+		BankTransferPayments:               t.BankTransfer,
+		CheckPayments:                      t.Check,
+		TotalPayments:                      t.Total,
+		OperationCount:                     t.Count,
+		CashMovementIn:                     m.In,
+		CashMovementOut:                    m.Out,
+		NetCashMovement:                    m.In - m.Out,
+		CashMovementManualOut:              m.ManualOut,
+		CashMovementReversalOut:            m.ReversalOut,
+		CashMovementPostCloseCorrectionOut: m.PostCloseCorrectionOut,
 	}
 	if session.Status == SessionClosed {
 		z.ClosingProofComplete = closingProofComplete(session)

@@ -22,4 +22,8 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.POST("/sessions/:id/close", rbac.Permission("cash.session.close"), h.Close)
 	g.GET("/receipts", rbac.Permission("cash.receipt.read"), h.Receipts)
 	g.GET("/receipts/:id", rbac.Permission("cash.receipt.read"), h.Receipt)
+	// LOT29F-F post-close physical cash correction execution (PCE1).
+	g.GET("/corrections/eligibility/:paymentId", rbac.Permission("cash.correction.read"), h.CorrectionEligibility)
+	g.POST("/corrections/execute", rbac.Permission("cash.correction.execute"), h.ExecuteCorrection)
+	g.GET("/corrections/:id", rbac.Permission("cash.correction.read"), h.GetCorrection)
 }

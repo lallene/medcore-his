@@ -285,3 +285,48 @@ func (h *Handler) Receipt(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func (h *Handler) CorrectionEligibility(c *gin.Context) {
+	n, e := strconv.ParseUint(c.Param("paymentId"), 10, 64)
+	if e != nil || n == 0 {
+		bad(c, coreerrors.BadRequest("Identifiant invalide"))
+		return
+	}
+	x, err := h.s.CorrectionEligibilityForPayment(uint(n))
+	if err != nil {
+		bad(c, err)
+		return
+	}
+	c.JSON(200, x)
+}
+func (h *Handler) ExecuteCorrection(c *gin.Context) {
+	var r ExecuteCorrectionRequest
+	if c.ShouldBindJSON(&r) != nil {
+		bad(c, coreerrors.BadRequest("Exécution de correction invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := uid(c)
+	if !ok {
+		return
+	}
+	x, e := h.s.ExecutePostCloseCorrection(r, u)
+	if e != nil {
+		bad(c, e)
+		return
+	}
+	c.JSON(201, x)
+}
+func (h *Handler) GetCorrection(c *gin.Context) {
+	n, ok := num(c)
+	if !ok {
+		return
+	}
+	x, e := h.s.GetCorrectionExecution(n)
+	if e != nil {
+		bad(c, e)
+		return
+	}
+	c.JSON(200, x)
+}

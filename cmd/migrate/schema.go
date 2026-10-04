@@ -76,6 +76,8 @@ func schemaModels() []any {
 		&cash.Receipt{},
 		&cash.CashMovement{},
 		&cash.CashMovementAudit{},
+		&cash.CashCorrectionExecution{},
+		&cash.CashCorrectionExecutionAudit{},
 		&patients.Patient{},
 
 		&company.InsuranceCompany{},
@@ -209,6 +211,7 @@ func applyMigrations(db *gorm.DB) error {
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active = true",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_sessions_open_register ON cash_sessions (cash_register_id) WHERE status = 'OPEN'",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_movements_payment_reversal_ref ON cash_movements (reference_type, reference_id) WHERE reference_type = 'PAYMENT_REVERSAL' AND reference_id IS NOT NULL",
+		"CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_movements_correction_exec_ref ON cash_movements (reference_type, reference_id) WHERE reference_type = 'CASH_CORRECTION_EXECUTION' AND reference_id IS NOT NULL",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_bed ON hospitalization_bed_assignments (bed_id) WHERE released_at IS NULL AND deleted_at IS NULL",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_stay ON hospitalization_bed_assignments (hospitalization_id) WHERE released_at IS NULL AND deleted_at IS NULL",
 	} {

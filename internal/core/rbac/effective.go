@@ -63,6 +63,7 @@ var SensitivePermissions = map[string]bool{
 	"cash.payment.cancel":            true,
 	"cash.session.close_any":         true,
 	"cash.movement.create":           true,
+	"cash.correction.execute":        true,
 	"queue.read.all":                 true,
 	"ticket.read.all":                true,
 	"organization.manage":            true,
