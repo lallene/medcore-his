@@ -11,9 +11,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// LockOpenSessionForReversal locks CashSession FOR UPDATE and requires OPEN.
+// LockSessionForReversal locks CashSession FOR UPDATE (OPEN or CLOSED).
 // Caller-owned TX — no nested transaction. Lock order: session before payment/invoice.
-func LockOpenSessionForReversal(tx *gorm.DB, sessionID uint) error {
+// LOT29F-E′: CLOSED is allowed for accounting-only reversal; OPEN keeps 29F-D movement semantics.
+func LockSessionForReversal(tx *gorm.DB, sessionID uint) error {
 	var session Session
 	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, sessionID).Error; e != nil {
 		if errors.Is(e, gorm.ErrRecordNotFound) {
@@ -21,23 +22,36 @@ func LockOpenSessionForReversal(tx *gorm.DB, sessionID uint) error {
 		}
 		return e
 	}
-	if session.Status != SessionOpen {
-		return coreerrors.Conflict("PAYMENT_REVERSAL_CASH_SESSION_CLOSED: La session de caisse est fermée — contrepassation impossible")
+	if session.Status != SessionOpen && session.Status != SessionClosed {
+		return coreerrors.Conflict("État de session de caisse invalide pour la contrepassation")
 	}
 	return nil
 }
 
 // CreatePaymentReversalMovement writes the system OUT movement for an OPEN CASH PaymentReversal.
-// Same TX as the reversal. Does not require cash.movement.create — authorized by billing.payment.reverse.
+// LOT29F-E′: CLOSED session → no CashMovement (CSI1). Status decided under the session lock.
+// Does not require cash.movement.create — authorized by billing.payment.reverse.
 func CreatePaymentReversalMovement(tx *gorm.DB, sessionID uint, pay billing.Payment, rev billing.PaymentReversal, user uint) error {
 	if pay.CashSessionID == nil || *pay.CashSessionID != sessionID {
 		return coreerrors.Conflict("Session de caisse incohérente pour la contrepassation")
 	}
 	if pay.PaymentMethod != "CASH" {
-		return coreerrors.Conflict("PAYMENT_REVERSAL_SESSION_METHOD_UNSUPPORTED: Seuls les encaissements espèces de session ouverte peuvent être contrepassés")
+		return coreerrors.Conflict("PAYMENT_REVERSAL_SESSION_METHOD_UNSUPPORTED: Seuls les encaissements espèces de session de caisse peuvent être contrepassés")
 	}
 	if rev.ID == 0 || rev.Amount != pay.Amount || rev.Amount <= 0 {
 		return coreerrors.Conflict("Mouvement de contrepassation incohérent")
+	}
+
+	var session Session
+	if e := tx.Select("id", "opening_float", "status").First(&session, sessionID).Error; e != nil {
+		return e
+	}
+	// PCR1 / CSI1: CLOSED = accounting correction only — zero drawer effect.
+	if session.Status == SessionClosed {
+		return nil
+	}
+	if session.Status != SessionOpen {
+		return coreerrors.Conflict("État de session de caisse invalide pour la contrepassation")
 	}
 
 	// Idempotent by reference / derived key (one reversal → one movement).
@@ -62,13 +76,6 @@ func CreatePaymentReversalMovement(tx *gorm.DB, sessionID uint, pay billing.Paym
 	movTotals, e := loadSessionMovementTotals(tx, sessionID)
 	if e != nil {
 		return e
-	}
-	var session Session
-	if e := tx.Select("id", "opening_float", "status").First(&session, sessionID).Error; e != nil {
-		return e
-	}
-	if session.Status != SessionOpen {
-		return coreerrors.Conflict("PAYMENT_REVERSAL_CASH_SESSION_CLOSED: La session de caisse est fermée — contrepassation impossible")
 	}
 	expected := liveExpectedCash(session.OpeningFloat, payTotals.Cash, movTotals.In, movTotals.Out)
 	if rev.Amount > expected {
@@ -127,5 +134,5 @@ func CreatePaymentReversalMovement(tx *gorm.DB, sessionID uint, pay billing.Paym
 }
 
 func init() {
-	billing.RegisterCashSessionReversalHooks(LockOpenSessionForReversal, CreatePaymentReversalMovement)
+	billing.RegisterCashSessionReversalHooks(LockSessionForReversal, CreatePaymentReversalMovement)
 }

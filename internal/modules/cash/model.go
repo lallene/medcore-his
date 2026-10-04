@@ -81,6 +81,8 @@ type Receipt struct {
 	// LOT29D-C: underlying payment was fully reversed (decorated on read).
 	PaymentReversed   bool       `json:"paymentReversed" gorm:"-"`
 	PaymentReversedAt *time.Time `json:"paymentReversedAt,omitempty" gorm:"-"`
+	// LOT29F-E′: derived when reversal timestamp is after session ClosedAt.
+	PostCloseCorrection bool `json:"postCloseCorrection,omitempty" gorm:"-"`
 }
 
 func (Receipt) TableName() string { return "cash_receipts" }

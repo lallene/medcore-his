@@ -174,8 +174,20 @@ func TestLOT29E_D_ReconciliationMatrix(t *testing.T) {
 		}
 		var payRow billing.Payment
 		_ = db.Where("cash_session_id=?", closed.Session.ID).First(&payRow)
-		if _, e := bill.ReversePayment(payRow.ID, billing.ReversePaymentRequest{Reason: "session reverse blocked", IdempotencyKey: "cr28"}, 31); e == nil {
-			t.Fatal("CR28")
+		// LOT29F-E′: CLOSED CASH accounting reverse allowed; snapshot still immutable (CR26).
+		beforeMov := int64(0)
+		_ = db.Model(&CashMovement{}).Count(&beforeMov)
+		if _, e := bill.ReversePayment(payRow.ID, billing.ReversePaymentRequest{Reason: "correction posterieure", IdempotencyKey: "cr28"}, 31); e != nil {
+			t.Fatalf("CR28 post-close reverse %v", e)
+		}
+		afterMov := int64(0)
+		_ = db.Model(&CashMovement{}).Count(&afterMov)
+		if afterMov != beforeMov {
+			t.Fatal("CR28 must not create CashMovement on CLOSED")
+		}
+		again2, _ := s.Get(closed.Session.ID)
+		if again2.ExpectedCash != first {
+			t.Fatal("CR28 snapshot after reverse")
 		}
 	})
 

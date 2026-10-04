@@ -121,6 +121,8 @@ type Payment struct {
 	ReversedAt     *time.Time `json:"reversedAt,omitempty" gorm:"-"`
 	ReversalReason string     `json:"reversalReason,omitempty" gorm:"-"`
 	ReversedBy     *uint      `json:"reversedBy,omitempty" gorm:"-"`
+	// LOT29F-E′: derived when ReversedAt is after the linked session ClosedAt.
+	PostCloseCorrection bool `json:"postCloseCorrection,omitempty" gorm:"-"`
 }
 
 func (Payment) TableName() string { return "billing_payments" }

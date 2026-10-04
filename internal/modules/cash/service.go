@@ -380,21 +380,32 @@ func (s *Service) Close(id uint, r CloseRequest, u uint, canCloseAny bool) (*Ses
 	return s.Get(id)
 }
 
+func (s *Service) decorateReceiptReversal(x *Receipt) {
+	if x == nil {
+		return
+	}
+	var at time.Time
+	if e := s.db.Table("billing_payment_reversals").Select("reversed_at").Where("original_payment_id=?", x.PaymentID).Scan(&at).Error; e != nil || at.IsZero() {
+		return
+	}
+	x.PaymentReversed = true
+	x.PaymentReversedAt = &at
+	if x.CashSessionID == nil {
+		return
+	}
+	var closedAt time.Time
+	if e := s.db.Table("cash_sessions").Select("closed_at").Where("id=? AND closed_at IS NOT NULL", *x.CashSessionID).Scan(&closedAt).Error; e != nil || closedAt.IsZero() {
+		return
+	}
+	x.PostCloseCorrection = at.After(closedAt)
+}
+
 func (s *Service) Receipt(id uint) (*Receipt, error) {
 	var x Receipt
 	if e := s.db.First(&x, id).Error; e != nil {
 		return nil, coreerrors.NotFound("CASH_RECEIPT")
 	}
-	var revAt *time.Time
-	var n int64
-	if e := s.db.Table("billing_payment_reversals").Where("original_payment_id=?", x.PaymentID).Count(&n).Error; e == nil && n > 0 {
-		x.PaymentReversed = true
-		var at time.Time
-		if e := s.db.Table("billing_payment_reversals").Select("reversed_at").Where("original_payment_id=?", x.PaymentID).Scan(&at).Error; e == nil {
-			revAt = &at
-			x.PaymentReversedAt = revAt
-		}
-	}
+	s.decorateReceiptReversal(&x)
 	return &x, nil
 }
 func (s *Service) Receipts(session uint) ([]Receipt, error) {
@@ -403,8 +414,13 @@ func (s *Service) Receipts(session uint) ([]Receipt, error) {
 	if session > 0 {
 		q = q.Where("cash_session_id=?", session)
 	}
-	e := q.Find(&x).Error
-	return x, e
+	if e := q.Find(&x).Error; e != nil {
+		return nil, e
+	}
+	for i := range x {
+		s.decorateReceiptReversal(&x[i])
+	}
+	return x, nil
 }
 
 // EnsureSessionCommandKeys backfills open idempotency keys for legacy rows before NOT NULL uniqueness.

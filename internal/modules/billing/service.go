@@ -29,10 +29,11 @@ func RegisterReceiptIssuer(fn ReceiptIssuer) {
 	defaultReceiptIssuer = fn
 }
 
-// CashSessionLockFn locks an OPEN cash session FOR UPDATE (caller-owned TX).
+// CashSessionLockFn locks a cash session FOR UPDATE (OPEN or CLOSED; caller-owned TX).
 type CashSessionLockFn func(tx *gorm.DB, sessionID uint) error
 
-// CashSessionReversalMovementFn creates the system CashMovement OUT for a CASH session reversal.
+// CashSessionReversalMovementFn creates the system CashMovement OUT for OPEN CASH reversal,
+// or is a no-op for CLOSED (LOT29F-E′ PCR1 / CSI1).
 type CashSessionReversalMovementFn func(tx *gorm.DB, sessionID uint, pay Payment, rev PaymentReversal, user uint) error
 
 var (
@@ -40,7 +41,7 @@ var (
 	cashSessionReversalMovementFn CashSessionReversalMovementFn
 )
 
-// RegisterCashSessionReversalHooks wires LOT29F-D session lock + system movement (avoids import cycle).
+// RegisterCashSessionReversalHooks wires session lock + optional system movement (avoids import cycle).
 func RegisterCashSessionReversalHooks(lock CashSessionLockFn, movement CashSessionReversalMovementFn) {
 	cashSessionLockFn = lock
 	cashSessionReversalMovementFn = movement
@@ -473,6 +474,32 @@ func (s *Service) attachReversals(x *Invoice) {
 	for _, r := range rows {
 		byPay[r.OriginalPaymentID] = r
 	}
+	sessionIDs := make([]uint, 0)
+	seenSess := map[uint]struct{}{}
+	for _, p := range x.Payments {
+		if _, ok := byPay[p.ID]; !ok || p.CashSessionID == nil {
+			continue
+		}
+		if _, ok := seenSess[*p.CashSessionID]; ok {
+			continue
+		}
+		seenSess[*p.CashSessionID] = struct{}{}
+		sessionIDs = append(sessionIDs, *p.CashSessionID)
+	}
+	closedAtBySess := map[uint]time.Time{}
+	if len(sessionIDs) > 0 {
+		type sessRow struct {
+			ID       uint
+			ClosedAt *time.Time
+		}
+		var sessRows []sessRow
+		_ = s.db.Table("cash_sessions").Select("id, closed_at").Where("id IN ?", sessionIDs).Scan(&sessRows)
+		for _, r := range sessRows {
+			if r.ClosedAt != nil {
+				closedAtBySess[r.ID] = *r.ClosedAt
+			}
+		}
+	}
 	for i := range x.Payments {
 		if r, ok := byPay[x.Payments[i].ID]; ok {
 			id := r.ID
@@ -483,6 +510,11 @@ func (s *Service) attachReversals(x *Invoice) {
 			x.Payments[i].ReversedAt = &at
 			x.Payments[i].ReversalReason = r.Reason
 			x.Payments[i].ReversedBy = &by
+			if x.Payments[i].CashSessionID != nil {
+				if closedAt, ok := closedAtBySess[*x.Payments[i].CashSessionID]; ok {
+					x.Payments[i].PostCloseCorrection = r.ReversedAt.After(closedAt)
+				}
+			}
 		}
 	}
 }

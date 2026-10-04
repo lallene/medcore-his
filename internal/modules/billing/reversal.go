@@ -86,7 +86,7 @@ func assertSessionPaymentReversalAllowed(pay Payment) error {
 		return nil
 	}
 	if pay.PaymentMethod != "CASH" {
-		return coreerrors.Conflict("PAYMENT_REVERSAL_SESSION_METHOD_UNSUPPORTED: Seuls les encaissements espèces de session ouverte peuvent être contrepassés")
+		return coreerrors.Conflict("PAYMENT_REVERSAL_SESSION_METHOD_UNSUPPORTED: Seuls les encaissements espèces de session de caisse peuvent être contrepassés")
 	}
 	if cashSessionLockFn == nil || cashSessionReversalMovementFn == nil {
 		return coreerrors.Conflict("Correction caisse indisponible pour la contrepassation de session")
@@ -97,6 +97,7 @@ func assertSessionPaymentReversalAllowed(pay Payment) error {
 // ReversePayment creates a V1 full reversal counter-entry.
 // Sessionless: PaymentReversal + invoice restoration only.
 // OPEN CASH session (LOT29F-D): same + system CashMovement OUT in one TX (session locked first).
+// CLOSED CASH session (LOT29F-E′ PCR1): PaymentReversal only — no CashMovement, snapshot immutable.
 func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user uint) (*Invoice, error) {
 	reason, err := NormalizeReversalReason(req.Reason)
 	if err != nil {
@@ -134,10 +135,16 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 			return e
 		}
 		// Lock order: CashSession (if any) → Payment → Invoice.
+		sessionClosed := false
 		if peek.CashSessionID != nil {
 			if e := cashSessionLockFn(tx, *peek.CashSessionID); e != nil {
 				return e
 			}
+			var st string
+			if e := tx.Table("cash_sessions").Select("status").Where("id=?", *peek.CashSessionID).Scan(&st).Error; e != nil {
+				return e
+			}
+			sessionClosed = st == "CLOSED"
 		}
 
 		var pay Payment
@@ -224,10 +231,15 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 		if e := tx.Save(&inv).Error; e != nil {
 			return e
 		}
-		if e := s.timeline(tx, &inv, "payment_reversed", "Encaissement contrepassé", user); e != nil {
+		timelineNote := "Encaissement contrepassé"
+		if sessionClosed {
+			timelineNote = "Encaissement contrepassé — correction postérieure à la clôture"
+		}
+		if e := s.timeline(tx, &inv, "payment_reversed", timelineNote, user); e != nil {
 			return e
 		}
 		if pay.CashSessionID != nil {
+			// OPEN → system OUT; CLOSED → no-op (CSI1). Decision made under session lock.
 			if e := cashSessionReversalMovementFn(tx, *pay.CashSessionID, pay, rev, user); e != nil {
 				return e
 			}

@@ -170,7 +170,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		}
 	})
 
-	t.Run("RV_C26_C31_closed_and_noncash_blocked", func(t *testing.T) {
+	t.Run("RV_C26_C31_closed_cash_accounting_noncash_blocked", func(t *testing.T) {
 		db := cashDB(t)
 		db.Create(&cashUser{ID: 64, Name: "Dir"})
 		db.Create(&cashPatient{ID: 64, Nom: "P", Prenoms: "R", CodePatient: "P-RVC26"})
@@ -186,18 +186,26 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		snap := *closed.Session.ExpectedCashAmount
+		snapExp := *closed.Session.ExpectedCashAmount
+		snapCnt := *closed.Session.CountedCashAmount
+		snapDiff := *closed.Session.CashDifference
+		beforeMov := movementCount(t, db)
 		if _, e := bill.ReversePayment(recCash.PaymentID, billing.ReversePaymentRequest{
 			Reason: "Apres close", IdempotencyKey: "rvc26-r",
-		}, 64); cashErrCode(e) != "CONFLICT" {
-			t.Fatalf("RV-C26 %v", e)
+		}, 64); e != nil {
+			t.Fatalf("RV-C26 CLOSED CASH accounting reverse %v", e)
+		}
+		if movementCount(t, db) != beforeMov {
+			t.Fatal("RV-C26 no movement on CLOSED")
 		}
 		again, _ := s.Get(open.Session.ID)
-		if again.ExpectedCash != snap {
-			t.Fatal("RV-C27 snapshot")
+		if again.ExpectedCash != snapExp || *again.Session.CountedCashAmount != snapCnt || *again.Session.CashDifference != snapDiff {
+			t.Fatal("RV-C27 snapshot immutable")
 		}
-		// Non-cash on a fresh open session
+		// Non-cash on a fresh open session still blocked
 		open2, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "rvc28-o"}, 64)
+		revBefore := int64(0)
+		db.Model(&billing.PaymentReversal{}).Count(&revBefore)
 		for i, method := range []string{"CARD", "MOBILE_MONEY", "BANK_TRANSFER", "CHECK"} {
 			inv := seedCashInvoice(t, db, fmt.Sprintf("INV-RVC28-%d", i), 64, 1000, 64)
 			req := PaymentRequest{
@@ -221,8 +229,8 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		}
 		var nRev int64
 		db.Model(&billing.PaymentReversal{}).Count(&nRev)
-		if nRev != 0 {
-			t.Fatal("non-cash/closed created reversal")
+		if nRev != revBefore {
+			t.Fatalf("non-cash must not create reversals; want %d got %d", revBefore, nRev)
 		}
 	})
 
@@ -274,16 +282,26 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		if closeErr != nil && revErr != nil {
 			t.Fatalf("RV-C34 both failed %v %v", closeErr, revErr)
 		}
+		if closeErr != nil || revErr != nil {
+			// Close and reverse may serialize either way; neither may hard-fail under lock.
+			t.Fatalf("RV-C34 unexpected error close=%v rev=%v", closeErr, revErr)
+		}
 		sum, _ := s.Get(openB.Session.ID)
 		if sum.Session.Status != SessionClosed {
 			t.Fatal("RV-C34 expected closed")
 		}
-		if revErr == nil {
-			if sum.CashMovementReversalOut != 2000 || *sum.Session.ExpectedCashAmount != 2000 {
+		// Reverse-first (OPEN): OUT included → expected 2000, reversalOut 2000.
+		// Close-first (CLOSED): PCR1 accounting-only → expected 4000, reversalOut 0.
+		if sum.CashMovementReversalOut == 2000 {
+			if *sum.Session.ExpectedCashAmount != 2000 {
 				t.Fatalf("RV-C34 reverse-first %+v", sum)
 			}
-		} else if cashErrCode(revErr) != "CONFLICT" {
-			t.Fatalf("RV-C33/34 rev after close %v", revErr)
+		} else if sum.CashMovementReversalOut == 0 {
+			if *sum.Session.ExpectedCashAmount != 4000 {
+				t.Fatalf("RV-C34 close-first %+v", sum)
+			}
+		} else {
+			t.Fatalf("RV-C34 incoherent %+v", sum)
 		}
 	})
 
