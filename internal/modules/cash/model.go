@@ -92,6 +92,10 @@ const (
 
 	MovementManualIn  = "MANUAL_IN"
 	MovementManualOut = "MANUAL_OUT"
+	// LOT29F-D: system-generated drawer effect of an OPEN CASH PaymentReversal (not MANUAL_OUT).
+	MovementPaymentReversal = "PAYMENT_REVERSAL"
+
+	MovementRefPaymentReversal = "PAYMENT_REVERSAL"
 )
 
 // CashMovement is an append-only physical cash journal entry on an OPEN CashSession.
@@ -103,6 +107,8 @@ type CashMovement struct {
 	Type           string    `gorm:"size:30;not null;index" json:"type"`
 	Amount         int64     `gorm:"not null;check:cash_movement_amount_positive,amount > 0" json:"amount"`
 	Reason         string    `gorm:"size:500;not null" json:"reason"`
+	ReferenceType  string    `gorm:"size:40" json:"referenceType,omitempty"`
+	ReferenceID    *uint     `gorm:"index" json:"referenceId,omitempty"`
 	CreatedBy      uint      `gorm:"not null;index" json:"createdBy"`
 	OccurredAt     time.Time `gorm:"not null;index" json:"occurredAt"`
 	IdempotencyKey string    `gorm:"size:120;not null;uniqueIndex" json:"idempotencyKey"`
@@ -157,10 +163,13 @@ type SessionSummary struct {
 	TotalPayments  int64 `json:"totalPayments"`
 	OperationCount int64 `json:"operationCount"`
 	ExpectedCash   int64 `json:"expectedCash"`
-	// LOT29F-C movement totals (not revenue).
+	// LOT29F-C movement totals (not revenue). CashCollected remains gross CASH payments.
 	CashMovementIn  int64 `json:"cashMovementIn"`
 	CashMovementOut int64 `json:"cashMovementOut"`
 	NetCashMovement int64 `json:"netCashMovement"`
+	// LOT29F-D OUT breakdown (same CashMovementOut authority; informational only).
+	CashMovementManualOut   int64 `json:"cashMovementManualOut"`
+	CashMovementReversalOut int64 `json:"cashMovementReversalOut"`
 	// LOT29E-D reconciliation metadata (projection over CashSession; not a second aggregate).
 	ClosingProofComplete bool   `json:"closingProofComplete"`
 	FinalReconciliation  bool   `json:"finalReconciliation"`

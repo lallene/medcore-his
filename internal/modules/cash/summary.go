@@ -16,8 +16,10 @@ type sessionPaymentTotals struct {
 }
 
 type sessionMovementTotals struct {
-	In  int64
-	Out int64
+	In          int64
+	Out         int64
+	ManualOut   int64
+	ReversalOut int64
 }
 
 // loadSessionPaymentTotals aggregates effective session payments from billing_payments only.
@@ -59,28 +61,37 @@ func loadSessionMovementTotals(db *gorm.DB, sessionID uint) (sessionMovementTota
 	var m sessionMovementTotals
 	rows := []struct {
 		Direction string
+		Type      string
 		Total     int64
 	}{}
 	if e := db.Table("cash_movements").
-		Select("direction, COALESCE(SUM(amount),0) AS total").
+		Select("direction, type, COALESCE(SUM(amount),0) AS total").
 		Where("cash_session_id = ?", sessionID).
-		Group("direction").
+		Group("direction, type").
 		Scan(&rows).Error; e != nil {
 		return m, e
 	}
 	for _, r := range rows {
 		switch r.Direction {
 		case MovementIn:
-			m.In = r.Total
+			m.In += r.Total
 		case MovementOut:
-			m.Out = r.Total
+			m.Out += r.Total
+			switch r.Type {
+			case MovementManualOut:
+				m.ManualOut += r.Total
+			case MovementPaymentReversal:
+				m.ReversalOut += r.Total
+			}
 		}
 	}
 	return m, nil
 }
 
-// liveExpectedCash is the OPEN-session / pre-close drawer formula (E1):
-// OpeningFloat + SUM(CASH payments) + CashMovement IN − CashMovement OUT.
+// liveExpectedCash is the OPEN-session / pre-close drawer formula:
+// OpeningFloat + SUM(gross CASH payments, including reversed) + IN − OUT.
+// LOT29F-D: reversed CASH payments remain in CashCollected; PAYMENT_REVERSAL OUT
+// neutralizes drawer effect exactly once (do not exclude reversed payments from CashCollected).
 func liveExpectedCash(openingFloat, cashCollected, movementIn, movementOut int64) int64 {
 	return openingFloat + cashCollected + movementIn - movementOut
 }
@@ -111,20 +122,22 @@ func varianceKindFromDiff(diff int64) string {
 // Incomplete legacy CLOSED rows do not fabricate a closing expected as authority.
 func assembleSessionSummary(session Session, t sessionPaymentTotals, m sessionMovementTotals) SessionSummary {
 	z := SessionSummary{
-		Session:              session,
-		CashCollected:        t.Cash,
-		NonCashCollected:     t.Total - t.Cash,
-		TotalCollected:       t.Total,
-		CashPayments:         t.Cash,
-		CardPayments:         t.Card,
-		MobileMoneyPayments:  t.MobileMoney,
-		BankTransferPayments: t.BankTransfer,
-		CheckPayments:        t.Check,
-		TotalPayments:        t.Total,
-		OperationCount:       t.Count,
-		CashMovementIn:       m.In,
-		CashMovementOut:      m.Out,
-		NetCashMovement:      m.In - m.Out,
+		Session:                 session,
+		CashCollected:           t.Cash,
+		NonCashCollected:        t.Total - t.Cash,
+		TotalCollected:          t.Total,
+		CashPayments:            t.Cash,
+		CardPayments:            t.Card,
+		MobileMoneyPayments:     t.MobileMoney,
+		BankTransferPayments:    t.BankTransfer,
+		CheckPayments:           t.Check,
+		TotalPayments:           t.Total,
+		OperationCount:          t.Count,
+		CashMovementIn:          m.In,
+		CashMovementOut:         m.Out,
+		NetCashMovement:         m.In - m.Out,
+		CashMovementManualOut:   m.ManualOut,
+		CashMovementReversalOut: m.ReversalOut,
 	}
 	if session.Status == SessionClosed {
 		z.ClosingProofComplete = closingProofComplete(session)

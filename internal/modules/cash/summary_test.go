@@ -20,10 +20,13 @@ func TestAssembleSessionSummary_OpenVsClosed(t *testing.T) {
 func TestAssembleSessionSummary_WithMovements(t *testing.T) {
 	open := Session{ID: 1, OpeningFloat: 10000, Status: SessionOpen}
 	totals := sessionPaymentTotals{Cash: 20000, Total: 20000, Count: 1}
-	mov := sessionMovementTotals{In: 5000, Out: 2000}
+	mov := sessionMovementTotals{In: 5000, Out: 2000, ManualOut: 2000}
 	got := assembleSessionSummary(open, totals, mov)
 	if got.ExpectedCash != 33000 || got.CashMovementIn != 5000 || got.CashMovementOut != 2000 || got.NetCashMovement != 3000 {
 		t.Fatalf("movement summary %+v", got)
+	}
+	if got.CashMovementManualOut != 2000 || got.CashMovementReversalOut != 0 {
+		t.Fatalf("out breakdown %+v", got)
 	}
 	if got.CashCollected != 20000 || got.TotalCollected != 20000 {
 		t.Fatalf("collections must exclude movements %+v", got)

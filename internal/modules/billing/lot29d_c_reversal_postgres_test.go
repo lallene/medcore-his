@@ -399,7 +399,9 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("RV30_cash_session_payment_rejected", func(t *testing.T) {
+	t.Run("RV30_cash_session_without_hooks_rejected", func(t *testing.T) {
+		// Billing-only test DB has no cash hooks; session-linked reverse stays blocked here.
+		// OPEN CASH atomic path is covered by cash LOT29F-D postgres tests (with hooks wired).
 		db := billingDB(t)
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)

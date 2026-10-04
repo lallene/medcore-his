@@ -290,20 +290,23 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("SM30_session_reversal_blocked", func(t *testing.T) {
+	t.Run("SM30_open_cash_reversal_neutralizes_expected", func(t *testing.T) {
+		// LOT29F-D: OPEN CASH session reversal + system OUT; CashCollected stays gross.
 		out := openOn(t, "SM30", 0, "sm30-o")
 		pay(t, out.Session.ID, 1500, "CASH", "sm30-p")
-		sum, _ := s.Get(out.Session.ID)
 		var payRow billing.Payment
 		if e := db.Where("cash_session_id=?", out.Session.ID).First(&payRow).Error; e != nil {
 			t.Fatal(e)
 		}
-		if _, e := bill.ReversePayment(payRow.ID, billing.ReversePaymentRequest{Reason: "session payment reverse blocked", IdempotencyKey: "sm30-rev"}, 21); e == nil {
-			t.Fatal("SM30 reversal must stay blocked")
+		if _, e := bill.ReversePayment(payRow.ID, billing.ReversePaymentRequest{Reason: "correction session ouverte", IdempotencyKey: "sm30-rev"}, 21); e != nil {
+			t.Fatalf("SM30 open cash reversal %v", e)
 		}
 		again, _ := s.Get(out.Session.ID)
-		if again.CashCollected != sum.CashCollected || again.OperationCount != 1 {
-			t.Fatal("SM30 summary unchanged")
+		if again.CashCollected != 1500 || again.OperationCount != 1 {
+			t.Fatalf("SM30 gross collection %+v", again)
+		}
+		if again.CashMovementReversalOut != 1500 || again.ExpectedCash != 0 {
+			t.Fatalf("SM30 expected once %+v", again)
 		}
 	})
 

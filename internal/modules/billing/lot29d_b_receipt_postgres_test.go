@@ -58,11 +58,18 @@ func localSessionlessReceiptIssuer(tx *gorm.DB, payment *Payment, invoice *Invoi
 		PaidBefore:         paidBefore,
 		BalanceAfter:       balanceAfter,
 	}
+	if e := tx.Exec("SAVEPOINT cash_receipt_idempotency").Error; e != nil {
+		return e
+	}
 	if e := tx.Create(&rec).Error; e != nil {
+		_ = tx.Exec("ROLLBACK TO SAVEPOINT cash_receipt_idempotency").Error
 		msg := strings.ToLower(e.Error())
 		if strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique") || strings.Contains(msg, "23505") {
 			return nil
 		}
+		return e
+	}
+	if e := tx.Exec("RELEASE SAVEPOINT cash_receipt_idempotency").Error; e != nil {
 		return e
 	}
 	return tx.Model(&rec).Update("receipt_number", fmt.Sprintf("REC-%06d", rec.ID)).Error

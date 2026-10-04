@@ -81,7 +81,22 @@ func recomputeInvoiceStatus(patientAmount, paidEffective int64) (paid, balance i
 	}
 }
 
-// ReversePayment creates a V1 full reversal counter-entry for a sessionless billing payment.
+func assertSessionPaymentReversalAllowed(pay Payment) error {
+	if pay.CashSessionID == nil {
+		return nil
+	}
+	if pay.PaymentMethod != "CASH" {
+		return coreerrors.Conflict("PAYMENT_REVERSAL_SESSION_METHOD_UNSUPPORTED: Seuls les encaissements espèces de session ouverte peuvent être contrepassés")
+	}
+	if cashSessionLockFn == nil || cashSessionReversalMovementFn == nil {
+		return coreerrors.Conflict("Correction caisse indisponible pour la contrepassation de session")
+	}
+	return nil
+}
+
+// ReversePayment creates a V1 full reversal counter-entry.
+// Sessionless: PaymentReversal + invoice restoration only.
+// OPEN CASH session (LOT29F-D): same + system CashMovement OUT in one TX (session locked first).
 func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user uint) (*Invoice, error) {
 	reason, err := NormalizeReversalReason(req.Reason)
 	if err != nil {
@@ -108,6 +123,23 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 			return e
 		}
 
+		var peek Payment
+		if e := tx.First(&peek, paymentID).Error; e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return coreerrors.NotFound("PAYMENT")
+			}
+			return e
+		}
+		if e := assertSessionPaymentReversalAllowed(peek); e != nil {
+			return e
+		}
+		// Lock order: CashSession (if any) → Payment → Invoice.
+		if peek.CashSessionID != nil {
+			if e := cashSessionLockFn(tx, *peek.CashSessionID); e != nil {
+				return e
+			}
+		}
+
 		var pay Payment
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pay, paymentID).Error; e != nil {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
@@ -115,9 +147,14 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 			}
 			return e
 		}
-		if pay.CashSessionID != nil {
-			// Cash journal/session totals SUM billing_payments without a correction entry.
-			return coreerrors.Conflict("Les encaissements de session de caisse ne peuvent pas être contrepassés ici")
+		if e := assertSessionPaymentReversalAllowed(pay); e != nil {
+			return e
+		}
+		if (peek.CashSessionID == nil) != (pay.CashSessionID == nil) {
+			return coreerrors.Conflict("Session de caisse incohérente pour la contrepassation")
+		}
+		if peek.CashSessionID != nil && pay.CashSessionID != nil && *peek.CashSessionID != *pay.CashSessionID {
+			return coreerrors.Conflict("Session de caisse incohérente pour la contrepassation")
 		}
 
 		var existing PaymentReversal
@@ -151,7 +188,11 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 			ReversedAt:        time.Now(),
 			IdempotencyKey:    key,
 		}
+		if e := tx.Exec("SAVEPOINT reversal_idempotency").Error; e != nil {
+			return e
+		}
 		if e := tx.Create(&rev).Error; e != nil {
+			_ = tx.Exec("ROLLBACK TO SAVEPOINT reversal_idempotency").Error
 			if isReversalUniqueViolation(e) {
 				var raced PaymentReversal
 				if load := tx.Where("idempotency_key=?", key).First(&raced).Error; load == nil {
@@ -165,6 +206,9 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 					return coreerrors.Conflict("Ce paiement a déjà été contrepassé")
 				}
 			}
+			return e
+		}
+		if e := tx.Exec("RELEASE SAVEPOINT reversal_idempotency").Error; e != nil {
 			return e
 		}
 
@@ -182,6 +226,11 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 		}
 		if e := s.timeline(tx, &inv, "payment_reversed", "Encaissement contrepassé", user); e != nil {
 			return e
+		}
+		if pay.CashSessionID != nil {
+			if e := cashSessionReversalMovementFn(tx, *pay.CashSessionID, pay, rev, user); e != nil {
+				return e
+			}
 		}
 		invoiceID = inv.ID
 		return nil

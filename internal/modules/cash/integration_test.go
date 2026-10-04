@@ -1,16 +1,19 @@
 package cash
 
 import (
+	"context"
 	"fmt"
-	"github.com/lallene/medcore-his/backend/internal/modules/billing"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/lallene/medcore-his/backend/internal/modules/billing"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 type cashPatient struct {
@@ -26,42 +29,71 @@ type cashUser struct {
 }
 
 func (cashUser) TableName() string { return "users" }
-func cashDSN(d, s string) string {
-	if strings.Contains(d, "://") {
-		x := "?"
-		if strings.Contains(d, "?") {
-			x = "&"
-		}
-		return d + x + "search_path=" + url.QueryEscape(s)
-	}
-	return d + " search_path=" + s
-}
+
+// cashDB opens a schema-isolated PG pool with per-connection search_path.
+// DSN query search_path is not reliable with pgx (same as billingDB).
 func cashDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	d := os.Getenv("TEST_DATABASE_URL")
 	if d == "" {
 		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Cash ignorés")
 	}
+	d = strings.Replace(d, "-pooler", "", 1)
 	admin, e := gorm.Open(postgres.Open(d), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)
 	}
 	schema := fmt.Sprintf("cash_%d", time.Now().UnixNano())
-	if e = admin.Exec(`CREATE SCHEMA "` + schema + `"`).Error; e != nil {
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	if e = admin.Exec("CREATE SCHEMA " + schemaIdent).Error; e != nil {
 		t.Fatal(e)
 	}
-	db, e := gorm.Open(postgres.Open(cashDSN(d, schema)), &gorm.Config{})
+	pgConfig, e := pgx.ParseConfig(d)
 	if e != nil {
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
 		t.Fatal(e)
 	}
-	sqlDB, _ := db.DB()
-	t.Cleanup(func() { sqlDB.Close(); admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`) })
+	if pgConfig.RuntimeParams == nil {
+		pgConfig.RuntimeParams = map[string]string{}
+	}
+	pgConfig.RuntimeParams["search_path"] = schemaIdent
+	sqlDB := stdlib.OpenDB(*pgConfig, stdlib.OptionAfterConnect(func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET search_path TO "+schemaIdent)
+		return err
+	}))
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(10)
+	pingCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if e = sqlDB.PingContext(pingCtx); e != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(e)
+	}
+	db, e := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if e != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(e)
+	}
+	adminSQL, _ := admin.DB()
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		if adminSQL != nil {
+			_, _ = adminSQL.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+			_ = adminSQL.Close()
+		}
+	})
 	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &Receipt{}, &CashMovement{}, &CashMovementAudit{}); e != nil {
 		t.Fatal(e)
 	}
 	if e = EnsureReceiptSessionNullable(db); e != nil {
 		t.Fatal(e)
 	}
-	if e = db.Exec("CREATE UNIQUE INDEX ux_cash_sessions_open_register ON cash_sessions(cash_register_id) WHERE status='OPEN'").Error; e != nil {
+	if e = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_sessions_open_register ON cash_sessions(cash_register_id) WHERE status='OPEN'").Error; e != nil {
+		t.Fatal(e)
+	}
+	if e = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_movements_payment_reversal_ref ON cash_movements (reference_type, reference_id) WHERE reference_type = 'PAYMENT_REVERSAL' AND reference_id IS NOT NULL").Error; e != nil {
 		t.Fatal(e)
 	}
 	return db

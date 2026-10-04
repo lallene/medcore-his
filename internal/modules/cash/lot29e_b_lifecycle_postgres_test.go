@@ -349,7 +349,8 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, closeErr = s.Close(sess.Session.ID, CloseRequest{CountedCashAmount: 0, IdempotencyKey: "cs25-c"}, 11, false)
+			// Note covers pay-first (expected 5000, counted 0) and close-first (expected 0).
+			_, closeErr = s.Close(sess.Session.ID, CloseRequest{CountedCashAmount: 0, Note: "race", IdempotencyKey: "cs25-c"}, 11, false)
 		}()
 		close(start)
 		wg.Wait()
@@ -417,7 +418,8 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("CS34_session_reversal_blocked", func(t *testing.T) {
+	t.Run("CS34_open_cash_reversal_then_close", func(t *testing.T) {
+		// LOT29F-D: OPEN CASH reversal adjusts expected; close snapshots corrected drawer.
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CS34", Name: "Rev"}, 11)
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cs34-o"}, 11)
 		inv := seedCashInvoice(t, db, "INV-CS34", 3, 1000, 11)
@@ -426,10 +428,13 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 			t.Fatal(e)
 		}
 		bill := billing.NewService(db)
-		if _, e := bill.ReversePayment(rec.PaymentID, billing.ReversePaymentRequest{Reason: "test reverse", IdempotencyKey: "cs34-rev"}, 11); !cashIsConflict(e) {
-			t.Fatalf("CS34 %v", e)
+		if _, e := bill.ReversePayment(rec.PaymentID, billing.ReversePaymentRequest{Reason: "test reverse", IdempotencyKey: "cs34-rev"}, 11); e != nil {
+			t.Fatalf("CS34 open reverse %v", e)
 		}
-		_, _ = s.Close(sess.Session.ID, CloseRequest{CountedCashAmount: 1000, IdempotencyKey: "cs34-c"}, 11, false)
+		closed, e := s.Close(sess.Session.ID, CloseRequest{CountedCashAmount: 0, IdempotencyKey: "cs34-c"}, 11, false)
+		if e != nil || closed.ExpectedCash != 0 {
+			t.Fatalf("CS34 close %+v %v", closed, e)
+		}
 	})
 
 	t.Run("CS36_sessionless_excluded", func(t *testing.T) {

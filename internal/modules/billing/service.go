@@ -29,6 +29,23 @@ func RegisterReceiptIssuer(fn ReceiptIssuer) {
 	defaultReceiptIssuer = fn
 }
 
+// CashSessionLockFn locks an OPEN cash session FOR UPDATE (caller-owned TX).
+type CashSessionLockFn func(tx *gorm.DB, sessionID uint) error
+
+// CashSessionReversalMovementFn creates the system CashMovement OUT for a CASH session reversal.
+type CashSessionReversalMovementFn func(tx *gorm.DB, sessionID uint, pay Payment, rev PaymentReversal, user uint) error
+
+var (
+	cashSessionLockFn             CashSessionLockFn
+	cashSessionReversalMovementFn CashSessionReversalMovementFn
+)
+
+// RegisterCashSessionReversalHooks wires LOT29F-D session lock + system movement (avoids import cycle).
+func RegisterCashSessionReversalHooks(lock CashSessionLockFn, movement CashSessionReversalMovementFn) {
+	cashSessionLockFn = lock
+	cashSessionReversalMovementFn = movement
+}
+
 type Service struct {
 	db             *gorm.DB
 	authorizations *authorization.Service
@@ -398,6 +415,7 @@ func (s *Service) GetInvoice(id uint) (*Invoice, error) {
 		s.decorate(&x)
 		s.attachReceipts(&x)
 		s.attachReversals(&x)
+		s.attachCashSessionStatus(&x)
 		s.attachCreditNote(&x)
 	}
 	return &x, e
@@ -465,6 +483,46 @@ func (s *Service) attachReversals(x *Invoice) {
 			x.Payments[i].ReversedAt = &at
 			x.Payments[i].ReversalReason = r.Reason
 			x.Payments[i].ReversedBy = &by
+		}
+	}
+}
+
+func (s *Service) attachCashSessionStatus(x *Invoice) {
+	if x == nil || len(x.Payments) == 0 {
+		return
+	}
+	ids := make([]uint, 0)
+	seen := map[uint]struct{}{}
+	for _, p := range x.Payments {
+		if p.CashSessionID == nil {
+			continue
+		}
+		if _, ok := seen[*p.CashSessionID]; ok {
+			continue
+		}
+		seen[*p.CashSessionID] = struct{}{}
+		ids = append(ids, *p.CashSessionID)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows := []struct {
+		ID     uint
+		Status string
+	}{}
+	if e := s.db.Table("cash_sessions").Select("id, status").Where("id IN ?", ids).Scan(&rows).Error; e != nil {
+		return
+	}
+	byID := make(map[uint]string, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r.Status
+	}
+	for i := range x.Payments {
+		if x.Payments[i].CashSessionID == nil {
+			continue
+		}
+		if st, ok := byID[*x.Payments[i].CashSessionID]; ok {
+			x.Payments[i].CashSessionStatus = st
 		}
 	}
 }
@@ -622,7 +680,12 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 		IdempotencyKey: key, PaidAt: time.Now(), ReceivedBy: user, CashSessionID: sessionID,
 		MobileOperator: mobile,
 	}
+	// SAVEPOINT: PostgreSQL aborts the TX on unique violation; rollback-to allows same-key recovery.
+	if e := tx.Exec("SAVEPOINT pay_idempotency").Error; e != nil {
+		return nil, e
+	}
 	if e := tx.Create(&p).Error; e != nil {
+		_ = tx.Exec("ROLLBACK TO SAVEPOINT pay_idempotency").Error
 		// Concurrent same-key: unique index wins; recover original payment if fingerprint matches.
 		if isPaymentIdempotencyUniqueViolation(e) {
 			var raced Payment
@@ -633,6 +696,9 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 				return &raced, nil
 			}
 		}
+		return nil, e
+	}
+	if e := tx.Exec("RELEASE SAVEPOINT pay_idempotency").Error; e != nil {
 		return nil, e
 	}
 	x.PaidAmount += req.Amount

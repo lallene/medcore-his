@@ -66,13 +66,20 @@ func IssueReceiptInTx(tx *gorm.DB, in ReceiptIssueInput) (*Receipt, error) {
 		PaidBefore:         in.PaidBefore,
 		BalanceAfter:       in.BalanceAfter,
 	}
+	if e := tx.Exec("SAVEPOINT cash_receipt_idempotency").Error; e != nil {
+		return nil, e
+	}
 	if e := tx.Create(&rec).Error; e != nil {
+		_ = tx.Exec("ROLLBACK TO SAVEPOINT cash_receipt_idempotency").Error
 		if isCashReceiptPaymentUniqueViolation(e) {
 			var raced Receipt
 			if load := tx.Where("payment_id=?", in.PaymentID).First(&raced).Error; load == nil {
 				return &raced, nil
 			}
 		}
+		return nil, e
+	}
+	if e := tx.Exec("RELEASE SAVEPOINT cash_receipt_idempotency").Error; e != nil {
 		return nil, e
 	}
 	rec.ReceiptNumber = fmt.Sprintf("REC-%06d", rec.ID)

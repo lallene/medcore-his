@@ -113,6 +113,8 @@ type Payment struct {
 	// Canonical cash_receipts identity (decorated on read; not a column).
 	ReceiptID     *uint  `json:"receiptId,omitempty" gorm:"-"`
 	ReceiptNumber string `json:"receiptNumber,omitempty" gorm:"-"`
+	// LOT29F-D: OPEN/CLOSED of linked cash session when present (read decoration).
+	CashSessionStatus string `json:"cashSessionStatus,omitempty" gorm:"-"`
 	// LOT29D-C full reversal decoration (not columns).
 	Reversed       bool       `json:"reversed" gorm:"-"`
 	ReversalID     *uint      `json:"reversalId,omitempty" gorm:"-"`
