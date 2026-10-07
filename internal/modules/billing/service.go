@@ -742,13 +742,6 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 	if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
-	credited, err := CreditedOnInvoice(tx, id)
-	if err != nil {
-		return nil, err
-	}
-	if credited > 0 {
-		return nil, coreerrors.Conflict("La facture est corrigée par un avoir et n'accepte pas de paiement")
-	}
 	if x.BalanceAmount <= 0 {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}

@@ -65,19 +65,24 @@ func isReversalUniqueViolation(err error) bool {
 	return false
 }
 
-func recomputeInvoiceStatus(patientAmount, paidEffective int64) (paid, balance int64, status string) {
+// recomputeInvoiceStatus projects paid/balance/status from original patient obligation,
+// total credit-note reductions, and effective (non-reversed) payments.
+func recomputeInvoiceStatus(patientAmount, credited, paidEffective int64) (paid, balance int64, status string) {
+	corrected := CorrectedPatientObligation(patientAmount, credited)
 	paid = paidEffective
-	balance = patientAmount - paidEffective
-	if balance < 0 {
-		balance = 0
+	if paid < 0 {
+		paid = 0
 	}
+	balance = RemainingReceivable(corrected, paid)
 	switch {
-	case paidEffective <= 0:
-		return 0, patientAmount, InvoiceIssued
+	case paid <= 0 && balance == 0:
+		return 0, 0, InvoiceIssued
+	case paid <= 0:
+		return 0, balance, InvoiceIssued
 	case balance == 0:
-		return paidEffective, 0, InvoicePaid
+		return paid, 0, InvoicePaid
 	default:
-		return paidEffective, balance, InvoicePartiallyPaid
+		return paid, balance, InvoicePartiallyPaid
 	}
 }
 
@@ -179,6 +184,16 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 			return coreerrors.Conflict("La facture n'accepte pas de contrepassation")
 		}
 
+		// D11 (LOT29F-H-C): do not reverse a payment that underpins spendable customer credit.
+		hasCredit, e := InvoiceHasPositiveCustomerCredit(tx, inv.ID)
+		if e != nil {
+			return e
+		}
+		if hasCredit {
+			return creditNoteConflict(CodeCreditReversalBlocked,
+				"Contrepassation impossible — un crédit client a été créé depuis cette facture")
+		}
+
 		effectiveBefore, e := EffectivePaidOnInvoice(tx, inv.ID)
 		if e != nil {
 			return e
@@ -220,8 +235,12 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 		}
 
 		effectiveAfter := effectiveBefore - pay.Amount
-		paid, balance, status := recomputeInvoiceStatus(inv.PatientAmount, effectiveAfter)
-		if paid != effectiveAfter || paid < 0 || balance < 0 || balance > inv.PatientAmount {
+		credited, e := CreditedOnInvoice(tx, inv.ID)
+		if e != nil {
+			return e
+		}
+		paid, balance, status := recomputeInvoiceStatus(inv.PatientAmount, credited, effectiveAfter)
+		if paid != effectiveAfter || paid < 0 || balance < 0 || balance > CorrectedPatientObligation(inv.PatientAmount, credited) {
 			return coreerrors.Conflict("État financier incohérent après contrepassation")
 		}
 		inv.PaidAmount = paid

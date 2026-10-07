@@ -54,10 +54,12 @@ type Invoice struct {
 	Payments           []Payment     `gorm:"foreignKey:InvoiceID" json:"payments,omitempty"`
 	PatientName        string        `gorm:"-" json:"patientName"`
 	PatientCode        string        `gorm:"-" json:"patientCode"`
-	// LOT29F-B credit-note decorations (not columns).
+	// LOT29F-B/H-C credit-note decorations (not columns).
 	CreditedAmount         int64             `json:"creditedAmount" gorm:"-"`
 	EffectivePatientAmount int64             `json:"effectivePatientAmount" gorm:"-"`
 	EffectiveBalanceAmount int64             `json:"effectiveBalanceAmount" gorm:"-"`
+	CustomerCreditAmount   int64             `json:"customerCreditAmount" gorm:"-"`
+	CreditHolderPartyID    *uint             `json:"creditHolderPartyId,omitempty" gorm:"-"`
 	CreditNote             *CreditNotePublic `json:"creditNote,omitempty" gorm:"-"`
 }
 
@@ -157,8 +159,8 @@ type PaymentReversal struct {
 
 func (PaymentReversal) TableName() string { return "billing_payment_reversals" }
 
-// CreditNote is the immutable full-invoice accounting correction document (LOT29F-B).
-// It is not a payment, payment reversal, refund, or cash movement.
+// CreditNote is the immutable invoice accounting correction document (LOT29F-B/H-C).
+// One per invoice; amount may be partial. Not a payment, reversal, refund, or cash movement.
 type CreditNote struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
 	Number         string    `gorm:"size:30;not null;uniqueIndex" json:"number"`

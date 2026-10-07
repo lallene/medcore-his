@@ -153,3 +153,42 @@ func TestLOT29F_HB_CashPayerAuthority(t *testing.T) {
 		}
 	})
 }
+
+func TestLOT29F_HC_PCE_NoCreditEffect(t *testing.T) {
+	db := cashDB(t)
+	db.Create(&cashUser{ID: 94, Name: "HC14"})
+	db.Create(&cashPatient{ID: 94, Nom: "HC", Prenoms: "14", CodePatient: "P-HC14", Telephone: "+2250700000094"})
+	s := NewService(db)
+	bill := billing.NewService(db)
+	reg, _ := s.SaveRegister(0, RegisterRequest{Code: "HC14", Name: "C"}, 94)
+	open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 5000, IdempotencyKey: "hc14-o"}, 94)
+	inv := seedCashInvoice(t, db, "INV-HC14", 94, 3000, 94)
+	rec, e := s.Pay(open.Session.ID, PaymentRequest{
+		InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "hc14-p",
+		Payer: &PayerRequest{Mode: "PATIENT"},
+	}, 94)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Close(open.Session.ID, CloseRequest{CountedCashAmount: 8000, Note: "c", IdempotencyKey: "hc14-c"}, 94, false); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := bill.ReversePayment(rec.PaymentID, billing.ReversePaymentRequest{Reason: "PCE path", IdempotencyKey: "hc14-r"}, 94); e != nil {
+		t.Fatal(e)
+	}
+	var rev billing.PaymentReversal
+	if e := db.Where("original_payment_id=?", rec.PaymentID).First(&rev).Error; e != nil {
+		t.Fatal(e)
+	}
+	open2, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 10000, IdempotencyKey: "hc14-o2"}, 94)
+	if _, e := s.ExecutePostCloseCorrection(ExecuteCorrectionRequest{
+		PaymentReversalID: rev.ID, HostSessionID: &open2.Session.ID, Note: "pce", IdempotencyKey: "hc14-x",
+	}, 94); e != nil {
+		t.Fatal(e)
+	}
+	var n int64
+	db.Model(&billing.CreditLedgerEntry{}).Count(&n)
+	if n != 0 {
+		t.Fatalf("H-C14 PCE must not create credit ledger rows n=%d", n)
+	}
+}

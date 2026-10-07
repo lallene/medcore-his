@@ -85,7 +85,7 @@ func cashDB(t *testing.T) *gorm.DB {
 			_ = adminSQL.Close()
 		}
 	})
-	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.FinancialParty{}, &Receipt{}, &CashMovement{}, &CashMovementAudit{}, &CashCorrectionExecution{}, &CashCorrectionExecutionAudit{}); e != nil {
+	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.CreditLedgerEntry{}, &billing.FinancialParty{}, &Receipt{}, &CashMovement{}, &CashMovementAudit{}, &CashCorrectionExecution{}, &CashCorrectionExecutionAudit{}); e != nil {
 		t.Fatal(e)
 	}
 	if e = EnsureReceiptSessionNullable(db); e != nil {

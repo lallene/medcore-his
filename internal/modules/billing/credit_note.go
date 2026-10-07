@@ -17,7 +17,7 @@ const (
 	MinCreditNoteReasonLen = 3
 )
 
-// Structured credit-note conflict codes (LOT29F-B).
+// Structured credit-note conflict codes (LOT29F-B / H-C).
 const (
 	CodeCreditNoteAlreadyExists               = "CREDIT_NOTE_ALREADY_EXISTS"
 	CodeCreditNoteInvoiceNotEligible          = "CREDIT_NOTE_INVOICE_NOT_ELIGIBLE"
@@ -28,7 +28,9 @@ const (
 	CodeCreditNoteIdempotencyConflict         = "IDEMPOTENCY_CONFLICT"
 )
 
+// CreditNoteRequest — client supplies reduction amount + reason; never resulting credit.
 type CreditNoteRequest struct {
+	Amount         int64  `json:"amount"`
 	Reason         string `json:"reason" binding:"required"`
 	IdempotencyKey string `json:"idempotencyKey"`
 }
@@ -42,6 +44,8 @@ type CreditNoteView struct {
 	PatientName        string `json:"patientName"`
 	PatientCode        string `json:"patientCode"`
 	IssuerName         string `json:"issuerName,omitempty"`
+	CustomerCredit     int64  `json:"customerCredit"`
+	HolderPartyID      *uint  `json:"holderPartyId,omitempty"`
 }
 
 func creditNoteConflict(code, message string) error {
@@ -62,12 +66,12 @@ func NormalizeCreditNoteReason(raw string) (string, error) {
 	return reason, nil
 }
 
-func creditNoteFingerprintMatch(cn CreditNote, invoiceID uint, reason string) bool {
-	return cn.InvoiceID == invoiceID && cn.Reason == reason
+func creditNoteFingerprintMatch(cn CreditNote, invoiceID uint, reason string, amount int64) bool {
+	return cn.InvoiceID == invoiceID && cn.Reason == reason && cn.Amount == amount
 }
 
-func creditNoteFingerprintConflict(cn CreditNote, invoiceID uint, reason string) error {
-	if creditNoteFingerprintMatch(cn, invoiceID, reason) {
+func creditNoteFingerprintConflict(cn CreditNote, invoiceID uint, reason string, amount int64) error {
+	if creditNoteFingerprintMatch(cn, invoiceID, reason, amount) {
 		return nil
 	}
 	return creditNoteConflict(CodeCreditNoteIdempotencyConflict, "Clé d'idempotence déjà utilisée")
@@ -99,21 +103,17 @@ func toCreditNotePublic(cn CreditNote) CreditNotePublic {
 	}
 }
 
-func applyCreditDecorations(inv *Invoice, credited int64, cn *CreditNote) {
+func applyCreditDecorations(inv *Invoice, credited int64, cn *CreditNote, customerCredit int64, holderPartyID *uint) {
 	if inv == nil {
 		return
 	}
 	inv.CreditedAmount = credited
-	effPatient := inv.PatientAmount - credited
-	if effPatient < 0 {
-		effPatient = 0
-	}
+	effPatient := CorrectedPatientObligation(inv.PatientAmount, credited)
 	inv.EffectivePatientAmount = effPatient
-	effBal := effPatient - inv.PaidAmount
-	if effBal < 0 {
-		effBal = 0
-	}
+	effBal := RemainingReceivable(effPatient, inv.PaidAmount)
 	inv.EffectiveBalanceAmount = effBal
+	inv.CustomerCreditAmount = customerCredit
+	inv.CreditHolderPartyID = holderPartyID
 	if cn != nil {
 		pub := toCreditNotePublic(*cn)
 		inv.CreditNote = &pub
@@ -127,14 +127,23 @@ func (s *Service) attachCreditNote(x *Invoice) {
 	var cn CreditNote
 	e := s.db.Where("invoice_id=?", x.ID).First(&cn).Error
 	if errors.Is(e, gorm.ErrRecordNotFound) {
-		applyCreditDecorations(x, 0, nil)
+		applyCreditDecorations(x, 0, nil, 0, nil)
 		return
 	}
 	if e != nil {
-		applyCreditDecorations(x, 0, nil)
+		applyCreditDecorations(x, 0, nil, 0, nil)
 		return
 	}
-	applyCreditDecorations(x, cn.Amount, &cn)
+	creditAmt, _ := CreditLedgerAmountForSource(s.db, CreditSourceCreditNote, cn.ID)
+	var holder *uint
+	if creditAmt > 0 {
+		var entry CreditLedgerEntry
+		if s.db.Where("source_type=? AND source_id=?", CreditSourceCreditNote, cn.ID).First(&entry).Error == nil {
+			h := entry.HolderPartyID
+			holder = &h
+		}
+	}
+	applyCreditDecorations(x, cn.Amount, &cn, creditAmt, holder)
 }
 
 func hasActiveInsuranceAllocation(tx *gorm.DB, invoiceID uint) (bool, error) {
@@ -145,20 +154,9 @@ func hasActiveInsuranceAllocation(tx *gorm.DB, invoiceID uint) (bool, error) {
 	return n > 0, e
 }
 
-func hasEffectiveCashSessionPayment(tx *gorm.DB, invoiceID uint) (bool, error) {
-	var n int64
-	e := tx.Raw(`
-		SELECT COUNT(*)
-		FROM billing_payments p
-		LEFT JOIN billing_payment_reversals r ON r.original_payment_id = p.id
-		WHERE p.invoice_id = ? AND r.id IS NULL AND p.cash_session_id IS NOT NULL
-	`, invoiceID).Scan(&n).Error
-	return n > 0, e
-}
-
-// IssueCreditNote creates an immutable full-invoice credit note for a safe V1 subset:
-// unpaid ISSUED, patient-only (no insurance), no existing credit note.
-// Does not reverse payments, refund money, mutate insurance, or create patient credit.
+// IssueCreditNote creates an immutable CreditNote (one per invoice) with authoritative amount.
+// LOT29F-H-C: paid/partial invoices may produce customer credit = max(effectivePaid - correctedObligation, 0).
+// Retains one CreditNote per invoice (unique invoice_id); amount may be partial.
 func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user uint) (*Invoice, error) {
 	reason, err := NormalizeCreditNoteReason(req.Reason)
 	if err != nil {
@@ -168,11 +166,15 @@ func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user ui
 	if err != nil {
 		return nil, err
 	}
+	if req.Amount <= 0 {
+		return nil, coreerrors.BadRequest("Montant d'avoir obligatoire et strictement positif")
+	}
+	amount := req.Amount
 	var outID uint
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var priorByKey CreditNote
 		if e := tx.Where("idempotency_key=?", key).First(&priorByKey).Error; e == nil {
-			if e := creditNoteFingerprintConflict(priorByKey, invoiceID, reason); e != nil {
+			if e := creditNoteFingerprintConflict(priorByKey, invoiceID, reason, amount); e != nil {
 				return e
 			}
 			outID = priorByKey.InvoiceID
@@ -186,6 +188,9 @@ func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user ui
 			if errors.Is(e, gorm.ErrRecordNotFound) {
 				return coreerrors.NotFound("INVOICE")
 			}
+			return e
+		}
+		if e := LockEffectivePaymentsForInvoice(tx, inv.ID); e != nil {
 			return e
 		}
 
@@ -220,32 +225,31 @@ func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user ui
 			return creditNoteConflict(CodeCreditNoteInsuranceCorrectionRequired, "Une allocation assurance active nécessite une correction assurance (LOT30)")
 		}
 
+		if inv.PatientAmount <= 0 {
+			return creditNoteConflict(CodeCreditNoteInvoiceNotEligible, "Montant patient nul — avoir inutile")
+		}
+		alreadyCredited, e := CreditedOnInvoice(tx, inv.ID)
+		if e != nil {
+			return e
+		}
+		remainingCorrectable := CorrectedPatientObligation(inv.PatientAmount, alreadyCredited)
+		if amount > remainingCorrectable {
+			return creditNoteConflict(CodeCreditNoteAmountInvalid,
+				fmt.Sprintf("Montant d'avoir supérieur à l'obligation patient corrigible (%d)", remainingCorrectable))
+		}
+
 		effectivePaid, e := EffectivePaidOnInvoice(tx, inv.ID)
 		if e != nil {
 			return e
 		}
-		if effectivePaid > 0 {
-			cashPay, e := hasEffectiveCashSessionPayment(tx, inv.ID)
-			if e != nil {
-				return e
-			}
-			if cashPay {
-				return creditNoteConflict(CodeCreditNoteCashCorrectionRequired, "Un encaissement de session de caisse empêche l'avoir tant que la correction caisse n'existe pas")
-			}
-			// Paid / partially paid full credit would invent patient credit / refund (PC5 / R3).
-			// Sessionless remediation: reverse payments first, then cancel or issue avoir while unpaid.
-			return creditNoteConflict(CodeCreditNotePaymentReversalRequired, "Contrepassation des encaissements requise avant avoir — un avoir sur facture encaissée créerait un crédit patient (politique requise)")
+		corrected := CorrectedPatientObligation(inv.PatientAmount, alreadyCredited+amount)
+		customerCredit := CustomerCreditFromExcess(effectivePaid, corrected)
+
+		holderID, e := ResolveCreditHolderForInvoice(tx, inv.ID, inv.PatientID, customerCredit)
+		if e != nil {
+			return e
 		}
 
-		// V1: unpaid ISSUED only (Cancel remains available; avoir preserves issued invoice + corrective document).
-		if inv.Status != InvoiceIssued {
-			return creditNoteConflict(CodeCreditNoteInvoiceNotEligible, "Seul un avoir sur facture émise non encaissée (patient seul) est supporté en V1")
-		}
-		if inv.PatientAmount <= 0 {
-			return creditNoteConflict(CodeCreditNoteInvoiceNotEligible, "Montant patient nul — avoir inutile")
-		}
-
-		amount := inv.PatientAmount // backend-authoritative full credit
 		cn := CreditNote{
 			InvoiceID:      inv.ID,
 			Amount:         amount,
@@ -255,11 +259,15 @@ func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user ui
 			IdempotencyKey: key,
 			Number:         fmt.Sprintf("TMP-CN-%d", time.Now().UnixNano()),
 		}
+		if e := tx.Exec("SAVEPOINT cn_idempotency").Error; e != nil {
+			return e
+		}
 		if e := tx.Create(&cn).Error; e != nil {
+			_ = tx.Exec("ROLLBACK TO SAVEPOINT cn_idempotency").Error
 			if isCreditNoteUniqueViolation(e) {
 				var raced CreditNote
 				if load := tx.Where("idempotency_key=?", key).First(&raced).Error; load == nil {
-					if e := creditNoteFingerprintConflict(raced, invoiceID, reason); e != nil {
+					if e := creditNoteFingerprintConflict(raced, invoiceID, reason, amount); e != nil {
 						return e
 					}
 					outID = raced.InvoiceID
@@ -271,19 +279,33 @@ func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user ui
 			}
 			return e
 		}
+		if e := tx.Exec("RELEASE SAVEPOINT cn_idempotency").Error; e != nil {
+			return e
+		}
 		cn.Number = fmt.Sprintf("CN-%06d", cn.ID)
 		if e := tx.Model(&cn).Update("number", cn.Number).Error; e != nil {
 			return e
 		}
 
-		// Project balance to zero without rewriting historical patient/gross/insurance amounts.
-		inv.BalanceAmount = 0
+		if e := insertCreditLedgerFromCreditNote(tx, cn, inv, customerCredit, holderID, user, key); e != nil {
+			return e
+		}
+
+		paid, balance, status := recomputeInvoiceStatus(inv.PatientAmount, alreadyCredited+amount, effectivePaid)
+		inv.PaidAmount = paid
+		inv.BalanceAmount = balance
+		inv.Status = status
 		inv.UpdatedBy = user
 		if e := tx.Save(&inv).Error; e != nil {
 			return e
 		}
 		if e := s.timeline(tx, &inv, "credit_note_issued", "Avoir émis", user); e != nil {
 			return e
+		}
+		if customerCredit > 0 {
+			if e := s.timeline(tx, &inv, "customer_credit_created", "Crédit financier créé", user); e != nil {
+				return e
+			}
 		}
 		outID = inv.ID
 		return nil
@@ -307,6 +329,7 @@ func (s *Service) GetCreditNote(id uint) (*CreditNoteView, error) {
 		return nil, coreerrors.NotFound("INVOICE")
 	}
 	s.decorate(&inv)
+	creditAmt, _ := CreditLedgerAmountForSource(s.db, CreditSourceCreditNote, cn.ID)
 	view := &CreditNoteView{
 		CreditNotePublic:   toCreditNotePublic(cn),
 		InvoiceNumber:      inv.Number,
@@ -315,6 +338,8 @@ func (s *Service) GetCreditNote(id uint) (*CreditNoteView, error) {
 		PatientID:          inv.PatientID,
 		PatientName:        inv.PatientName,
 		PatientCode:        inv.PatientCode,
+		CustomerCredit:     creditAmt,
+		HolderPartyID:      inv.CreditHolderPartyID,
 	}
 	var issuer struct{ Name string }
 	s.db.Table("users").Select("name").Where("id=?", cn.IssuedBy).Scan(&issuer)

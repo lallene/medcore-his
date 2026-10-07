@@ -299,6 +299,16 @@ func (h *Handler) GetCreditNote(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func (h *Handler) GetCreditSummary(c *gin.Context) {
+	holder, _ := strconv.ParseUint(c.Query("holderPartyId"), 10, 64)
+	patient, _ := strconv.ParseUint(c.Query("patientId"), 10, 64)
+	x, e := h.service.GetCreditSummary(uint(holder), uint(patient))
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
 func (h *Handler) KPIs(c *gin.Context) {
 	x, e := h.service.KPIs()
 	if e != nil {
