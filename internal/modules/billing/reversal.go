@@ -65,19 +65,24 @@ func isReversalUniqueViolation(err error) bool {
 	return false
 }
 
-// recomputeInvoiceStatus projects paid/balance/status from original patient obligation,
-// total credit-note reductions, and effective (non-reversed) payments.
-func recomputeInvoiceStatus(patientAmount, credited, paidEffective int64) (paid, balance int64, status string) {
+// recomputeInvoiceStatus projects PaidAmount (real money only), balance, and status from:
+// corrected patient obligation, effective payments, and non-reversed credit applications.
+// Credit applications settle receivable without increasing PaidAmount / CashCollected.
+func recomputeInvoiceStatus(patientAmount, credited, moneyPaid, creditApplied int64) (paid, balance int64, status string) {
 	corrected := CorrectedPatientObligation(patientAmount, credited)
-	paid = paidEffective
+	paid = moneyPaid
 	if paid < 0 {
 		paid = 0
 	}
-	balance = RemainingReceivable(corrected, paid)
+	if creditApplied < 0 {
+		creditApplied = 0
+	}
+	settled := paid + creditApplied
+	balance = RemainingReceivable(corrected, settled)
 	switch {
-	case paid <= 0 && balance == 0:
+	case settled <= 0 && balance == 0:
 		return 0, 0, InvoiceIssued
-	case paid <= 0:
+	case settled <= 0:
 		return 0, balance, InvoiceIssued
 	case balance == 0:
 		return paid, 0, InvoicePaid
@@ -239,7 +244,11 @@ func (s *Service) ReversePayment(paymentID uint, req ReversePaymentRequest, user
 		if e != nil {
 			return e
 		}
-		paid, balance, status := recomputeInvoiceStatus(inv.PatientAmount, credited, effectiveAfter)
+		creditApplied, e := EffectiveCreditAppliedOnInvoice(tx, inv.ID)
+		if e != nil {
+			return e
+		}
+		paid, balance, status := recomputeInvoiceStatus(inv.PatientAmount, credited, effectiveAfter, creditApplied)
 		if paid != effectiveAfter || paid < 0 || balance < 0 || balance > CorrectedPatientObligation(inv.PatientAmount, credited) {
 			return coreerrors.Conflict("État financier incohérent après contrepassation")
 		}

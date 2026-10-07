@@ -54,13 +54,17 @@ type Invoice struct {
 	Payments           []Payment     `gorm:"foreignKey:InvoiceID" json:"payments,omitempty"`
 	PatientName        string        `gorm:"-" json:"patientName"`
 	PatientCode        string        `gorm:"-" json:"patientCode"`
-	// LOT29F-B/H-C credit-note decorations (not columns).
+	// LOT29F-B/H-C/H-D credit decorations (not columns).
 	CreditedAmount         int64             `json:"creditedAmount" gorm:"-"`
 	EffectivePatientAmount int64             `json:"effectivePatientAmount" gorm:"-"`
 	EffectiveBalanceAmount int64             `json:"effectiveBalanceAmount" gorm:"-"`
 	CustomerCreditAmount   int64             `json:"customerCreditAmount" gorm:"-"`
 	CreditHolderPartyID    *uint             `json:"creditHolderPartyId,omitempty" gorm:"-"`
 	CreditNote             *CreditNotePublic `json:"creditNote,omitempty" gorm:"-"`
+	// LOT29F-H-D: settlement via credit application (distinct from PaidAmount / CashCollected).
+	CreditAppliedAmount int64 `json:"creditAppliedAmount" gorm:"-"`
+	MoneyPaidAmount     int64 `json:"moneyPaidAmount" gorm:"-"`
+	TotalSettledAmount  int64 `json:"totalSettledAmount" gorm:"-"`
 }
 
 func (Invoice) TableName() string { return "billing_invoices" }

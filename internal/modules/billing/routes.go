@@ -21,7 +21,11 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.POST("/invoices/:id/cancel", rbac.Permission("billing.cancel"), h.Cancel)
 	g.POST("/invoices/:id/credit-notes", rbac.Permission("billing.credit_note.create"), h.IssueCreditNote)
 	g.GET("/credit-notes/:id", rbac.Permission("billing.credit_note.read"), h.GetCreditNote)
+	g.POST("/invoices/:id/credit-applications", rbac.Permission("billing.credit.apply"), h.ApplyCredit)
+	g.POST("/credit-applications/:id/reverse", rbac.Permission("billing.credit.apply"), h.ReverseCreditApplication)
 	g.GET("/credit-summary", rbac.Permission("billing.credit.read"), h.GetCreditSummary)
+	g.GET("/credit-ledger", rbac.Permission("billing.credit.read"), h.ListCreditLedger)
+	g.GET("/patients/:patientId/credit-balances", rbac.Permission("billing.credit.read"), h.ListPatientCreditBalances)
 	g.GET("/kpis", rbac.Permission("billing.read"), h.KPIs)
 	r.GET("/patients/:id/invoices", rbac.Permission("billing.read"), func(c *gin.Context) {
 		q := c.Request.URL.Query()

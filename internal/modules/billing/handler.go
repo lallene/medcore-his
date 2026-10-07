@@ -309,6 +309,77 @@ func (h *Handler) GetCreditSummary(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func (h *Handler) ListCreditLedger(c *gin.Context) {
+	holder, _ := strconv.ParseUint(c.Query("holderPartyId"), 10, 64)
+	patient, _ := strconv.ParseUint(c.Query("patientId"), 10, 64)
+	x, e := h.service.ListCreditLedger(uint(holder), uint(patient))
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+func (h *Handler) ListPatientCreditBalances(c *gin.Context) {
+	pid, e := strconv.ParseUint(c.Param("patientId"), 10, 64)
+	if e != nil || pid == 0 {
+		fail(c, coreerrors.BadRequest("Identifiant invalide"))
+		return
+	}
+	x, err := h.service.ListPatientCreditBalances(uint(pid))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, x)
+}
+func (h *Handler) ApplyCredit(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r CreditApplicationRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Application de crédit invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.ApplyCredit(n, r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+func (h *Handler) ReverseCreditApplication(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r CreditApplicationReversalRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Annulation d'application invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.ReverseCreditApplication(n, r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
 func (h *Handler) KPIs(c *gin.Context) {
 	x, e := h.service.KPIs()
 	if e != nil {

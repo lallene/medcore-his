@@ -103,14 +103,20 @@ func toCreditNotePublic(cn CreditNote) CreditNotePublic {
 	}
 }
 
-func applyCreditDecorations(inv *Invoice, credited int64, cn *CreditNote, customerCredit int64, holderPartyID *uint) {
+func applyCreditDecorations(inv *Invoice, credited int64, cn *CreditNote, customerCredit int64, holderPartyID *uint, creditApplied int64) {
 	if inv == nil {
 		return
 	}
 	inv.CreditedAmount = credited
 	effPatient := CorrectedPatientObligation(inv.PatientAmount, credited)
 	inv.EffectivePatientAmount = effPatient
-	effBal := RemainingReceivable(effPatient, inv.PaidAmount)
+	if creditApplied < 0 {
+		creditApplied = 0
+	}
+	inv.CreditAppliedAmount = creditApplied
+	inv.MoneyPaidAmount = inv.PaidAmount
+	inv.TotalSettledAmount = inv.PaidAmount + creditApplied
+	effBal := RemainingReceivableAfterSettlement(effPatient, inv.PaidAmount, creditApplied)
 	inv.EffectiveBalanceAmount = effBal
 	inv.CustomerCreditAmount = customerCredit
 	inv.CreditHolderPartyID = holderPartyID
@@ -125,13 +131,14 @@ func (s *Service) attachCreditNote(x *Invoice) {
 		return
 	}
 	var cn CreditNote
+	applied, _ := EffectiveCreditAppliedOnInvoice(s.db, x.ID)
 	e := s.db.Where("invoice_id=?", x.ID).First(&cn).Error
 	if errors.Is(e, gorm.ErrRecordNotFound) {
-		applyCreditDecorations(x, 0, nil, 0, nil)
+		applyCreditDecorations(x, 0, nil, 0, nil, applied)
 		return
 	}
 	if e != nil {
-		applyCreditDecorations(x, 0, nil, 0, nil)
+		applyCreditDecorations(x, 0, nil, 0, nil, applied)
 		return
 	}
 	creditAmt, _ := CreditLedgerAmountForSource(s.db, CreditSourceCreditNote, cn.ID)
@@ -143,7 +150,7 @@ func (s *Service) attachCreditNote(x *Invoice) {
 			holder = &h
 		}
 	}
-	applyCreditDecorations(x, cn.Amount, &cn, creditAmt, holder)
+	applyCreditDecorations(x, cn.Amount, &cn, creditAmt, holder, applied)
 }
 
 func hasActiveInsuranceAllocation(tx *gorm.DB, invoiceID uint) (bool, error) {
@@ -242,12 +249,22 @@ func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user ui
 		if e != nil {
 			return e
 		}
+		creditApplied, e := EffectiveCreditAppliedOnInvoice(tx, inv.ID)
+		if e != nil {
+			return e
+		}
 		corrected := CorrectedPatientObligation(inv.PatientAmount, alreadyCredited+amount)
+		// Customer credit from over-settlement uses real money only (not credit applications).
 		customerCredit := CustomerCreditFromExcess(effectivePaid, corrected)
 
 		holderID, e := ResolveCreditHolderForInvoice(tx, inv.ID, inv.PatientID, customerCredit)
 		if e != nil {
 			return e
+		}
+		if holderID > 0 {
+			if e := lockCreditAccount(tx, holderID, inv.PatientID); e != nil {
+				return e
+			}
 		}
 
 		cn := CreditNote{
@@ -291,7 +308,7 @@ func (s *Service) IssueCreditNote(invoiceID uint, req CreditNoteRequest, user ui
 			return e
 		}
 
-		paid, balance, status := recomputeInvoiceStatus(inv.PatientAmount, alreadyCredited+amount, effectivePaid)
+		paid, balance, status := recomputeInvoiceStatus(inv.PatientAmount, alreadyCredited+amount, effectivePaid, creditApplied)
 		inv.PaidAmount = paid
 		inv.BalanceAmount = balance
 		inv.Status = status

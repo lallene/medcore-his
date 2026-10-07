@@ -61,6 +61,7 @@ var SensitivePermissions = map[string]bool{
 	"billing.payer.write":            true,
 	"billing.credit_note.create":     true,
 	"billing.credit.read":            true,
+	"billing.credit.apply":           true,
 	"insurance.authorization.decide": true,
 	"insurance.authorization.cancel": true,
 	"cash.payment.cancel":            true,

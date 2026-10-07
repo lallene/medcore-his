@@ -97,7 +97,7 @@ func voidReconDB(t *testing.T) *gorm.DB {
 		&company.InsuranceCompany{}, &guarantor.InsuranceGuarantor{}, &coverage.PatientCoverage{},
 		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
 		&authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{},
-		&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.CreditLedgerEntry{}, &billing.FinancialParty{},
+		&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.CreditLedgerEntry{}, &billing.CreditApplication{}, &billing.CreditApplicationReversal{}, &billing.FinancialParty{},
 	); err != nil {
 		t.Fatal(err)
 	}

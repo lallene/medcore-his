@@ -228,7 +228,7 @@ func billingDB(t *testing.T) *gorm.DB {
 		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE").Error
 		_ = adminSQL.Close()
 	})
-	models := []any{&patients.Patient{}, &billingUser{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingHospitalization{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &billingPerformedAct{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}, &PaymentReversal{}, &CreditNote{}, &CreditLedgerEntry{}, &FinancialParty{}, &billingCashReceipt{}}
+	models := []any{&patients.Patient{}, &billingUser{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingHospitalization{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &billingPerformedAct{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}, &PaymentReversal{}, &CreditNote{}, &CreditLedgerEntry{}, &CreditApplication{}, &CreditApplicationReversal{}, &FinancialParty{}, &billingCashReceipt{}}
 	if e = db.AutoMigrate(models...); e != nil {
 		t.Fatal(e)
 	}

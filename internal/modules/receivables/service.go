@@ -50,7 +50,7 @@ func debtStatusAt(balance, paid int64, due *time.Time, now time.Time, loc *time.
 	return "DUE"
 }
 func (s *Service) base(patient uint) *gorm.DB {
-	q := s.db.Table("billing_invoices i").Select(`i.id invoice_id,i.number invoice_number,i.patient_id,TRIM(CONCAT(p.prenoms,' ',p.nom)) patient_name,p.code_patient patient_code,i.created_at invoice_date,i.status invoice_status,i.gross_amount,i.insurance_amount,i.patient_amount patient_due,COALESCE(pay.paid,0) patient_paid,GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0),0) patient_balance,m.due_date,i.coverage_pending,COALESCE(pay.last_payment_at::text,'') last_payment_at,COALESCE(lines.descriptions,'') descriptions`).Joins("JOIN patients p ON p.id=i.patient_id").Joins("LEFT JOIN patient_receivable_metadata m ON m.invoice_id=i.id").Joins("LEFT JOIN (" + billing.EffectivePaidSubquery + ") pay ON pay.invoice_id=i.id").Joins("LEFT JOIN (" + billing.EffectiveCreditedSubquery + ") cred ON cred.invoice_id=i.id").Joins("LEFT JOIN (SELECT invoice_id,string_agg(description, ', ' ORDER BY id) descriptions FROM billing_invoice_lines WHERE is_active GROUP BY invoice_id) lines ON lines.invoice_id=i.id")
+	q := s.db.Table("billing_invoices i").Select(`i.id invoice_id,i.number invoice_number,i.patient_id,TRIM(CONCAT(p.prenoms,' ',p.nom)) patient_name,p.code_patient patient_code,i.created_at invoice_date,i.status invoice_status,i.gross_amount,i.insurance_amount,i.patient_amount patient_due,COALESCE(pay.paid,0) patient_paid,GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0)-COALESCE(capp.applied,0),0) patient_balance,m.due_date,i.coverage_pending,COALESCE(pay.last_payment_at::text,'') last_payment_at,COALESCE(lines.descriptions,'') descriptions`).Joins("JOIN patients p ON p.id=i.patient_id").Joins("LEFT JOIN patient_receivable_metadata m ON m.invoice_id=i.id").Joins("LEFT JOIN (" + billing.EffectivePaidSubquery + ") pay ON pay.invoice_id=i.id").Joins("LEFT JOIN (" + billing.EffectiveCreditedSubquery + ") cred ON cred.invoice_id=i.id").Joins("LEFT JOIN (" + billing.EffectiveCreditAppliedSubquery + ") capp ON capp.invoice_id=i.id").Joins("LEFT JOIN (SELECT invoice_id,string_agg(description, ', ' ORDER BY id) descriptions FROM billing_invoice_lines WHERE is_active GROUP BY invoice_id) lines ON lines.invoice_id=i.id")
 	if patient > 0 {
 		q = q.Where("i.patient_id=?", patient)
 	}
@@ -63,7 +63,7 @@ func (s *Service) List(f Filter) (*Page, error) {
 	if f.Limit < 1 || f.Limit > 100 {
 		f.Limit = 20
 	}
-	q := s.base(f.PatientID).Where("i.status IN ? AND NOT i.coverage_pending", []string{billing.InvoiceIssued, billing.InvoicePartiallyPaid}).Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0),0)>0")
+	q := s.base(f.PatientID).Where("i.status IN ? AND NOT i.coverage_pending", []string{billing.InvoiceIssued, billing.InvoicePartiallyPaid}).Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0)-COALESCE(capp.applied,0),0)>0")
 	if x := strings.TrimSpace(f.Search); x != "" {
 		n := "%" + strings.ToLower(x) + "%"
 		q = q.Where("LOWER(CONCAT(p.nom,' ',p.prenoms,' ',p.code_patient,' ',i.number)) LIKE ?", n)
@@ -75,10 +75,10 @@ func (s *Service) List(f Filter) (*Page, error) {
 		q = q.Where("i.created_at::date<=?", f.DateTo)
 	}
 	if f.MinAmount > 0 {
-		q = q.Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0),0)>=?", f.MinAmount)
+		q = q.Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0)-COALESCE(capp.applied,0),0)>=?", f.MinAmount)
 	}
 	if f.MaxAmount > 0 {
-		q = q.Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0),0)<=?", f.MaxAmount)
+		q = q.Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0)-COALESCE(capp.applied,0),0)<=?", f.MaxAmount)
 	}
 	if f.Due == "OVERDUE" {
 		q = q.Where("m.due_date<CURRENT_DATE")
@@ -114,7 +114,7 @@ func (s *Service) KPIs() (*KPIs, error) {
 	var rows []Item
 	if e := s.base(0).
 		Where("i.status IN ? AND NOT i.coverage_pending", []string{billing.InvoiceIssued, billing.InvoicePartiallyPaid}).
-		Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0),0)>0").
+		Where("GREATEST(i.patient_amount-COALESCE(cred.credited,0)-COALESCE(pay.paid,0)-COALESCE(capp.applied,0),0)>0").
 		Scan(&rows).Error; e != nil {
 		return nil, e
 	}

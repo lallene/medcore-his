@@ -742,10 +742,24 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 	if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
-	if x.BalanceAmount <= 0 {
+	credited, err := CreditedOnInvoice(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	moneyBefore, err := EffectivePaidOnInvoice(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	creditApplied, err := EffectiveCreditAppliedOnInvoice(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	corrected := CorrectedPatientObligation(x.PatientAmount, credited)
+	receivable := RemainingReceivableAfterSettlement(corrected, moneyBefore, creditApplied)
+	if receivable <= 0 {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
-	if req.Amount > x.BalanceAmount {
+	if req.Amount > receivable {
 		return nil, coreerrors.Conflict("Le paiement dépasse le reste dû")
 	}
 	payerSnap, err := ResolvePayerForPayment(tx, x.PatientID, req.Payer)
@@ -779,13 +793,10 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 	if e := tx.Exec("RELEASE SAVEPOINT pay_idempotency").Error; e != nil {
 		return nil, e
 	}
-	x.PaidAmount += req.Amount
-	x.BalanceAmount -= req.Amount
-	if x.BalanceAmount == 0 {
-		x.Status = InvoicePaid
-	} else {
-		x.Status = InvoicePartiallyPaid
-	}
+	paid, balance, status := recomputeInvoiceStatus(x.PatientAmount, credited, moneyBefore+req.Amount, creditApplied)
+	x.PaidAmount = paid
+	x.BalanceAmount = balance
+	x.Status = status
 	x.UpdatedBy = user
 	if e := tx.Save(&x).Error; e != nil {
 		return nil, e
@@ -820,6 +831,13 @@ func (s *Service) Cancel(id uint, reason string, user uint) (*Invoice, error) {
 		}
 		if effectivePaid > 0 {
 			return coreerrors.Conflict("Une facture encaissée nécessite un avoir/remboursement")
+		}
+		creditApplied, err := EffectiveCreditAppliedOnInvoice(tx, id)
+		if err != nil {
+			return err
+		}
+		if creditApplied > 0 {
+			return coreerrors.Conflict("Une facture avec crédit appliqué ne peut pas être annulée")
 		}
 		if x.Status != InvoiceDraft && x.Status != InvoiceIssued {
 			return coreerrors.Conflict("Cette facture ne peut pas être annulée")
