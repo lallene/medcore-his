@@ -169,8 +169,7 @@ func TestLOT29F_C_CashMovementMatrix(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 10000, IdempotencyKey: "cm21-o"}, 46)
 		inv := seedCashInvoice(t, db, "INV-CM21", 46, 5000, 46)
 		if _, e := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cm21-pay",
-		}, 46); e != nil {
+			InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cm21-pay", Payer: &PayerRequest{Mode: "PATIENT"}}, 46); e != nil {
 			t.Fatal(e)
 		}
 		if _, e := s.CreateMovement(open.Session.ID, MovementRequest{
@@ -267,8 +266,7 @@ func TestLOT29F_C_CashMovementMatrix(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cm29-o"}, 49)
 		inv := seedCashInvoice(t, db, "INV-CM29", 49, 4000, 49)
 		if _, e := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CARD", IdempotencyKey: "cm29-pay",
-		}, 49); e != nil {
+			InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CARD", IdempotencyKey: "cm29-pay", Payer: &PayerRequest{Mode: "PATIENT"}}, 49); e != nil {
 			t.Fatal(e)
 		}
 		if _, e := s.CreateMovement(open.Session.ID, MovementRequest{

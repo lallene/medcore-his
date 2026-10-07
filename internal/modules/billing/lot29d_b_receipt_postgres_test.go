@@ -105,7 +105,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CARD", Reference: "REF-RB01", IdempotencyKey: "rb01"}, 41)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CARD", Reference: "REF-RB01", IdempotencyKey: "rb01", Payer: PatientPayerRequest()}, 41)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -140,7 +140,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		req := PaymentRequest{Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "rb06"}
+		req := PaymentRequest{Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "rb06", Payer: PatientPayerRequest()}
 		first, e := s.Pay(inv.ID, req, 42)
 		if e != nil {
 			t.Fatal(e)
@@ -169,7 +169,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		bare := NewService(db).WithReceiptIssuer(nil)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, bare, p, c, tariffID)
-		out, e := bare.Pay(inv.ID, PaymentRequest{Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "rb08-pay"}, 43)
+		out, e := bare.Pay(inv.ID, PaymentRequest{Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "rb08-pay", Payer: PatientPayerRequest()}, 43)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -218,11 +218,11 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		a, e := s.Pay(inv.ID, PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "rb09a"}, 44)
+		a, e := s.Pay(inv.ID, PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "rb09a", Payer: PatientPayerRequest()}, 44)
 		if e != nil {
 			t.Fatal(e)
 		}
-		b, e := s.Pay(inv.ID, PaymentRequest{Amount: 6000, PaymentMethod: "CARD", IdempotencyKey: "rb09b"}, 44)
+		b, e := s.Pay(inv.ID, PaymentRequest{Amount: 6000, PaymentMethod: "CARD", IdempotencyKey: "rb09b", Payer: PatientPayerRequest()}, 44)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -247,7 +247,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 7000, PaymentMethod: "CASH", IdempotencyKey: "rb10"}, 45)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 7000, PaymentMethod: "CASH", IdempotencyKey: "rb10", Payer: PatientPayerRequest()}, 45)
 		if e != nil || out.Status != InvoicePartiallyPaid {
 			t.Fatalf("RB10 %+v %v", out, e)
 		}
@@ -263,10 +263,10 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "rb11a"}, 46); e != nil {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "rb11a", Payer: PatientPayerRequest()}, 46); e != nil {
 			t.Fatal(e)
 		}
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 15000, PaymentMethod: "CASH", IdempotencyKey: "rb11b"}, 46)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 15000, PaymentMethod: "CASH", IdempotencyKey: "rb11b", Payer: PatientPayerRequest()}, 46)
 		if e != nil || out.Status != InvoicePaid || out.BalanceAmount != 0 {
 			t.Fatalf("RB11 %+v %v", out, e)
 		}
@@ -288,7 +288,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
 		beforePaid, beforeBal := inv.PaidAmount, inv.BalanceAmount
-		_, e := s.Pay(inv.ID, PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "rb12"}, 47)
+		_, e := s.Pay(inv.ID, PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "rb12", Payer: PatientPayerRequest()}, 47)
 		if e == nil {
 			t.Fatal("RB12 expected failure")
 		}
@@ -310,7 +310,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "rb14"}, 48)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "rb14", Payer: PatientPayerRequest()}, 48)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -342,7 +342,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "rb16"}, 50)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "rb16", Payer: PatientPayerRequest()}, 50)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -366,7 +366,7 @@ func TestLOT29D_B_BillingReceiptMatrix(t *testing.T) {
 		s := NewService(db).WithReceiptIssuer(nil)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 2500, PaymentMethod: "CASH", IdempotencyKey: "rb17"}, 51)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 2500, PaymentMethod: "CASH", IdempotencyKey: "rb17", Payer: PatientPayerRequest()}, 51)
 		if e != nil {
 			t.Fatal(e)
 		}

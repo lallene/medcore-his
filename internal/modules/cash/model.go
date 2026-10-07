@@ -70,14 +70,21 @@ type Receipt struct {
 	PatientCode       string    `gorm:"size:50" json:"patientCode"`
 	CashierName       string    `gorm:"size:150;not null" json:"cashierName"`
 	// RegisterCode/RegisterName are cash-register snapshots; empty for sessionless billing receipts.
-	RegisterCode       string    `gorm:"size:50;not null" json:"registerCode"`
-	RegisterName       string    `gorm:"size:150;not null" json:"registerName"`
-	InvoiceGrossAmount int64     `json:"invoiceGrossAmount"`
-	InsuranceAmount    int64     `json:"insuranceAmount"`
-	PatientAmount      int64     `json:"patientAmount"`
-	PaidBefore         int64     `json:"paidBefore"`
-	BalanceAfter       int64     `json:"balanceAfter"`
-	CreatedAt          time.Time `json:"createdAt"`
+	RegisterCode       string `gorm:"size:50;not null" json:"registerCode"`
+	RegisterName       string `gorm:"size:150;not null" json:"registerName"`
+	InvoiceGrossAmount int64  `json:"invoiceGrossAmount"`
+	InsuranceAmount    int64  `json:"insuranceAmount"`
+	PatientAmount      int64  `json:"patientAmount"`
+	PaidBefore         int64  `json:"paidBefore"`
+	BalanceAfter       int64  `json:"balanceAfter"`
+	// LOT29F-H-B: payer snapshot at receipt issue (empty for historical receipts).
+	PayerDisplayName  string    `gorm:"size:250" json:"payerDisplayName,omitempty"`
+	PayerKind         string    `gorm:"size:20" json:"payerKind,omitempty"`
+	PayerPhone        string    `gorm:"size:50" json:"payerPhone,omitempty"`
+	PayerRelationship string    `gorm:"size:80" json:"payerRelationship,omitempty"`
+	PayerIsPatient    bool      `gorm:"not null;default:false" json:"payerIsPatient"`
+	PayerProvenance   string    `gorm:"size:30" json:"payerProvenance,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
 	// LOT29D-C: underlying payment was fully reversed (decorated on read).
 	PaymentReversed   bool       `json:"paymentReversed" gorm:"-"`
 	PaymentReversedAt *time.Time `json:"paymentReversedAt,omitempty" gorm:"-"`

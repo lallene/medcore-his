@@ -20,8 +20,7 @@ func TestLOT29F_EPrime_PostCloseCashReversal(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 10000, IdempotencyKey: "pcr01-o"}, 71)
 		inv := seedCashInvoice(t, db, "INV-PCR01", 71, 20000, 71)
 		rec, e := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 20000, PaymentMethod: "CASH", IdempotencyKey: "pcr01-p",
-		}, 71)
+			InvoiceID: inv.ID, Amount: 20000, PaymentMethod: "CASH", IdempotencyKey: "pcr01-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 71)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -106,8 +105,7 @@ func TestLOT29F_EPrime_PostCloseCashReversal(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 1000, IdempotencyKey: "pcr23-o"}, 72)
 		inv := seedCashInvoice(t, db, "INV-PCR23", 72, 4000, 72)
 		rec, _ := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "pcr23-p",
-		}, 72)
+			InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "pcr23-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 72)
 		_, _ = s.Close(open.Session.ID, CloseRequest{CountedCashAmount: 5000, IdempotencyKey: "pcr23-c"}, 72, false)
 		req := billing.ReversePaymentRequest{Reason: "Replay post close", IdempotencyKey: "pcr23-r"}
 		a, e := bill.ReversePayment(rec.PaymentID, req, 72)
@@ -144,8 +142,7 @@ func TestLOT29F_EPrime_PostCloseCashReversal(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 5000, IdempotencyKey: "pcr28-o"}, 73)
 		inv := seedCashInvoice(t, db, "INV-PCR28", 73, 3000, 73)
 		rec, _ := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "pcr28-p",
-		}, 73)
+			InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "pcr28-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 73)
 		if _, e := bill.ReversePayment(rec.PaymentID, billing.ReversePaymentRequest{
 			Reason: "Open still moves", IdempotencyKey: "pcr28-r",
 		}, 73); e != nil {
@@ -159,8 +156,7 @@ func TestLOT29F_EPrime_PostCloseCashReversal(t *testing.T) {
 
 		inv2 := seedCashInvoice(t, db, "INV-PCR31", 73, 1500, 73)
 		paid2, e := bill.Pay(inv2.ID, billing.PaymentRequest{
-			Amount: 1500, PaymentMethod: "CASH", IdempotencyKey: "pcr31-p",
-		}, 73)
+			Amount: 1500, PaymentMethod: "CASH", IdempotencyKey: "pcr31-p", Payer: billing.PatientPayerRequest()}, 73)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -186,8 +182,7 @@ func TestLOT29F_EPrime_PostCloseCashReversal(t *testing.T) {
 		for i, method := range []string{"CARD", "MOBILE_MONEY", "BANK_TRANSFER", "CHECK"} {
 			inv := seedCashInvoice(t, db, "INV-PCR33-"+method, 74, 1000, 74)
 			req := PaymentRequest{
-				InvoiceID: inv.ID, Amount: 1000, PaymentMethod: method, IdempotencyKey: "pcr33-p-" + method,
-			}
+				InvoiceID: inv.ID, Amount: 1000, PaymentMethod: method, IdempotencyKey: "pcr33-p-" + method, Payer: &PayerRequest{Mode: "PATIENT"}}
 			if method == "BANK_TRANSFER" || method == "CHECK" {
 				req.ExternalReference = "QA-REF"
 			}
@@ -226,8 +221,7 @@ func TestLOT29F_EPrime_PostCloseCashReversal(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 2000, IdempotencyKey: "pcr37-o"}, 75)
 		inv := seedCashInvoice(t, db, "INV-PCR37", 75, 2000, 75)
 		rec, _ := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "pcr37-p",
-		}, 75)
+			InvoiceID: inv.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "pcr37-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 75)
 		var closeErr, revErr error
 		var wg sync.WaitGroup
 		wg.Add(2)

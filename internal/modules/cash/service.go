@@ -212,10 +212,31 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 	}
 	var receiptID uint
 	e := s.db.Transaction(func(tx *gorm.DB) error {
-		var prior Receipt
-		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
+		matchPrior := func(prior Receipt) error {
 			if prior.InvoiceID != r.InvoiceID || receiptSessionID(prior.CashSessionID) != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
 				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
+			}
+			var pay billing.Payment
+			if e := tx.First(&pay, prior.PaymentID).Error; e != nil {
+				return e
+			}
+			var inv billing.Invoice
+			if e := tx.Select("id", "patient_id").First(&inv, r.InvoiceID).Error; e != nil {
+				return coreerrors.NotFound("INVOICE")
+			}
+			fp, e := billing.PreviewPayerFingerprint(tx, inv.PatientID, toBillingPayer(r.Payer))
+			if e != nil {
+				return e
+			}
+			if pay.PayerFingerprint != fp {
+				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
+			}
+			return nil
+		}
+		var prior Receipt
+		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
+			if e := matchPrior(prior); e != nil {
+				return e
 			}
 			receiptID = prior.ID
 			return nil
@@ -235,8 +256,8 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 		}
 		// Recheck after the session lock: concurrent retries may both miss the fast path above.
 		if e := tx.Joins("JOIN billing_payments p ON p.id=cash_receipts.payment_id").Where("p.idempotency_key=?", key).First(&prior).Error; e == nil {
-			if prior.InvoiceID != r.InvoiceID || receiptSessionID(prior.CashSessionID) != sessionID || prior.Amount != r.Amount || prior.PaymentMethod != method || prior.ExternalReference != extRef || prior.MobileOperator != mobile {
-				return coreerrors.Conflict("Clé d'idempotence déjà utilisée")
+			if e := matchPrior(prior); e != nil {
+				return e
 			}
 			receiptID = prior.ID
 			return nil
@@ -246,7 +267,10 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 			return coreerrors.NotFound("INVOICE")
 		}
 		before := inv.PaidAmount
-		p, e := s.billing.PayInTransaction(tx, r.InvoiceID, billing.PaymentRequest{Amount: r.Amount, PaymentMethod: method, Reference: extRef, IdempotencyKey: key, MobileOperator: mobile}, u, &sessionID)
+		p, e := s.billing.PayInTransaction(tx, r.InvoiceID, billing.PaymentRequest{
+			Amount: r.Amount, PaymentMethod: method, Reference: extRef, IdempotencyKey: key,
+			MobileOperator: mobile, Payer: toBillingPayer(r.Payer),
+		}, u, &sessionID)
 		if e != nil {
 			return e
 		}
@@ -262,6 +286,8 @@ func (s *Service) Pay(sessionID uint, r PaymentRequest, u uint) (*Receipt, error
 			PatientCode: patient.CodePatient, CashierName: cashier.Name, RegisterCode: session.Register.Code, RegisterName: session.Register.Name,
 			InvoiceGrossAmount: inv.GrossAmount, InsuranceAmount: inv.InsuranceAmount, PatientAmount: inv.PatientAmount,
 			PaidBefore: before, BalanceAfter: inv.BalanceAmount - r.Amount,
+			PayerDisplayName: p.PayerDisplayName, PayerKind: p.PayerKind, PayerIsPatient: p.PayerIsPatient,
+			PayerPhone: p.PayerPhone, PayerProvenance: p.PayerProvenance, PayerRelationship: p.PayerRelationship,
 		})
 		if e != nil {
 			return e

@@ -143,7 +143,7 @@ func TestPostgresLOT28CLegacyPaidBlocksPABilling(t *testing.T) {
 	if _, e = s.Issue(inv.ID, 1); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.Pay(inv.ID, PaymentRequest{Amount: inv.PatientAmount, PaymentMethod: "CASH", IdempotencyKey: "l28c-paid"}, 1); e != nil {
+	if _, e = s.Pay(inv.ID, PaymentRequest{Amount: inv.PatientAmount, PaymentMethod: "CASH", IdempotencyKey: "l28c-paid", Payer: PatientPayerRequest()}, 1); e != nil {
 		t.Fatal(e)
 	}
 	act := linkPAForSource(t, db, p, 201, labID, "LABORATORY", "PA-PAID")

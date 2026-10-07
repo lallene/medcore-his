@@ -28,7 +28,7 @@ func reversalCount(t *testing.T, db *gorm.DB) int64 {
 
 func paySessionless(t *testing.T, s *Service, invID uint, amount int64, method, key string, user uint) *Invoice {
 	t.Helper()
-	out, e := s.Pay(invID, PaymentRequest{Amount: amount, PaymentMethod: method, IdempotencyKey: key}, user)
+	out, e := s.Pay(invID, PaymentRequest{Amount: amount, PaymentMethod: method, IdempotencyKey: key, Payer: PatientPayerRequest()}, user)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -226,7 +226,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, e := s.Pay(inv.ID, PaymentRequest{Amount: 3000, PaymentMethod: "CARD", IdempotencyKey: "rv20-new"}, 78)
+			_, e := s.Pay(inv.ID, PaymentRequest{Amount: 3000, PaymentMethod: "CARD", IdempotencyKey: "rv20-new", Payer: PatientPayerRequest()}, 78)
 			errs <- e
 		}()
 		close(start)

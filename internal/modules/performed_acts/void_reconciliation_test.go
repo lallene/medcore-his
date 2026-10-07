@@ -97,7 +97,7 @@ func voidReconDB(t *testing.T) *gorm.DB {
 		&company.InsuranceCompany{}, &guarantor.InsuranceGuarantor{}, &coverage.PatientCoverage{},
 		&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
 		&authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{},
-		&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{},
+		&billing.Tariff{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.FinancialParty{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestPostgresVoidBlockedByPaidInvoice(t *testing.T) {
 	if _, err := bill.Issue(inv.ID, 2); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "vr-pay-1"}, 3); err != nil {
+	if _, err := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "vr-pay-1", Payer: billing.PatientPayerRequest()}, 3); err != nil {
 		t.Fatal(err)
 	}
 	var payBefore int64
@@ -517,7 +517,7 @@ func TestPostgresSessionlessReverseCancelVoidSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	paid, err := bill.Pay(issued.ID, billing.PaymentRequest{
-		Amount: issued.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "rcv-seq-pay",
+		Amount: issued.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "rcv-seq-pay", Payer: billing.PatientPayerRequest(),
 	}, 3)
 	if err != nil || len(paid.Payments) != 1 {
 		t.Fatalf("pay %+v %v", paid, err)

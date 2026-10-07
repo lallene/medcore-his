@@ -57,7 +57,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "b01"}, 11)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "b01", Payer: PatientPayerRequest()}, 11)
 		if e != nil || out.PaidAmount != 5000 || out.BalanceAmount != inv.PatientAmount-5000 {
 			t.Fatalf("B01 %+v %v", out, e)
 		}
@@ -70,7 +70,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 7000, PaymentMethod: "CARD", IdempotencyKey: "b02"}, 12)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 7000, PaymentMethod: "CARD", IdempotencyKey: "b02", Payer: PatientPayerRequest()}, 12)
 		if e != nil || out.Status != InvoicePartiallyPaid || out.BalanceAmount != 13000 {
 			t.Fatalf("B02 %+v %v", out, e)
 		}
@@ -80,7 +80,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "b03"}, 13)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "b03", Payer: PatientPayerRequest()}, 13)
 		if e != nil || out.Status != InvoicePaid || out.BalanceAmount != 0 {
 			t.Fatalf("B03 %+v %v", out, e)
 		}
@@ -90,7 +90,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount + 1, PaymentMethod: "CASH", IdempotencyKey: "b04"}, 14); !isConflict(e) {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount + 1, PaymentMethod: "CASH", IdempotencyKey: "b04", Payer: PatientPayerRequest()}, 14); !isConflict(e) {
 			t.Fatalf("B04 want conflict got %v", e)
 		}
 		if paymentCount(t, db, inv.ID) != 0 {
@@ -102,7 +102,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 0, PaymentMethod: "CASH", IdempotencyKey: "b05"}, 15); !isBadRequest(e) {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 0, PaymentMethod: "CASH", IdempotencyKey: "b05", Payer: PatientPayerRequest()}, 15); !isBadRequest(e) {
 			t.Fatalf("B05 want bad request got %v", e)
 		}
 	})
@@ -111,7 +111,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: -1, PaymentMethod: "CASH", IdempotencyKey: "b06"}, 16); !isBadRequest(e) {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: -1, PaymentMethod: "CASH", IdempotencyKey: "b06", Payer: PatientPayerRequest()}, 16); !isBadRequest(e) {
 			t.Fatalf("B06 want bad request got %v", e)
 		}
 	})
@@ -120,10 +120,10 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "b07a"}, 17); e != nil {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "b07a", Payer: PatientPayerRequest()}, 17); e != nil {
 			t.Fatal(e)
 		}
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 1, PaymentMethod: "CASH", IdempotencyKey: "b07b"}, 17); !isConflict(e) {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 1, PaymentMethod: "CASH", IdempotencyKey: "b07b", Payer: PatientPayerRequest()}, 17); !isConflict(e) {
 			t.Fatalf("B07 want conflict got %v", e)
 		}
 	})
@@ -132,7 +132,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		req := PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "b08-replay"}
+		req := PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "b08-replay", Payer: PatientPayerRequest()}
 		a, e := s.Pay(inv.ID, req, 18)
 		if e != nil {
 			t.Fatal(e)
@@ -150,10 +150,10 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "b09"}, 19); e != nil {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "b09", Payer: PatientPayerRequest()}, 19); e != nil {
 			t.Fatal(e)
 		}
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "b09"}, 19); !isConflict(e) {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "b09", Payer: PatientPayerRequest()}, 19); !isConflict(e) {
 			t.Fatalf("B09 want conflict got %v", e)
 		}
 		if paymentCount(t, db, inv.ID) != 1 {
@@ -173,7 +173,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				_, e := s.Pay(inv.ID, PaymentRequest{Amount: 8000, PaymentMethod: "CASH", IdempotencyKey: "b10-same"}, 20)
+				_, e := s.Pay(inv.ID, PaymentRequest{Amount: 8000, PaymentMethod: "CASH", IdempotencyKey: "b10-same", Payer: PatientPayerRequest()}, 20)
 				errs <- e
 			}()
 		}
@@ -207,7 +207,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 			go func(n int) {
 				defer wg.Done()
 				<-start
-				_, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: fmt.Sprintf("b11-%d", n)}, 21)
+				_, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: fmt.Sprintf("b11-%d", n), Payer: PatientPayerRequest()}, 21)
 				errs <- e
 			}(i)
 		}
@@ -235,7 +235,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		inv := issuedPayReady(t, s, p, c, tariffID)
 		beforePaid, beforeBal, beforeStatus := inv.PaidAmount, inv.BalanceAmount, inv.Status
 		e := db.Transaction(func(tx *gorm.DB) error {
-			_, payErr := s.PayInTransaction(tx, inv.ID, PaymentRequest{Amount: 6000, PaymentMethod: "CASH", IdempotencyKey: "b12-rollback"}, 22, nil)
+			_, payErr := s.PayInTransaction(tx, inv.ID, PaymentRequest{Amount: 6000, PaymentMethod: "CASH", IdempotencyKey: "b12-rollback", Payer: PatientPayerRequest()}, 22, nil)
 			if payErr != nil {
 				return payErr
 			}
@@ -269,7 +269,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 			t.Fatalf("B14 split %+v", inv)
 		}
 		insBefore := inv.InsuranceAmount
-		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "b14"}, 23)
+		out, e := s.Pay(inv.ID, PaymentRequest{Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "b14", Payer: PatientPayerRequest()}, 23)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -282,7 +282,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 2500, PaymentMethod: "CASH", IdempotencyKey: "b15"}, 99); e != nil {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: 2500, PaymentMethod: "CASH", IdempotencyKey: "b15", Payer: PatientPayerRequest()}, 99); e != nil {
 			t.Fatal(e)
 		}
 		var pay Payment
@@ -303,7 +303,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 			c.Next()
 		})
 		RegisterRoutes(deny.Group("/api"), h)
-		body, _ := json.Marshal(PaymentRequest{Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "b16"})
+		body, _ := json.Marshal(PaymentRequest{Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "b16", Payer: PatientPayerRequest()})
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/billing/invoices/%d/payments", inv.ID), bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -320,7 +320,7 @@ func TestLOT29B_PaymentIntegrityMatrix(t *testing.T) {
 		db := billingDB(t)
 		s, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		req := PaymentRequest{Amount: 3500, PaymentMethod: "CASH", IdempotencyKey: "b18-timeline"}
+		req := PaymentRequest{Amount: 3500, PaymentMethod: "CASH", IdempotencyKey: "b18-timeline", Payer: PatientPayerRequest()}
 		if _, e := s.Pay(inv.ID, req, 24); e != nil {
 			t.Fatal(e)
 		}
@@ -349,7 +349,10 @@ func TestLOT29B_HeaderIdempotencyKey(t *testing.T) {
 		c.Next()
 	})
 	RegisterRoutes(r.Group("/api"), NewHandler(s))
-	body, _ := json.Marshal(map[string]any{"amount": 1500, "paymentMethod": "CASH"})
+	body, _ := json.Marshal(map[string]any{
+		"amount": 1500, "paymentMethod": "CASH",
+		"payer": map[string]any{"mode": "PATIENT"},
+	})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/billing/invoices/%d/payments", inv.ID), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

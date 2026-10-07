@@ -207,13 +207,13 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CS13", Name: "Pay"}, 11)
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 1000, IdempotencyKey: "cs13-o"}, 11)
 		inv := seedCashInvoice(t, db, "INV-CS13", 3, 20000, 11)
-		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cs13-cash"}, 11); e != nil {
+		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cs13-cash", Payer: &PayerRequest{Mode: "PATIENT"}}, 11); e != nil {
 			t.Fatal(e)
 		}
-		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CARD", IdempotencyKey: "cs13-card"}, 12); !cashIsForbidden(e) {
+		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CARD", IdempotencyKey: "cs13-card", Payer: &PayerRequest{Mode: "PATIENT"}}, 12); !cashIsForbidden(e) {
 			t.Fatalf("CS14 want forbidden %v", e)
 		}
-		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CARD", IdempotencyKey: "cs13-card-ok"}, 11); e != nil {
+		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CARD", IdempotencyKey: "cs13-card-ok", Payer: &PayerRequest{Mode: "PATIENT"}}, 11); e != nil {
 			t.Fatal(e)
 		}
 		sum, _ := s.Get(sess.Session.ID)
@@ -228,7 +228,7 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cs15-o"}, 11)
 		_, _ = s.Close(sess.Session.ID, CloseRequest{CountedCashAmount: 0, IdempotencyKey: "cs15-c"}, 11, false)
 		inv := seedCashInvoice(t, db, "INV-CS15", 3, 1000, 11)
-		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "cs15-p"}, 11); !cashIsConflict(e) {
+		if _, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "cs15-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 11); !cashIsConflict(e) {
 			t.Fatalf("CS15 %v", e)
 		}
 	})
@@ -250,7 +250,7 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CS17", Name: "Close"}, 11)
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 5000, IdempotencyKey: "cs17-o"}, 11)
 		inv := seedCashInvoice(t, db, "INV-CS17", 3, 2000, 11)
-		_, _ = s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "cs17-p"}, 11)
+		_, _ = s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "cs17-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 11)
 		if _, e := s.Close(sess.Session.ID, CloseRequest{CountedCashAmount: 6000, IdempotencyKey: "cs17-bad"}, 11, false); !cashIsBadRequest(e) {
 			t.Fatalf("CS20 %v", e)
 		}
@@ -267,7 +267,7 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CS18", Name: "Exp"}, 11)
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 10000, IdempotencyKey: "cs18-o"}, 11)
 		inv := seedCashInvoice(t, db, "INV-CS18", 3, 4000, 11)
-		_, _ = s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "cs18-p"}, 11)
+		_, _ = s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "cs18-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 11)
 		closed, e := s.Close(sess.Session.ID, CloseRequest{CountedCashAmount: 13000, Note: "manque", IdempotencyKey: "cs18-c"}, 11, false)
 		if e != nil {
 			t.Fatal(e)
@@ -344,7 +344,7 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, payErr = s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cs25-p"}, 11)
+			_, payErr = s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cs25-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 11)
 		}()
 		go func() {
 			defer wg.Done()
@@ -423,7 +423,7 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CS34", Name: "Rev"}, 11)
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cs34-o"}, 11)
 		inv := seedCashInvoice(t, db, "INV-CS34", 3, 1000, 11)
-		rec, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "cs34-p"}, 11)
+		rec, e := s.Pay(sess.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "cs34-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 11)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -442,7 +442,7 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cs36-o"}, 11)
 		inv := seedCashInvoice(t, db, "INV-CS36", 3, 8000, 11)
 		bill := billing.NewService(db)
-		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "cs36-bill"}, 11); e != nil {
+		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "cs36-bill", Payer: billing.PatientPayerRequest()}, 11); e != nil {
 			t.Fatal(e)
 		}
 		sum, _ := s.Get(sess.Session.ID)

@@ -19,6 +19,7 @@ import (
 type cashPatient struct {
 	ID                        uint `gorm:"primaryKey"`
 	Nom, Prenoms, CodePatient string
+	Telephone                 string `gorm:"size:50"`
 }
 
 func (cashPatient) TableName() string { return "patients" }
@@ -84,7 +85,7 @@ func cashDB(t *testing.T) *gorm.DB {
 			_ = adminSQL.Close()
 		}
 	})
-	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &Receipt{}, &CashMovement{}, &CashMovementAudit{}, &CashCorrectionExecution{}, &CashCorrectionExecutionAudit{}); e != nil {
+	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.FinancialParty{}, &Receipt{}, &CashMovement{}, &CashMovementAudit{}, &CashCorrectionExecution{}, &CashCorrectionExecutionAudit{}); e != nil {
 		t.Fatal(e)
 	}
 	if e = EnsureReceiptSessionNullable(db); e != nil {
@@ -119,7 +120,7 @@ func TestPostgresCashLifecycle(t *testing.T) {
 	}
 	inv := billing.Invoice{Number: "INV-CASH", PatientID: 2, Status: billing.InvoiceIssued, GrossAmount: 50000, InsuranceAmount: 35000, PatientAmount: 15000, BalanceAmount: 15000, CreatedBy: 9, UpdatedBy: 9}
 	db.Create(&inv)
-	req := PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cash-key"}
+	req := PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "cash-key", Payer: &PayerRequest{Mode: "PATIENT"}}
 	rec, e := s.Pay(session.Session.ID, req, 9)
 	if e != nil {
 		t.Fatal(e)
@@ -142,7 +143,7 @@ func TestPostgresCashLifecycle(t *testing.T) {
 	if e != nil || *closed.Session.CashDifference != 0 {
 		t.Fatal(e)
 	}
-	if _, e = s.Pay(session.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "late"}, 9); e == nil {
+	if _, e = s.Pay(session.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "late", Payer: &PayerRequest{Mode: "PATIENT"}}, 9); e == nil {
 		t.Fatal("closed payment")
 	}
 }
@@ -156,7 +157,7 @@ func TestPostgresConcurrentCashIdempotence(t *testing.T) {
 	session, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, IdempotencyKey: "open-conc"}, 9)
 	inv := billing.Invoice{Number: "INV-CONC", PatientID: 2, Status: billing.InvoiceIssued, GrossAmount: 10000, PatientAmount: 10000, BalanceAmount: 10000, CreatedBy: 9, UpdatedBy: 9}
 	db.Create(&inv)
-	req := PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "same-key"}
+	req := PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "same-key", Payer: &PayerRequest{Mode: "PATIENT"}}
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	for i := 0; i < 2; i++ {
@@ -194,7 +195,7 @@ func TestLOT29D_B_CashSessionReceiptUnchanged(t *testing.T) {
 	}
 	inv := billing.Invoice{Number: "INV-RB13", PatientID: 2, Status: billing.InvoiceIssued, GrossAmount: 50000, PatientAmount: 15000, BalanceAmount: 15000, CreatedBy: 9, UpdatedBy: 9}
 	db.Create(&inv)
-	rec, e := s.Pay(session.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "rb13"}, 9)
+	rec, e := s.Pay(session.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "rb13", Payer: &PayerRequest{Mode: "PATIENT"}}, 9)
 	if e != nil {
 		t.Fatal(e)
 	}

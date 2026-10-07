@@ -20,8 +20,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 10000, IdempotencyKey: "rvc01-o"}, 61)
 		inv := seedCashInvoice(t, db, "INV-RVC01", 61, 20000, 61)
 		rec, e := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 20000, PaymentMethod: "CASH", IdempotencyKey: "rvc01-p",
-		}, 61)
+			InvoiceID: inv.ID, Amount: 20000, PaymentMethod: "CASH", IdempotencyKey: "rvc01-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 61)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -106,9 +105,12 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "RVC18", Name: "C"}, 62)
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "rvc18-o"}, 62)
 		inv := seedCashInvoice(t, db, "INV-RVC18", 62, 8000, 62)
-		rec, _ := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 8000, PaymentMethod: "CASH", IdempotencyKey: "rvc18-p",
+		rec, ePay := s.Pay(open.Session.ID, PaymentRequest{
+			InvoiceID: inv.ID, Amount: 8000, PaymentMethod: "CASH", IdempotencyKey: "rvc18-p", Payer: &PayerRequest{Mode: "PATIENT"},
 		}, 62)
+		if ePay != nil {
+			t.Fatalf("pay: %v", ePay)
+		}
 		req := billing.ReversePaymentRequest{Reason: "Replay motif", IdempotencyKey: "rvc18-k"}
 		a, e := bill.ReversePayment(rec.PaymentID, req, 62)
 		if e != nil {
@@ -153,8 +155,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		bill := billing.NewService(db)
 		inv := seedCashInvoice(t, db, "INV-RVC24", 63, 4000, 63)
 		paid, e := bill.Pay(inv.ID, billing.PaymentRequest{
-			Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "rvc24-p",
-		}, 63)
+			Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "rvc24-p", Payer: billing.PatientPayerRequest()}, 63)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -180,8 +181,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 5000, IdempotencyKey: "rvc26-o"}, 64)
 		invCash := seedCashInvoice(t, db, "INV-RVC26C", 64, 2000, 64)
 		recCash, _ := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: invCash.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "rvc26-cash",
-		}, 64)
+			InvoiceID: invCash.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "rvc26-cash", Payer: &PayerRequest{Mode: "PATIENT"}}, 64)
 		closed, e := s.Close(open.Session.ID, CloseRequest{CountedCashAmount: 7000, IdempotencyKey: "rvc26-c"}, 64, false)
 		if e != nil {
 			t.Fatal(e)
@@ -209,8 +209,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		for i, method := range []string{"CARD", "MOBILE_MONEY", "BANK_TRANSFER", "CHECK"} {
 			inv := seedCashInvoice(t, db, fmt.Sprintf("INV-RVC28-%d", i), 64, 1000, 64)
 			req := PaymentRequest{
-				InvoiceID: inv.ID, Amount: 1000, PaymentMethod: method, IdempotencyKey: fmt.Sprintf("rvc28-p-%d", i),
-			}
+				InvoiceID: inv.ID, Amount: 1000, PaymentMethod: method, IdempotencyKey: fmt.Sprintf("rvc28-p-%d", i), Payer: &PayerRequest{Mode: "PATIENT"}}
 			if method == "BANK_TRANSFER" || method == "CHECK" {
 				req.ExternalReference = "QA-REF"
 			}
@@ -244,8 +243,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		open, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 1000, IdempotencyKey: "rvc32-o"}, 65)
 		inv := seedCashInvoice(t, db, "INV-RVC32", 65, 5000, 65)
 		rec, _ := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "rvc32-p",
-		}, 65)
+			InvoiceID: inv.ID, Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "rvc32-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 65)
 		if _, e := bill.ReversePayment(rec.PaymentID, billing.ReversePaymentRequest{
 			Reason: "Avant close", IdempotencyKey: "rvc32-r",
 		}, 65); e != nil {
@@ -260,8 +258,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		openB, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 2000, IdempotencyKey: "rvc34-o"}, 65)
 		invB := seedCashInvoice(t, db, "INV-RVC34", 65, 2000, 65)
 		recB, _ := s.Pay(openB.Session.ID, PaymentRequest{
-			InvoiceID: invB.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "rvc34-p",
-		}, 65)
+			InvoiceID: invB.ID, Amount: 2000, PaymentMethod: "CASH", IdempotencyKey: "rvc34-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 65)
 		var closeErr, revErr error
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -320,8 +317,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		}
 		inv := seedCashInvoice(t, db, "INV-RVC35", 66, 3000, 66)
 		rec, _ := s.Pay(open.Session.ID, PaymentRequest{
-			InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "rvc35-p",
-		}, 66)
+			InvoiceID: inv.ID, Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "rvc35-p", Payer: &PayerRequest{Mode: "PATIENT"}}, 66)
 		if _, e := bill.ReversePayment(rec.PaymentID, billing.ReversePaymentRequest{
 			Reason: "Avec manuel", IdempotencyKey: "rvc35-r",
 		}, 66); e != nil {

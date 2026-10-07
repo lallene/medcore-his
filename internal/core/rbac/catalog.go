@@ -95,6 +95,8 @@ func init() {
 	add("billing.cancel", "Annuler une facture", "Billing", "SERVICE")
 	add("billing.payment.create", "Encaisser une facture", "Billing", "SERVICE")
 	add("billing.payment.reverse", "Contrepasser un encaissement", "Billing", "SERVICE")
+	add("billing.payer.read", "Lire l'identité payeur (PII financière)", "Billing", "SERVICE")
+	add("billing.payer.write", "Saisir l'identité payeur à l'encaissement", "Billing", "SERVICE")
 	add("billing.credit_note.create", "Émettre un avoir", "Billing", "SERVICE")
 	add("billing.credit_note.read", "Lire un avoir", "Billing", "SERVICE")
 	add("billing.tariff.read", "Lire les tarifs", "Billing", "GLOBAL")

@@ -46,4 +46,15 @@ type PaymentRequest struct {
 	MobileOperator    string `json:"mobileOperator"`
 	// IdempotencyKey may be supplied in JSON and/or Idempotency-Key header (handler merges).
 	IdempotencyKey string `json:"idempotencyKey"`
+	// LOT29F-H-B: required for NEW payments (mapped to billing.PayerRequest).
+	Payer *PayerRequest `json:"payer"`
+}
+
+// PayerRequest mirrors billing.PayerRequest for cash collection commands.
+type PayerRequest struct {
+	Mode         string `json:"mode"`
+	PartyID      *uint  `json:"partyId,omitempty"`
+	DisplayName  string `json:"displayName,omitempty"`
+	Phone        string `json:"phone,omitempty"`
+	Relationship string `json:"relationship,omitempty"`
 }

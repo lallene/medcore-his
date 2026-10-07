@@ -133,6 +133,16 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	c.JSON(201, x)
 }
+func handlerPerms(c *gin.Context) []string {
+	raw, _ := c.Get(rbac.ContextPermissions)
+	p, _ := raw.([]string)
+	return p
+}
+
+func exposePayerPhone(c *gin.Context) bool {
+	return rbac.HasAnyPermission(handlerPerms(c), "billing.payer.read", "*")
+}
+
 func (h *Handler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
@@ -141,6 +151,11 @@ func (h *Handler) List(c *gin.Context) {
 	if e != nil {
 		fail(c, e)
 		return
+	}
+	if !exposePayerPhone(c) {
+		for i := range x.Data {
+			RedactPayerContacts(&x.Data[i])
+		}
 	}
 	c.JSON(200, x)
 }
@@ -153,6 +168,9 @@ func (h *Handler) Get(c *gin.Context) {
 	if e != nil {
 		fail(c, e)
 		return
+	}
+	if !exposePayerPhone(c) {
+		RedactPayerContacts(x)
 	}
 	c.JSON(200, x)
 }
@@ -194,6 +212,9 @@ func (h *Handler) Pay(c *gin.Context) {
 	if e != nil {
 		fail(c, e)
 		return
+	}
+	if !exposePayerPhone(c) {
+		RedactPayerContacts(x)
 	}
 	c.JSON(200, x)
 }

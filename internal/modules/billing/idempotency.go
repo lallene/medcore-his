@@ -26,16 +26,17 @@ func NormalizePaymentIdempotencyKey(raw string) (string, error) {
 	return key, nil
 }
 
-func paymentFingerprintMatch(p Payment, invoiceID uint, amount int64, method, reference, mobileOperator string) bool {
+func paymentFingerprintMatch(p Payment, invoiceID uint, amount int64, method, reference, mobileOperator string, payerFP string) bool {
 	return p.InvoiceID == invoiceID &&
 		p.Amount == amount &&
 		p.PaymentMethod == method &&
 		p.Reference == reference &&
-		p.MobileOperator == mobileOperator
+		p.MobileOperator == mobileOperator &&
+		p.PayerFingerprint == payerFP
 }
 
-func paymentFingerprintConflict(p Payment, invoiceID uint, amount int64, method, reference, mobileOperator string) error {
-	if paymentFingerprintMatch(p, invoiceID, amount, method, reference, mobileOperator) {
+func paymentFingerprintConflict(p Payment, invoiceID uint, amount int64, method, reference, mobileOperator string, payerFP string) error {
+	if paymentFingerprintMatch(p, invoiceID, amount, method, reference, mobileOperator, payerFP) {
 		return nil
 	}
 	return coreerrors.Conflict("Clé d'idempotence déjà utilisée")

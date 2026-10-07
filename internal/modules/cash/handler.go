@@ -177,6 +177,9 @@ func (h *Handler) Pay(c *gin.Context) {
 		bad(c, e)
 		return
 	}
+	if !exposePayerPhone(c) {
+		redactReceiptPayerPhone(x)
+	}
 	c.JSON(201, x)
 }
 func (h *Handler) Close(c *gin.Context) {
@@ -204,12 +207,29 @@ func (h *Handler) Close(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func exposePayerPhone(c *gin.Context) bool {
+	raw, _ := c.Get(rbac.ContextPermissions)
+	perms, _ := raw.([]string)
+	return rbac.HasAnyPermission(perms, "billing.payer.read", "*")
+}
+
+func redactReceiptPayerPhone(r *Receipt) {
+	if r != nil {
+		r.PayerPhone = ""
+	}
+}
+
 func (h *Handler) Receipts(c *gin.Context) {
 	n, _ := strconv.ParseUint(c.Query("sessionId"), 10, 64)
 	x, e := h.s.Receipts(uint(n))
 	if e != nil {
 		bad(c, e)
 		return
+	}
+	if !exposePayerPhone(c) {
+		for i := range x {
+			redactReceiptPayerPhone(&x[i])
+		}
 	}
 	c.JSON(200, x)
 }
@@ -222,6 +242,11 @@ func (h *Handler) Journal(c *gin.Context) {
 	if e != nil {
 		bad(c, e)
 		return
+	}
+	if !exposePayerPhone(c) {
+		for i := range x {
+			redactReceiptPayerPhone(&x[i])
+		}
 	}
 	c.JSON(200, x)
 }
@@ -282,6 +307,9 @@ func (h *Handler) Receipt(c *gin.Context) {
 	if e != nil {
 		bad(c, e)
 		return
+	}
+	if !exposePayerPhone(c) {
+		redactReceiptPayerPhone(x)
 	}
 	c.JSON(200, x)
 }

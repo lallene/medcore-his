@@ -27,13 +27,13 @@ func TestLOT29E_D_ReconciliationMatrix(t *testing.T) {
 		}
 		if cashAmt > 0 {
 			inv := seedCashInvoice(t, db, "INV-"+key+"-c", 7, cashAmt, 31)
-			if _, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: cashAmt, PaymentMethod: "CASH", IdempotencyKey: key + "-cash"}, 31); e != nil {
+			if _, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: cashAmt, PaymentMethod: "CASH", IdempotencyKey: key + "-cash", Payer: &PayerRequest{Mode: "PATIENT"}}, 31); e != nil {
 				t.Fatal(e)
 			}
 		}
 		if cardAmt > 0 {
 			inv := seedCashInvoice(t, db, "INV-"+key+"-k", 7, cardAmt, 31)
-			if _, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: cardAmt, PaymentMethod: "CARD", IdempotencyKey: key + "-card"}, 31); e != nil {
+			if _, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: cardAmt, PaymentMethod: "CARD", IdempotencyKey: key + "-card", Payer: &PayerRequest{Mode: "PATIENT"}}, 31); e != nil {
 				t.Fatal(e)
 			}
 		}
@@ -120,7 +120,7 @@ func TestLOT29E_D_ReconciliationMatrix(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CR21", Name: "Sl"}, 31)
 		out, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cr21-o"}, 31)
 		inv := seedCashInvoice(t, db, "INV-cr21-sl", 7, 8000, 31)
-		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 8000, PaymentMethod: "CASH", IdempotencyKey: "cr21-sl"}, 31); e != nil {
+		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 8000, PaymentMethod: "CASH", IdempotencyKey: "cr21-sl", Payer: billing.PatientPayerRequest()}, 31); e != nil {
 			t.Fatal(e)
 		}
 		sum, _ := s.Get(out.Session.ID)
@@ -142,7 +142,7 @@ func TestLOT29E_D_ReconciliationMatrix(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CR24", Name: "R"}, 31)
 		out, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cr24-o"}, 31)
 		inv := seedCashInvoice(t, db, "INV-cr24", 7, 4000, 31)
-		req := PaymentRequest{InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "cr24-p"}
+		req := PaymentRequest{InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "cr24-p", Payer: &PayerRequest{Mode: "PATIENT"}}
 		_, _ = s.Pay(out.Session.ID, req, 31)
 		_, _ = s.Pay(out.Session.ID, req, 31)
 		sum, _ := s.Get(out.Session.ID)
@@ -169,7 +169,7 @@ func TestLOT29E_D_ReconciliationMatrix(t *testing.T) {
 			t.Fatal("CR26/CR35 refresh")
 		}
 		inv := seedCashInvoice(t, db, "INV-cr27", 7, 500, 31)
-		if _, e := s.Pay(closed.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 500, PaymentMethod: "CASH", IdempotencyKey: "cr27"}, 31); !cashIsConflict(e) {
+		if _, e := s.Pay(closed.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 500, PaymentMethod: "CASH", IdempotencyKey: "cr27", Payer: &PayerRequest{Mode: "PATIENT"}}, 31); !cashIsConflict(e) {
 			t.Fatalf("CR27 %v", e)
 		}
 		var payRow billing.Payment

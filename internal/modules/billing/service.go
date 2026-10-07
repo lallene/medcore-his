@@ -720,9 +720,18 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 	reference := strings.TrimSpace(req.Reference)
 	mobile := strings.TrimSpace(req.MobileOperator)
 
+	var x Invoice
+	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
+		return nil, coreerrors.NotFound("INVOICE")
+	}
+	payerFP, err := PreviewPayerFingerprint(tx, x.PatientID, req.Payer)
+	if err != nil {
+		return nil, err
+	}
+
 	var prior Payment
 	if e := tx.Where("idempotency_key=?", key).First(&prior).Error; e == nil {
-		if e := paymentFingerprintConflict(prior, id, req.Amount, method, reference, mobile); e != nil {
+		if e := paymentFingerprintConflict(prior, id, req.Amount, method, reference, mobile, payerFP); e != nil {
 			return nil, e
 		}
 		return &prior, nil
@@ -730,10 +739,6 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 		return nil, e
 	}
 
-	var x Invoice
-	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&x, id).Error; e != nil {
-		return nil, coreerrors.NotFound("INVOICE")
-	}
 	if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
@@ -750,11 +755,16 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 	if req.Amount > x.BalanceAmount {
 		return nil, coreerrors.Conflict("Le paiement dépasse le reste dû")
 	}
+	payerSnap, err := ResolvePayerForPayment(tx, x.PatientID, req.Payer)
+	if err != nil {
+		return nil, err
+	}
 	p := Payment{
 		InvoiceID: id, Amount: req.Amount, PaymentMethod: method, Reference: reference,
 		IdempotencyKey: key, PaidAt: time.Now(), ReceivedBy: user, CashSessionID: sessionID,
 		MobileOperator: mobile,
 	}
+	ApplyPayerSnapshot(&p, *payerSnap)
 	// SAVEPOINT: PostgreSQL aborts the TX on unique violation; rollback-to allows same-key recovery.
 	if e := tx.Exec("SAVEPOINT pay_idempotency").Error; e != nil {
 		return nil, e
@@ -765,7 +775,7 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 		if isPaymentIdempotencyUniqueViolation(e) {
 			var raced Payment
 			if load := tx.Where("idempotency_key=?", key).First(&raced).Error; load == nil {
-				if e := paymentFingerprintConflict(raced, id, req.Amount, method, reference, mobile); e != nil {
+				if e := paymentFingerprintConflict(raced, id, req.Amount, method, reference, mobile, payerFP); e != nil {
 					return nil, e
 				}
 				return &raced, nil

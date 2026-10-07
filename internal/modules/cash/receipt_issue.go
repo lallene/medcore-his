@@ -32,6 +32,12 @@ type ReceiptIssueInput struct {
 	PatientAmount      int64
 	PaidBefore         int64
 	BalanceAfter       int64
+	PayerDisplayName   string
+	PayerKind          string
+	PayerPhone         string
+	PayerRelationship  string
+	PayerIsPatient     bool
+	PayerProvenance    string
 }
 
 // IssueReceiptInTx creates or recovers the canonical receipt for a payment (1:1 on payment_id).
@@ -65,6 +71,12 @@ func IssueReceiptInTx(tx *gorm.DB, in ReceiptIssueInput) (*Receipt, error) {
 		PatientAmount:      in.PatientAmount,
 		PaidBefore:         in.PaidBefore,
 		BalanceAfter:       in.BalanceAfter,
+		PayerDisplayName:   in.PayerDisplayName,
+		PayerKind:          in.PayerKind,
+		PayerPhone:         in.PayerPhone,
+		PayerRelationship:  in.PayerRelationship,
+		PayerIsPatient:     in.PayerIsPatient,
+		PayerProvenance:    in.PayerProvenance,
 	}
 	if e := tx.Exec("SAVEPOINT cash_receipt_idempotency").Error; e != nil {
 		return nil, e
@@ -127,6 +139,12 @@ func IssueBillingReceipt(tx *gorm.DB, payment *billing.Payment, invoice *billing
 		PatientAmount:      invoice.PatientAmount,
 		PaidBefore:         paidBefore,
 		BalanceAfter:       balanceAfter,
+		PayerDisplayName:   payment.PayerDisplayName,
+		PayerKind:          payment.PayerKind,
+		PayerPhone:         payment.PayerPhone,
+		PayerRelationship:  payment.PayerRelationship,
+		PayerIsPatient:     payment.PayerIsPatient,
+		PayerProvenance:    payment.PayerProvenance,
 	})
 	return err
 }

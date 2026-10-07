@@ -30,7 +30,7 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 	pay := func(t *testing.T, sessionID uint, amount int64, method, key string) {
 		t.Helper()
 		inv := seedCashInvoice(t, db, "INV-"+key, 5, amount, 21)
-		req := PaymentRequest{InvoiceID: inv.ID, Amount: amount, PaymentMethod: method, IdempotencyKey: key}
+		req := PaymentRequest{InvoiceID: inv.ID, Amount: amount, PaymentMethod: method, IdempotencyKey: key, Payer: &PayerRequest{Mode: "PATIENT"}}
 		if method == "BANK_TRANSFER" || method == "CHECK" {
 			req.ExternalReference = "REF-" + key
 		}
@@ -148,7 +148,7 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 	t.Run("SM15_sessionless_excluded", func(t *testing.T) {
 		out := openOn(t, "SM15", 5000, "sm15-o")
 		inv := seedCashInvoice(t, db, "INV-sm15-sl", 5, 9000, 21)
-		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 9000, PaymentMethod: "CASH", IdempotencyKey: "sm15-sl"}, 21); e != nil {
+		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 9000, PaymentMethod: "CASH", IdempotencyKey: "sm15-sl", Payer: billing.PatientPayerRequest()}, 21); e != nil {
 			t.Fatal(e)
 		}
 		sum, _ := s.Get(out.Session.ID)
@@ -169,7 +169,7 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 	t.Run("SM17_payment_replay_once", func(t *testing.T) {
 		out := openOn(t, "SM17", 0, "sm17-o")
 		inv := seedCashInvoice(t, db, "INV-sm17", 5, 4000, 21)
-		req := PaymentRequest{InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "sm17-key"}
+		req := PaymentRequest{InvoiceID: inv.ID, Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "sm17-key", Payer: &PayerRequest{Mode: "PATIENT"}}
 		if _, e := s.Pay(out.Session.ID, req, 21); e != nil {
 			t.Fatal(e)
 		}
@@ -189,12 +189,12 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: invA.ID, Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "sm18-a"}, 21)
+			_, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: invA.ID, Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "sm18-a", Payer: &PayerRequest{Mode: "PATIENT"}}, 21)
 			errs <- e
 		}()
 		go func() {
 			defer wg.Done()
-			_, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: invB.ID, Amount: 5000, PaymentMethod: "CARD", IdempotencyKey: "sm18-b"}, 21)
+			_, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: invB.ID, Amount: 5000, PaymentMethod: "CARD", IdempotencyKey: "sm18-b", Payer: &PayerRequest{Mode: "PATIENT"}}, 21)
 			errs <- e
 		}()
 		wg.Wait()
@@ -268,7 +268,7 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 		}
 		// Pay after close blocked — no drift.
 		inv := seedCashInvoice(t, db, "INV-sm27", 5, 1000, 21)
-		if _, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "sm27-late"}, 21); !cashIsConflict(e) {
+		if _, e := s.Pay(out.Session.ID, PaymentRequest{InvoiceID: inv.ID, Amount: 1000, PaymentMethod: "CASH", IdempotencyKey: "sm27-late", Payer: &PayerRequest{Mode: "PATIENT"}}, 21); !cashIsConflict(e) {
 			t.Fatalf("SM27 pay closed %v", e)
 		}
 		final, _ := s.Get(out.Session.ID)

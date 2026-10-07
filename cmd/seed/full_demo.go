@@ -580,13 +580,13 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 			log.Fatal(e)
 		}
 		if i == 2 {
-			_, e = cashService.Pay(open.ID, cash.PaymentRequest{InvoiceID: inv.ID, Amount: inv.BalanceAmount / 2, PaymentMethod: "CASH", IdempotencyKey: "DEMO-PAY-PARTIAL"}, user)
+			_, e = cashService.Pay(open.ID, cash.PaymentRequest{InvoiceID: inv.ID, Amount: inv.BalanceAmount / 2, PaymentMethod: "CASH", IdempotencyKey: "DEMO-PAY-PARTIAL", Payer: &cash.PayerRequest{Mode: "PATIENT"}}, user)
 			if e != nil {
 				log.Fatal(e)
 			}
 		}
 		if i == 3 {
-			_, e = cashService.Pay(open.ID, cash.PaymentRequest{InvoiceID: inv.ID, Amount: inv.BalanceAmount, PaymentMethod: "MOBILE_MONEY", MobileOperator: "Orange Money", ExternalReference: "DEMO-MM", IdempotencyKey: "DEMO-PAY-FULL"}, user)
+			_, e = cashService.Pay(open.ID, cash.PaymentRequest{InvoiceID: inv.ID, Amount: inv.BalanceAmount, PaymentMethod: "MOBILE_MONEY", MobileOperator: "Orange Money", ExternalReference: "DEMO-MM", IdempotencyKey: "DEMO-PAY-FULL", Payer: &cash.PayerRequest{Mode: "PATIENT"}}, user)
 			if e != nil {
 				log.Fatal(e)
 			}
@@ -599,11 +599,12 @@ func seedDemoBillingAndCash(db *gorm.DB, user uint, consults map[string]*consult
 		}
 		if i == 6 {
 			quarter := inv.BalanceAmount / 4
+			patientPayer := &cash.PayerRequest{Mode: "PATIENT"}
 			payments := []cash.PaymentRequest{
-				{InvoiceID: inv.ID, Amount: quarter, PaymentMethod: "CARD", ExternalReference: "DEMO-CARD", IdempotencyKey: "DEMO-PAY-CARD"},
-				{InvoiceID: inv.ID, Amount: quarter, PaymentMethod: "MOBILE_MONEY", MobileOperator: "MTN Money", ExternalReference: "DEMO-MM-2", IdempotencyKey: "DEMO-PAY-MM-2"},
-				{InvoiceID: inv.ID, Amount: quarter, PaymentMethod: "BANK_TRANSFER", ExternalReference: "DEMO-BANK", IdempotencyKey: "DEMO-PAY-BANK"},
-				{InvoiceID: inv.ID, Amount: inv.BalanceAmount - quarter*3, PaymentMethod: "CHECK", ExternalReference: "DEMO-CHECK", IdempotencyKey: "DEMO-PAY-CHECK"},
+				{InvoiceID: inv.ID, Amount: quarter, PaymentMethod: "CARD", ExternalReference: "DEMO-CARD", IdempotencyKey: "DEMO-PAY-CARD", Payer: patientPayer},
+				{InvoiceID: inv.ID, Amount: quarter, PaymentMethod: "MOBILE_MONEY", MobileOperator: "MTN Money", ExternalReference: "DEMO-MM-2", IdempotencyKey: "DEMO-PAY-MM-2", Payer: patientPayer},
+				{InvoiceID: inv.ID, Amount: quarter, PaymentMethod: "BANK_TRANSFER", ExternalReference: "DEMO-BANK", IdempotencyKey: "DEMO-PAY-BANK", Payer: patientPayer},
+				{InvoiceID: inv.ID, Amount: inv.BalanceAmount - quarter*3, PaymentMethod: "CHECK", ExternalReference: "DEMO-CHECK", IdempotencyKey: "DEMO-PAY-CHECK", Payer: patientPayer},
 			}
 			for _, payment := range payments {
 				if _, e = cashService.Pay(open.ID, payment, user); e != nil {
@@ -748,7 +749,7 @@ func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service
 		if payAmount <= 0 {
 			return
 		}
-		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: current.ID, Amount: payAmount, PaymentMethod: "CASH", IdempotencyKey: payKey}, user); err != nil {
+		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: current.ID, Amount: payAmount, PaymentMethod: "CASH", IdempotencyKey: payKey, Payer: &cash.PayerRequest{Mode: "PATIENT"}}, user); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -783,7 +784,7 @@ func seedDemoReceivables(db *gorm.DB, user uint, billingService *billing.Service
 	}
 	if insured.ID > 0 && insured.Status == billing.InvoiceIssued && insured.BalanceAmount > 1 {
 		amount := insured.BalanceAmount / 2
-		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: insured.ID, Amount: amount, PaymentMethod: "CASH", IdempotencyKey: "DEMO-RECEIVABLE-INSURED-PARTIAL"}, user); err != nil {
+		if _, err := cashService.Pay(sessionID, cash.PaymentRequest{InvoiceID: insured.ID, Amount: amount, PaymentMethod: "CASH", IdempotencyKey: "DEMO-RECEIVABLE-INSURED-PARTIAL", Payer: &cash.PayerRequest{Mode: "PATIENT"}}, user); err != nil {
 			log.Fatal(err)
 		}
 	}

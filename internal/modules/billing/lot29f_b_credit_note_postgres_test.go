@@ -316,7 +316,7 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: -1, PaymentMethod: "CASH", IdempotencyKey: "cn32"}, 102); !isBadRequest(e) {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: -1, PaymentMethod: "CASH", IdempotencyKey: "cn32", Payer: PatientPayerRequest()}, 102); !isBadRequest(e) {
 			t.Fatalf("CN32 %v", e)
 		}
 		if e := db.Create(&Payment{InvoiceID: inv.ID, Amount: -5, PaymentMethod: "CASH", IdempotencyKey: "cn32-db", PaidAt: time.Now(), ReceivedBy: 1}).Error; e == nil {
@@ -381,7 +381,7 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, payErr = s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "cn37-pay"}, 105)
+			_, payErr = s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "cn37-pay", Payer: PatientPayerRequest()}, 105)
 		}()
 		go func() {
 			defer wg.Done()

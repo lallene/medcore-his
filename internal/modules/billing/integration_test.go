@@ -228,7 +228,7 @@ func billingDB(t *testing.T) *gorm.DB {
 		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE").Error
 		_ = adminSQL.Close()
 	})
-	models := []any{&patients.Patient{}, &billingUser{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingHospitalization{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &billingPerformedAct{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}, &PaymentReversal{}, &CreditNote{}, &billingCashReceipt{}}
+	models := []any{&patients.Patient{}, &billingUser{}, &billingCoverage{}, &billingCompany{}, &billingGuarantor{}, &billingExam{}, &billingLabOrder{}, &billingImagingOrder{}, &billingHospitalization{}, &billingMedication{}, &billingPresentation{}, &billingDispensation{}, &billingPerformedAct{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billingConsultation{}, &authorization.InsuranceAuthorization{}, &authorization.InsuranceAuthorizationAct{}, &Tariff{}, &Invoice{}, &InvoiceLine{}, &AuthorizationAllocation{}, &Payment{}, &PaymentReversal{}, &CreditNote{}, &FinancialParty{}, &billingCashReceipt{}}
 	if e = db.AutoMigrate(models...); e != nil {
 		t.Fatal(e)
 	}
@@ -296,11 +296,11 @@ func TestPostgresInvoiceSnapshotAntiDuplicateAndPayments(t *testing.T) {
 	if e != nil || invoice.IssuedBy == nil || *invoice.IssuedBy != 43 {
 		t.Fatalf("issue/JWT: %+v %v", invoice, e)
 	}
-	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "LOT12-PAYMENT-001"}, 44)
+	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "LOT12-PAYMENT-001", Payer: PatientPayerRequest()}, 44)
 	if e != nil || invoice.Status != InvoicePartiallyPaid || invoice.BalanceAmount != 10000 {
 		t.Fatalf("partial: %+v %v", invoice, e)
 	}
-	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "LOT12-PAYMENT-001"}, 44)
+	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "LOT12-PAYMENT-001", Payer: PatientPayerRequest()}, 44)
 	if e != nil || invoice.PaidAmount != 10000 {
 		t.Fatalf("retry: %+v %v", invoice, e)
 	}
@@ -314,10 +314,10 @@ func TestPostgresInvoiceSnapshotAntiDuplicateAndPayments(t *testing.T) {
 	if paid.ReceivedBy != 44 {
 		t.Fatalf("received_by=%d", paid.ReceivedBy)
 	}
-	if _, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10001, PaymentMethod: "CASH", IdempotencyKey: "pay-over"}, 44); !isConflict(e) {
+	if _, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10001, PaymentMethod: "CASH", IdempotencyKey: "pay-over", Payer: PatientPayerRequest()}, 44); !isConflict(e) {
 		t.Fatalf("overpayment=%v", e)
 	}
-	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CARD", IdempotencyKey: "pay-final"}, 45)
+	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CARD", IdempotencyKey: "pay-final", Payer: PatientPayerRequest()}, 45)
 	if e != nil || invoice.Status != InvoicePaid || invoice.BalanceAmount != 0 {
 		t.Fatalf("final: %+v %v", invoice, e)
 	}
@@ -592,7 +592,7 @@ func TestPostgresConcurrentAllocationAndPayment(t *testing.T) {
 			go func(n int) {
 				defer wg.Done()
 				<-start
-				_, e := s.Pay(x.ID, PaymentRequest{Amount: 20000, PaymentMethod: "CASH", IdempotencyKey: fmt.Sprintf("concurrent-%d", n)}, 3)
+				_, e := s.Pay(x.ID, PaymentRequest{Amount: 20000, PaymentMethod: "CASH", IdempotencyKey: fmt.Sprintf("concurrent-%d", n), Payer: PatientPayerRequest()}, 3)
 				errs <- e
 			}(i)
 		}

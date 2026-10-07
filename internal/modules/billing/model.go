@@ -109,7 +109,17 @@ type Payment struct {
 	ReceivedBy     uint      `gorm:"not null;index" json:"receivedBy"`
 	CashSessionID  *uint     `gorm:"index" json:"cashSessionId,omitempty"`
 	MobileOperator string    `gorm:"size:80" json:"mobileOperator,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
+	// LOT29F-H-B: immutable payer-time snapshot (Patient != Payer; ReceivedBy != Payer).
+	PayerPartyID      *uint  `gorm:"index" json:"payerPartyId,omitempty"`
+	PayerKind         string `gorm:"size:20" json:"payerKind,omitempty"`
+	PayerDisplayName  string `gorm:"size:250" json:"payerDisplayName,omitempty"`
+	PayerPhone        string `gorm:"size:50" json:"payerPhone,omitempty"`
+	PayerRelationship string `gorm:"size:80" json:"payerRelationship,omitempty"`
+	PayerIsPatient    bool   `gorm:"not null;default:false" json:"payerIsPatient"`
+	// CAPTURED for new payments; LEGACY_UNCONFIRMED for pre-H-B rows (never invent history).
+	PayerProvenance  string    `gorm:"size:30;not null;default:LEGACY_UNCONFIRMED;index" json:"payerProvenance"`
+	PayerFingerprint string    `gorm:"size:500" json:"-"`
+	CreatedAt        time.Time `json:"createdAt"`
 	// Canonical cash_receipts identity (decorated on read; not a column).
 	ReceiptID     *uint  `json:"receiptId,omitempty" gorm:"-"`
 	ReceiptNumber string `json:"receiptNumber,omitempty" gorm:"-"`

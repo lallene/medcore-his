@@ -26,6 +26,8 @@ type PaymentRequest struct {
 	// IdempotencyKey may be supplied in JSON and/or Idempotency-Key header (handler merges).
 	IdempotencyKey string `json:"idempotencyKey"`
 	MobileOperator string `json:"mobileOperator"`
+	// LOT29F-H-B: required for NEW payments (PATIENT | INDIVIDUAL | ORGANIZATION).
+	Payer *PayerRequest `json:"payer"`
 }
 type CancelRequest struct {
 	Reason string `json:"reason" binding:"required"`
