@@ -66,6 +66,7 @@ func schemaModels() []any {
 		&billing.CreditApplicationReversal{},
 		&billing.Refund{},
 		&billing.RefundExecution{},
+		&billing.DocumentNumberSeries{},
 		&act_catalog.Entry{},
 		&performed_acts.Act{},
 		&performed_acts.ProducerMap{},
@@ -220,6 +221,7 @@ func applyMigrations(db *gorm.DB) error {
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_movements_correction_exec_ref ON cash_movements (reference_type, reference_id) WHERE reference_type = 'CASH_CORRECTION_EXECUTION' AND reference_id IS NOT NULL",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_movements_refund_exec_ref ON cash_movements (reference_type, reference_id) WHERE reference_type = 'REFUND_EXECUTION' AND reference_id IS NOT NULL",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_refund_exec_external_ref ON billing_refund_executions (method, external_reference) WHERE method <> 'CASH' AND external_reference <> ''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_refunds_refund_number ON billing_refunds (refund_number) WHERE refund_number IS NOT NULL AND refund_number <> ''",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_bed ON hospitalization_bed_assignments (bed_id) WHERE released_at IS NULL AND deleted_at IS NULL",
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_hospitalization_bed_assignments_active_stay ON hospitalization_bed_assignments (hospitalization_id) WHERE released_at IS NULL AND deleted_at IS NULL",
 	} {

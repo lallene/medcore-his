@@ -23,13 +23,13 @@ const (
 )
 
 const (
-	RefundReasonDuplicateOrOverpayment      = "DUPLICATE_OR_OVERPAYMENT"
-	RefundReasonServiceCancelledOrNotPerf   = "SERVICE_CANCELLED_OR_NOT_PERFORMED"
-	RefundReasonInvoiceCorrection           = "INVOICE_CORRECTION"
-	RefundReasonUnusedAdvance               = "UNUSED_ADVANCE"
-	RefundReasonInsuranceAfterPayment       = "INSURANCE_COVERAGE_AFTER_PAYMENT"
+	RefundReasonDuplicateOrOverpayment       = "DUPLICATE_OR_OVERPAYMENT"
+	RefundReasonServiceCancelledOrNotPerf    = "SERVICE_CANCELLED_OR_NOT_PERFORMED"
+	RefundReasonInvoiceCorrection            = "INVOICE_CORRECTION"
+	RefundReasonUnusedAdvance                = "UNUSED_ADVANCE"
+	RefundReasonInsuranceAfterPayment        = "INSURANCE_COVERAGE_AFTER_PAYMENT"
 	RefundReasonTransferOrDeathBeforeService = "TRANSFER_OR_DEATH_BEFORE_SERVICE"
-	RefundReasonOther                       = "OTHER"
+	RefundReasonOther                        = "OTHER"
 )
 
 const (
@@ -57,12 +57,16 @@ const (
 
 // Refund is the genuine restitution workflow aggregate (request → decision). I-A never executes money.
 type Refund struct {
-	ID     uint `gorm:"primaryKey" json:"id"`
+	ID            uint `gorm:"primaryKey" json:"id"`
 	PatientID     uint `gorm:"not null;index" json:"patientId"`
 	HolderPartyID uint `gorm:"not null;index;index:idx_refund_holder_patient,priority:1" json:"holderPartyId"`
 
 	Amount int64  `gorm:"not null;check:billing_refund_amount_positive,amount > 0" json:"amount"`
 	Status string `gorm:"size:20;not null;index" json:"status"`
+
+	// RefundNumber is the official RMB-YYYY-XXXXXX assigned only at successful EXECUTED (LOT29F-I-C).
+	// Empty until execution; immutable thereafter. Unique among non-empty values (partial index).
+	RefundNumber string `gorm:"size:30;index" json:"refundNumber,omitempty"`
 
 	ReasonCode    string `gorm:"size:60;not null;index" json:"reasonCode"`
 	ReasonComment string `gorm:"size:1000" json:"reasonComment,omitempty"`
@@ -74,8 +78,8 @@ type Refund struct {
 	BeneficiaryRelationship string `gorm:"size:80" json:"beneficiaryRelationship,omitempty"`
 	HolderConsentRef        string `gorm:"size:200" json:"holderConsentRef,omitempty"`
 
-	IntendedMethod        string `gorm:"size:30;not null" json:"intendedMethod"`
-	MethodOverrideReason  string `gorm:"size:500" json:"methodOverrideReason,omitempty"`
+	IntendedMethod         string `gorm:"size:30;not null" json:"intendedMethod"`
+	MethodOverrideReason   string `gorm:"size:500" json:"methodOverrideReason,omitempty"`
 	ClinicalAttestationRef string `gorm:"size:200" json:"clinicalAttestationRef,omitempty"`
 
 	RequestedBy uint      `gorm:"not null;index" json:"requestedBy"`
@@ -84,15 +88,15 @@ type Refund struct {
 	ApprovedBy *uint      `json:"approvedBy,omitempty"`
 	ApprovedAt *time.Time `json:"approvedAt,omitempty"`
 
-	RejectedBy       *uint      `json:"rejectedBy,omitempty"`
-	RejectedAt       *time.Time `json:"rejectedAt,omitempty"`
-	RejectionReason  string     `gorm:"size:1000" json:"rejectionReason,omitempty"`
+	RejectedBy      *uint      `json:"rejectedBy,omitempty"`
+	RejectedAt      *time.Time `json:"rejectedAt,omitempty"`
+	RejectionReason string     `gorm:"size:1000" json:"rejectionReason,omitempty"`
 
-	CancelledBy         *uint      `json:"cancelledBy,omitempty"`
-	CancelledAt         *time.Time `json:"cancelledAt,omitempty"`
-	CancellationReason  string     `gorm:"size:1000" json:"cancellationReason,omitempty"`
+	CancelledBy        *uint      `json:"cancelledBy,omitempty"`
+	CancelledAt        *time.Time `json:"cancelledAt,omitempty"`
+	CancellationReason string     `gorm:"size:1000" json:"cancellationReason,omitempty"`
 
-	IdempotencyKey string `gorm:"size:120;not null;uniqueIndex" json:"idempotencyKey"`
+	IdempotencyKey string    `gorm:"size:120;not null;uniqueIndex" json:"idempotencyKey"`
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 }
@@ -158,19 +162,19 @@ func NormalizeRefundMethod(method string) (string, error) {
 
 // RefundRequest is the client command for creating a refund request (no status/actor fields).
 type RefundRequest struct {
-	PatientID              uint   `json:"patientId"`
-	HolderPartyID          uint   `json:"holderPartyId"`
-	Amount                 int64  `json:"amount"`
-	ReasonCode             string `json:"reasonCode"`
-	ReasonComment          string `json:"reasonComment"`
-	BeneficiaryMode        string `json:"beneficiaryMode"`
-	BeneficiaryDisplayName string `json:"beneficiaryDisplayName"`
+	PatientID               uint   `json:"patientId"`
+	HolderPartyID           uint   `json:"holderPartyId"`
+	Amount                  int64  `json:"amount"`
+	ReasonCode              string `json:"reasonCode"`
+	ReasonComment           string `json:"reasonComment"`
+	BeneficiaryMode         string `json:"beneficiaryMode"`
+	BeneficiaryDisplayName  string `json:"beneficiaryDisplayName"`
 	BeneficiaryRelationship string `json:"beneficiaryRelationship"`
-	HolderConsentRef       string `json:"holderConsentRef"`
-	IntendedMethod         string `json:"intendedMethod"`
-	MethodOverrideReason   string `json:"methodOverrideReason"`
-	ClinicalAttestationRef string `json:"clinicalAttestationRef"`
-	IdempotencyKey         string `json:"idempotencyKey"`
+	HolderConsentRef        string `json:"holderConsentRef"`
+	IntendedMethod          string `json:"intendedMethod"`
+	MethodOverrideReason    string `json:"methodOverrideReason"`
+	ClinicalAttestationRef  string `json:"clinicalAttestationRef"`
+	IdempotencyKey          string `json:"idempotencyKey"`
 }
 
 type RefundDecisionRequest struct {
@@ -189,6 +193,9 @@ type RefundListFilter struct {
 	ReasonCode    string
 	DateFrom      string
 	DateTo        string
+	RefundNumber  string // exact RMB-YYYY-XXXXXX
+	Method        string // execution method (join RefundExecution)
+	ExecutedBy    uint
 	IncludePII    bool
 }
 
@@ -554,14 +561,27 @@ func (s *Service) ListRefunds(f RefundListFilter) (*RefundPage, error) {
 	if f.ReasonCode != "" {
 		q = q.Where("reason_code=?", strings.TrimSpace(strings.ToUpper(f.ReasonCode)))
 	}
+	if n := strings.TrimSpace(strings.ToUpper(f.RefundNumber)); n != "" {
+		q = q.Where("refund_number=?", n)
+	}
+	needExecJoin := f.Method != "" || f.ExecutedBy > 0
+	if needExecJoin {
+		q = q.Joins("JOIN billing_refund_executions e ON e.refund_id = billing_refunds.id")
+	}
+	if m := strings.TrimSpace(strings.ToUpper(f.Method)); m != "" {
+		q = q.Where("e.method=?", m)
+	}
+	if f.ExecutedBy > 0 {
+		q = q.Where("e.executed_by=?", f.ExecutedBy)
+	}
 	if f.DateFrom != "" {
 		if t, e := time.Parse("2006-01-02", f.DateFrom); e == nil {
-			q = q.Where("requested_at >= ?", t.UTC())
+			q = q.Where("billing_refunds.requested_at >= ?", t.UTC())
 		}
 	}
 	if f.DateTo != "" {
 		if t, e := time.Parse("2006-01-02", f.DateTo); e == nil {
-			q = q.Where("requested_at < ?", t.UTC().Add(24*time.Hour))
+			q = q.Where("billing_refunds.requested_at < ?", t.UTC().Add(24*time.Hour))
 		}
 	}
 	var total int64
@@ -569,7 +589,7 @@ func (s *Service) ListRefunds(f RefundListFilter) (*RefundPage, error) {
 		return nil, e
 	}
 	var rows []Refund
-	if e := q.Order("requested_at DESC, id DESC").
+	if e := q.Order("billing_refunds.requested_at DESC, billing_refunds.id DESC").
 		Offset((f.Page - 1) * f.Limit).Limit(f.Limit).
 		Find(&rows).Error; e != nil {
 		return nil, e

@@ -561,11 +561,51 @@ func (h *Handler) ExecuteRefund(c *gin.Context) {
 	c.JSON(200, x)
 }
 
+func (h *Handler) GetRefundVoucher(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.GetRefundVoucher(n, exposePayerPhone(c))
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) RefundReport(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	patientID, _ := strconv.ParseUint(c.Query("patientId"), 10, 64)
+	holderID, _ := strconv.ParseUint(c.Query("holderPartyId"), 10, 64)
+	registerID, _ := strconv.ParseUint(c.Query("cashRegisterId"), 10, 64)
+	executedBy, _ := strconv.ParseUint(c.Query("executedBy"), 10, 64)
+	x, e := h.service.GetRefundReport(RefundReportFilter{
+		Page:           page,
+		Limit:          limit,
+		DateFrom:       strings.TrimSpace(c.Query("dateFrom")),
+		DateTo:         strings.TrimSpace(c.Query("dateTo")),
+		Method:         strings.TrimSpace(c.Query("method")),
+		CashRegisterID: uint(registerID),
+		ExecutedBy:     uint(executedBy),
+		PatientID:      uint(patientID),
+		HolderPartyID:  uint(holderID),
+		IncludePII:     exposePayerPhone(c),
+	})
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
 func (h *Handler) ListRefunds(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	patientID, _ := strconv.ParseUint(c.Query("patientId"), 10, 64)
 	holderID, _ := strconv.ParseUint(c.Query("holderPartyId"), 10, 64)
+	executedBy, _ := strconv.ParseUint(c.Query("executedBy"), 10, 64)
 	x, e := h.service.ListRefunds(RefundListFilter{
 		Page:          page,
 		Limit:         limit,
@@ -575,6 +615,9 @@ func (h *Handler) ListRefunds(c *gin.Context) {
 		ReasonCode:    strings.TrimSpace(c.Query("reasonCode")),
 		DateFrom:      strings.TrimSpace(c.Query("dateFrom")),
 		DateTo:        strings.TrimSpace(c.Query("dateTo")),
+		RefundNumber:  strings.TrimSpace(c.Query("refundNumber")),
+		Method:        strings.TrimSpace(c.Query("method")),
+		ExecutedBy:    uint(executedBy),
 		IncludePII:    exposePayerPhone(c),
 	})
 	if e != nil {

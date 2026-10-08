@@ -16,21 +16,21 @@ const (
 )
 
 const (
-	CodeRefundExecInvalidStatus   = "REFUND_EXEC_INVALID_STATUS"
-	CodeRefundExecSoDViolation    = "REFUND_EXEC_SOD_VIOLATION"
-	CodeRefundExecMethodMismatch  = "REFUND_EXEC_METHOD_MISMATCH"
-	CodeRefundExecCashRequired    = "REFUND_EXEC_CASH_SESSION_REQUIRED"
-	CodeRefundExecInsufficientCash = "REFUND_EXEC_INSUFFICIENT_CASH"
-	CodeRefundExecExternalRefReq  = "REFUND_EXEC_EXTERNAL_REF_REQUIRED"
-	CodeRefundExecOrgCashForbidden = "REFUND_ORG_CASH_FORBIDDEN"
-	CodeRefundExecAlreadyDone     = "REFUND_EXEC_ALREADY_EXECUTED"
+	CodeRefundExecInvalidStatus       = "REFUND_EXEC_INVALID_STATUS"
+	CodeRefundExecSoDViolation        = "REFUND_EXEC_SOD_VIOLATION"
+	CodeRefundExecMethodMismatch      = "REFUND_EXEC_METHOD_MISMATCH"
+	CodeRefundExecCashRequired        = "REFUND_EXEC_CASH_SESSION_REQUIRED"
+	CodeRefundExecInsufficientCash    = "REFUND_EXEC_INSUFFICIENT_CASH"
+	CodeRefundExecExternalRefReq      = "REFUND_EXEC_EXTERNAL_REF_REQUIRED"
+	CodeRefundExecOrgCashForbidden    = "REFUND_ORG_CASH_FORBIDDEN"
+	CodeRefundExecAlreadyDone         = "REFUND_EXEC_ALREADY_EXECUTED"
 	CodeRefundExecIdempotencyConflict = "REFUND_EXEC_IDEMPOTENCY_CONFLICT"
 )
 
 // RefundExecution is the immutable 1:1 financial execution of an APPROVED Refund (LOT29F-I-B).
 // CASH: creates REFUND_OUT CashMovement. EXTERNAL: records completed off-system restitution.
 type RefundExecution struct {
-	ID     uint `gorm:"primaryKey" json:"id"`
+	ID       uint `gorm:"primaryKey" json:"id"`
 	RefundID uint `gorm:"not null;uniqueIndex" json:"refundId"`
 
 	Method string `gorm:"size:30;not null;index" json:"method"` // CASH|CARD|MOBILE_MONEY|TRANSFER
@@ -81,6 +81,7 @@ var (
 	refundExecFailAfterExecutionInsert func() error
 	refundExecFailAfterLedgerInsert    func() error
 	refundExecFailAfterCashMovement    func() error
+	refundExecFailAfterNumberAllocate  func() error
 	refundExecFailBeforeCommit         func() error
 )
 
@@ -92,6 +93,9 @@ func SetRefundExecFailAfterExecution(fn func() error) { refundExecFailAfterExecu
 
 // SetRefundExecFailAfterCashMovement is test-only failure injection after REFUND_OUT.
 func SetRefundExecFailAfterCashMovement(fn func() error) { refundExecFailAfterCashMovement = fn }
+
+// SetRefundExecFailAfterNumberAllocate is test-only failure injection after RMB series allocation.
+func SetRefundExecFailAfterNumberAllocate(fn func() error) { refundExecFailAfterNumberAllocate = fn }
 
 // CashRefundHooks — wired by cash package (avoids import cycle).
 type CashRefundSessionResolverFn func(tx *gorm.DB, user uint, preferredSessionID *uint) (sessionID, registerID uint, err error)
@@ -347,6 +351,18 @@ func (s *Service) ExecuteRefund(id uint, req RefundExecuteRequest, user uint) (*
 			exec.CashRegisterID = &rid
 		}
 
+		// Gapless official RMB number — same TX as EXECUTED (LOT29F-I-C).
+		rmb, e := AllocateRefundNumber(tx, now)
+		if e != nil {
+			return e
+		}
+		row.RefundNumber = rmb
+		if refundExecFailAfterNumberAllocate != nil {
+			if e := refundExecFailAfterNumberAllocate(); e != nil {
+				return e
+			}
+		}
+
 		if e := tx.Exec("SAVEPOINT refund_execution_insert").Error; e != nil {
 			return e
 		}
@@ -405,7 +421,8 @@ func (s *Service) ExecuteRefund(id uint, req RefundExecuteRequest, user uint) (*
 		if e := tx.Save(&row).Error; e != nil {
 			return e
 		}
-		if e := s.timelineRefund(tx, &row, "refund_executed", "Remboursement effectué", user); e != nil {
+		title := fmt.Sprintf("Remboursement effectué %s", row.RefundNumber)
+		if e := s.timelineRefund(tx, &row, "refund_executed", title, user); e != nil {
 			return e
 		}
 		if refundExecFailBeforeCommit != nil {

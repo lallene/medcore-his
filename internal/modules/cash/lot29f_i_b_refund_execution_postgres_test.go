@@ -15,8 +15,9 @@ import (
 
 func ibBilling(t *testing.T, db *gorm.DB) *billing.Service {
 	t.Helper()
-	_ = db.AutoMigrate(&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{})
+	_ = db.AutoMigrate(&medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &billing.DocumentNumberSeries{})
 	_ = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_refund_exec_external_ref ON billing_refund_executions (method, external_reference) WHERE method <> 'CASH' AND external_reference <> ''")
+	_ = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_refunds_refund_number ON billing_refunds (refund_number) WHERE refund_number IS NOT NULL AND refund_number <> ''")
 	return billing.NewService(db).WithReceiptIssuer(func(tx *gorm.DB, payment *billing.Payment, invoice *billing.Invoice, paidBefore, balanceAfter int64, user uint) error {
 		return nil
 	})

@@ -206,7 +206,7 @@ func TestLOT29F_IA_RefundWorkflowMatrix(t *testing.T) {
 		}
 		if _, e := s.RequestRefund(RefundRequest{
 			PatientID: p, HolderPartyID: holder, Amount: 1000,
-			ReasonCode: RefundReasonServiceCancelledOrNotPerf,
+			ReasonCode:             RefundReasonServiceCancelledOrNotPerf,
 			ClinicalAttestationRef: "ATT-CLIN-IA08", IdempotencyKey: "ia08-ok",
 		}, 708); e != nil {
 			t.Fatal(e)
@@ -218,7 +218,7 @@ func TestLOT29F_IA_RefundWorkflowMatrix(t *testing.T) {
 		holder := earnCredit(t, s, db, p, 5000, "ia09", 709)
 		if _, e := s.RequestRefund(RefundRequest{
 			PatientID: p, HolderPartyID: holder, Amount: 1000,
-			ReasonCode: RefundReasonDuplicateOrOverpayment,
+			ReasonCode:      RefundReasonDuplicateOrOverpayment,
 			BeneficiaryMode: RefundBeneficiaryAlternate, BeneficiaryDisplayName: "Enfant",
 			IdempotencyKey: "ia09-bad",
 		}, 709); e == nil {
@@ -226,7 +226,7 @@ func TestLOT29F_IA_RefundWorkflowMatrix(t *testing.T) {
 		}
 		ref, e := s.RequestRefund(RefundRequest{
 			PatientID: p, HolderPartyID: holder, Amount: 1000,
-			ReasonCode: RefundReasonDuplicateOrOverpayment,
+			ReasonCode:      RefundReasonDuplicateOrOverpayment,
 			BeneficiaryMode: RefundBeneficiaryAlternate, BeneficiaryDisplayName: "Enfant",
 			BeneficiaryRelationship: "Enfant", HolderConsentRef: "CONSENT-IA09",
 			IdempotencyKey: "ia09-ok",
@@ -332,7 +332,7 @@ func TestLOT29F_IA_Concurrency(t *testing.T) {
 				defer wg.Done()
 				_, e := s.RequestRefund(RefundRequest{
 					PatientID: p, HolderPartyID: holder, Amount: 10000,
-					ReasonCode: RefundReasonDuplicateOrOverpayment,
+					ReasonCode:     RefundReasonDuplicateOrOverpayment,
 					IdempotencyKey: fmt.Sprintf("iax01-%d", i),
 				}, 901)
 				if e == nil {
@@ -358,7 +358,7 @@ func TestLOT29F_IA_Concurrency(t *testing.T) {
 				defer wg.Done()
 				_, e := s.RequestRefund(RefundRequest{
 					PatientID: p, HolderPartyID: holder, Amount: 10000,
-					ReasonCode: RefundReasonDuplicateOrOverpayment,
+					ReasonCode:     RefundReasonDuplicateOrOverpayment,
 					IdempotencyKey: fmt.Sprintf("iax02-%d", i),
 				}, 902)
 				if e == nil {
@@ -436,11 +436,20 @@ func TestLOT29F_IA_Concurrency(t *testing.T) {
 			}
 		}()
 		wg.Wait()
-		if approveOK+cancelOK != 1 {
-			t.Fatalf("I-AX04 approve=%d cancel=%d", approveOK, cancelOK)
-		}
 		got, _ := s.GetRefund(ref.ID)
-		if got.Status != RefundStatusApproved && got.Status != RefundStatusCancelled {
+		// Concurrent REQUESTED race: exactly one wins under FOR UPDATE.
+		// Serial approve-then-cancel is also valid: Cancel is allowed on APPROVED
+		// (pre-execution), so both may return success with final CANCELLED.
+		switch {
+		case approveOK+cancelOK == 0:
+			t.Fatalf("I-AX04 neither succeeded approve=%d cancel=%d", approveOK, cancelOK)
+		case approveOK == 1 && cancelOK == 1:
+			if got.Status != RefundStatusCancelled {
+				t.Fatalf("I-AX04 serial approve+cancel expected CANCELLED got %s", got.Status)
+			}
+		case approveOK+cancelOK != 1:
+			t.Fatalf("I-AX04 approve=%d cancel=%d", approveOK, cancelOK)
+		case got.Status != RefundStatusApproved && got.Status != RefundStatusCancelled:
 			t.Fatalf("I-AX04 status %s", got.Status)
 		}
 	})

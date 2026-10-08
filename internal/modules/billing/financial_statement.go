@@ -56,10 +56,10 @@ type FinancialStatementSummary struct {
 	CreditRestored             int64 `json:"creditRestored"`
 	CreditUsed                 int64 `json:"creditUsed"`
 	// CreditAvailable = spendable (ledger − reserved). Pending refunds are not money returned.
-	CreditAvailable            int64 `json:"creditAvailable"`
-	LedgerCreditAvailable      int64 `json:"ledgerCreditAvailable"`
-	ReservedForRefund          int64 `json:"reservedForRefund"`
-	SpendableCredit            int64 `json:"spendableCredit"`
+	CreditAvailable       int64 `json:"creditAvailable"`
+	LedgerCreditAvailable int64 `json:"ledgerCreditAvailable"`
+	ReservedForRefund     int64 `json:"reservedForRefund"`
+	SpendableCredit       int64 `json:"spendableCredit"`
 }
 
 type FinancialInvoiceLine struct {
@@ -102,6 +102,7 @@ type FinancialHistoryEvent struct {
 	SourceID        uint      `json:"sourceId"`
 	InvoiceID       *uint     `json:"invoiceId,omitempty"`
 	InvoiceNumber   string    `json:"invoiceNumber,omitempty"`
+	DocumentNumber  string    `json:"documentNumber,omitempty"` // e.g. RMB-YYYY-XXXXXX for REFUND_EXECUTED
 	HolderPartyID   *uint     `json:"holderPartyId,omitempty"`
 	PaymentID       *uint     `json:"paymentId,omitempty"`
 	CreditNoteID    *uint     `json:"creditNoteId,omitempty"`
@@ -728,29 +729,34 @@ func collectFinancialEvents(tx *gorm.DB, f FinancialHistoryFilter) ([]FinancialH
 	}
 	for _, r := range refunds {
 		hid := r.HolderPartyID
-		appendRefund := func(eventType, label string, at time.Time, sourceID uint) {
+		appendRefund := func(eventType, label string, at time.Time, sourceID uint, docNumber string) {
 			events = append(events, FinancialHistoryEvent{
-				EventType:     eventType,
-				OccurredAt:    at,
-				Amount:        r.Amount,
-				SourceType:    "REFUND",
-				SourceID:      sourceID,
-				HolderPartyID: &hid,
-				Label:         label,
+				EventType:      eventType,
+				OccurredAt:     at,
+				Amount:         r.Amount,
+				SourceType:     "REFUND",
+				SourceID:       sourceID,
+				DocumentNumber: docNumber,
+				HolderPartyID:  &hid,
+				Label:          label,
 			})
 		}
-		appendRefund(FinEventRefundRequested, "Demande de remboursement", r.RequestedAt, r.ID)
+		appendRefund(FinEventRefundRequested, "Demande de remboursement", r.RequestedAt, r.ID, "")
 		if r.ApprovedAt != nil {
-			appendRefund(FinEventRefundApproved, "Remboursement autorisé", *r.ApprovedAt, r.ID)
+			appendRefund(FinEventRefundApproved, "Remboursement autorisé", *r.ApprovedAt, r.ID, "")
 		}
 		if r.RejectedAt != nil {
-			appendRefund(FinEventRefundRejected, "Demande de remboursement rejetée", *r.RejectedAt, r.ID)
+			appendRefund(FinEventRefundRejected, "Demande de remboursement rejetée", *r.RejectedAt, r.ID, "")
 		}
 		if r.CancelledAt != nil {
-			appendRefund(FinEventRefundCancelled, "Demande de remboursement annulée", *r.CancelledAt, r.ID)
+			appendRefund(FinEventRefundCancelled, "Demande de remboursement annulée", *r.CancelledAt, r.ID, "")
 		}
 		if x, ok := execByRefund[r.ID]; ok && r.Status == RefundStatusExecuted {
-			appendRefund(FinEventRefundExecuted, "Remboursement effectué", x.ExecutedAt, x.ID)
+			label := "Remboursement effectué"
+			if r.RefundNumber != "" {
+				label = "Remboursement effectué " + r.RefundNumber
+			}
+			appendRefund(FinEventRefundExecuted, label, x.ExecutedAt, x.ID, r.RefundNumber)
 		}
 	}
 
