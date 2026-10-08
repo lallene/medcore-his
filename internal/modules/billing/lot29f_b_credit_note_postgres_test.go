@@ -301,8 +301,22 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		if paymentCount(t, db, inv.ID) != payBefore || reversalCount(t, db) != revBefore {
 			t.Fatal("CN30/31 payment/reversal created")
 		}
-		if db.Migrator().HasTable("patient_wallets") || db.Migrator().HasTable("cash_movements") || db.Migrator().HasTable("billing_refunds") {
-			t.Fatal("CN27/28/29 unexpected tables")
+		// Schema may include refund/cash tables (LOT29F-I); credit-note must not create rows there.
+		if db.Migrator().HasTable("patient_wallets") {
+			t.Fatal("CN27 unexpected patient_wallets table")
+		}
+		var refundN, execN, movN int64
+		if db.Migrator().HasTable("billing_refunds") {
+			db.Table("billing_refunds").Count(&refundN)
+		}
+		if db.Migrator().HasTable("billing_refund_executions") {
+			db.Table("billing_refund_executions").Count(&execN)
+		}
+		if db.Migrator().HasTable("cash_movements") {
+			db.Table("cash_movements").Count(&movN)
+		}
+		if refundN != 0 || execN != 0 || movN != 0 {
+			t.Fatalf("CN27/28/29 unexpected refund/cash side effects refunds=%d exec=%d mov=%d", refundN, execN, movN)
 		}
 		// No payment receipt for credit note
 		var recN int64

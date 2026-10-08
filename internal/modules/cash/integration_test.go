@@ -85,7 +85,7 @@ func cashDB(t *testing.T) *gorm.DB {
 			_ = adminSQL.Close()
 		}
 	})
-	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.CreditLedgerEntry{}, &billing.CreditApplication{}, &billing.CreditApplicationReversal{}, &billing.Refund{}, &billing.FinancialParty{}, &Receipt{}, &CashMovement{}, &CashMovementAudit{}, &CashCorrectionExecution{}, &CashCorrectionExecutionAudit{}); e != nil {
+	if e = db.AutoMigrate(&cashPatient{}, &cashUser{}, &Register{}, &Session{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.AuthorizationAllocation{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.CreditLedgerEntry{}, &billing.CreditApplication{}, &billing.CreditApplicationReversal{}, &billing.Refund{}, &billing.RefundExecution{}, &billing.FinancialParty{}, &Receipt{}, &CashMovement{}, &CashMovementAudit{}, &CashCorrectionExecution{}, &CashCorrectionExecutionAudit{}); e != nil {
 		t.Fatal(e)
 	}
 	if e = EnsureReceiptSessionNullable(db); e != nil {
@@ -98,6 +98,9 @@ func cashDB(t *testing.T) *gorm.DB {
 		t.Fatal(e)
 	}
 	if e = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_movements_correction_exec_ref ON cash_movements (reference_type, reference_id) WHERE reference_type = 'CASH_CORRECTION_EXECUTION' AND reference_id IS NOT NULL").Error; e != nil {
+		t.Fatal(e)
+	}
+	if e = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_movements_refund_exec_ref ON cash_movements (reference_type, reference_id) WHERE reference_type = 'REFUND_EXECUTION' AND reference_id IS NOT NULL").Error; e != nil {
 		t.Fatal(e)
 	}
 	return db

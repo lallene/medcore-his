@@ -19,7 +19,7 @@ const (
 	RefundStatusApproved  = "APPROVED"
 	RefundStatusRejected  = "REJECTED"
 	RefundStatusCancelled = "CANCELLED"
-	// Future I-B: RefundStatusExecuted = "EXECUTED"
+	RefundStatusExecuted  = "EXECUTED"
 )
 
 const (

@@ -27,6 +27,7 @@ const (
 	FinEventRefundApproved            = "REFUND_APPROVED"
 	FinEventRefundRejected            = "REFUND_REJECTED"
 	FinEventRefundCancelled           = "REFUND_CANCELLED"
+	FinEventRefundExecuted            = "REFUND_EXECUTED"
 )
 
 // FinancialStatement is a read-only projection over authoritative domain records (LOT29F-H-E).
@@ -706,7 +707,7 @@ func collectFinancialEvents(tx *gorm.DB, f FinancialHistoryFilter) ([]FinancialH
 		})
 	}
 
-	// Refund workflow events (I-A — never REFUND_EXECUTED).
+	// Refund workflow + execution events (EXECUTED only when money left / external proof recorded).
 	var refunds []Refund
 	rq := tx.Where("patient_id=?", f.PatientID)
 	if f.HolderID > 0 {
@@ -714,6 +715,16 @@ func collectFinancialEvents(tx *gorm.DB, f FinancialHistoryFilter) ([]FinancialH
 	}
 	if e := rq.Order("id ASC").Find(&refunds).Error; e != nil {
 		return nil, e
+	}
+	var execByRefund = map[uint]RefundExecution{}
+	{
+		var execs []RefundExecution
+		if e := tx.Where("refund_id IN (SELECT id FROM billing_refunds WHERE patient_id=?)", f.PatientID).Find(&execs).Error; e != nil {
+			return nil, e
+		}
+		for _, x := range execs {
+			execByRefund[x.RefundID] = x
+		}
 	}
 	for _, r := range refunds {
 		hid := r.HolderPartyID
@@ -737,6 +748,9 @@ func collectFinancialEvents(tx *gorm.DB, f FinancialHistoryFilter) ([]FinancialH
 		}
 		if r.CancelledAt != nil {
 			appendRefund(FinEventRefundCancelled, "Demande de remboursement annulée", *r.CancelledAt, r.ID)
+		}
+		if x, ok := execByRefund[r.ID]; ok && r.Status == RefundStatusExecuted {
+			appendRefund(FinEventRefundExecuted, "Remboursement effectué", x.ExecutedAt, x.ID)
 		}
 	}
 

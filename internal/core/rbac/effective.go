@@ -66,6 +66,7 @@ var SensitivePermissions = map[string]bool{
 	"billing.refund.request":         true,
 	"billing.refund.approve":         true,
 	"billing.refund.cancel":          true,
+	"billing.refund.execute":         true,
 	"billing.refund.read":            true,
 	"insurance.authorization.decide": true,
 	"insurance.authorization.cancel": true,

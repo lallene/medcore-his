@@ -518,13 +518,45 @@ func (h *Handler) GetRefund(c *gin.Context) {
 	if !ok {
 		return
 	}
-	x, e := h.service.GetRefund(n)
+	includeRail := exposePayerPhone(c)
+	x, e := h.service.GetRefundWithExecution(n, includeRail)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	if !includeRail {
+		x.BeneficiaryPhone = ""
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) ExecuteRefund(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r RefundExecuteRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Exécution de remboursement invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.ExecuteRefund(n, r, u)
 	if e != nil {
 		fail(c, e)
 		return
 	}
 	if !exposePayerPhone(c) {
 		x.BeneficiaryPhone = ""
+		if x.Execution != nil {
+			x.Execution.BeneficiaryRailRef = ""
+		}
 	}
 	c.JSON(200, x)
 }

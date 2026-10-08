@@ -21,6 +21,7 @@ type sessionMovementTotals struct {
 	ManualOut              int64
 	ReversalOut            int64
 	PostCloseCorrectionOut int64
+	RefundOut              int64
 }
 
 // loadSessionPaymentTotals aggregates effective session payments from billing_payments only.
@@ -85,6 +86,8 @@ func loadSessionMovementTotals(db *gorm.DB, sessionID uint) (sessionMovementTota
 				m.ReversalOut += r.Total
 			case MovementPostCloseCorrectionOut:
 				m.PostCloseCorrectionOut += r.Total
+			case MovementRefundOut:
+				m.RefundOut += r.Total
 			}
 		}
 	}
@@ -142,6 +145,7 @@ func assembleSessionSummary(session Session, t sessionPaymentTotals, m sessionMo
 		CashMovementManualOut:              m.ManualOut,
 		CashMovementReversalOut:            m.ReversalOut,
 		CashMovementPostCloseCorrectionOut: m.PostCloseCorrectionOut,
+		CashMovementRefundOut:              m.RefundOut,
 	}
 	if session.Status == SessionClosed {
 		z.ClosingProofComplete = closingProofComplete(session)

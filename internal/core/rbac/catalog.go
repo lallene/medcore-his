@@ -105,6 +105,7 @@ func init() {
 	add("billing.refund.request", "Créer une demande de remboursement", "Billing", "SERVICE")
 	add("billing.refund.approve", "Autoriser ou rejeter une demande de remboursement", "Billing", "SERVICE")
 	add("billing.refund.cancel", "Annuler une demande/autorisation de remboursement", "Billing", "SERVICE")
+	add("billing.refund.execute", "Exécuter un remboursement autorisé (espèces ou enregistrement externe)", "Billing", "SERVICE")
 	add("billing.refund.read", "Lire les demandes de remboursement", "Billing", "SERVICE")
 	add("billing.tariff.read", "Lire les tarifs", "Billing", "GLOBAL")
 	add("billing.tariff.manage", "Gérer les tarifs", "Billing", "GLOBAL")

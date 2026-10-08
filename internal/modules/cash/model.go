@@ -187,6 +187,8 @@ type SessionSummary struct {
 	CashMovementManualOut              int64 `json:"cashMovementManualOut"`
 	CashMovementReversalOut            int64 `json:"cashMovementReversalOut"`
 	CashMovementPostCloseCorrectionOut int64 `json:"cashMovementPostCloseCorrectionOut"`
+	// LOT29F-I-B: genuine Refund CASH OUT (not PaymentReversal / PCE).
+	CashMovementRefundOut int64 `json:"cashMovementRefundOut"`
 	// LOT29E-D reconciliation metadata (projection over CashSession; not a second aggregate).
 	ClosingProofComplete bool   `json:"closingProofComplete"`
 	FinalReconciliation  bool   `json:"finalReconciliation"`
