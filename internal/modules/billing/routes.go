@@ -28,6 +28,12 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.GET("/patients/:patientId/credit-balances", rbac.Permission("billing.credit.read"), h.ListPatientCreditBalances)
 	g.GET("/patients/:patientId/financial-statement", rbac.Permission("billing.statement.read"), h.GetFinancialStatement)
 	g.GET("/patients/:patientId/financial-history", rbac.Permission("billing.statement.read"), h.ListFinancialHistory)
+	g.GET("/refunds", rbac.Permission("billing.refund.read"), h.ListRefunds)
+	g.POST("/refunds", rbac.Permission("billing.refund.request"), h.RequestRefund)
+	g.GET("/refunds/:id", rbac.Permission("billing.refund.read"), h.GetRefund)
+	g.POST("/refunds/:id/approve", rbac.Permission("billing.refund.approve"), h.ApproveRefund)
+	g.POST("/refunds/:id/reject", rbac.Permission("billing.refund.approve"), h.RejectRefund)
+	g.POST("/refunds/:id/cancel", rbac.AnyPermission("billing.refund.cancel", "billing.refund.request", "billing.refund.approve"), h.CancelRefund)
 	g.GET("/kpis", rbac.Permission("billing.read"), h.KPIs)
 	r.GET("/patients/:id/invoices", rbac.Permission("billing.read"), func(c *gin.Context) {
 		q := c.Request.URL.Query()

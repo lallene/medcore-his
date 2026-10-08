@@ -61,6 +61,18 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	if has(EffectiveStaffPermissions("staff", []string{"INFIRMIER"}, nil), "billing.statement.read") {
 		t.Fatal("clinical must not read financial statement")
 	}
+	if !has(caissier, "billing.refund.request") || has(caissier, "billing.refund.approve") {
+		t.Fatal("caissier may request refund but must not approve")
+	}
+	if !has(comptable, "billing.refund.approve") || !has(facturation, "billing.refund.request") {
+		t.Fatal("comptable approve / facturation request refund")
+	}
+	if has(facturation, "billing.refund.approve") {
+		t.Fatal("facturation must not approve refund")
+	}
+	if has(EffectiveStaffPermissions("staff", []string{"INFIRMIER"}, nil), "billing.refund.request") {
+		t.Fatal("clinical must not request refund via broad financial permission")
+	}
 	if !has(caissier, "cash.movement.read") || has(caissier, "cash.movement.create") {
 		t.Fatalf("caissier cash.movement=%v", caissier)
 	}

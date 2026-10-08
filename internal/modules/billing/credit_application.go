@@ -319,12 +319,13 @@ func (s *Service) ApplyCredit(invoiceID uint, req CreditApplicationRequest, user
 			return e
 		}
 
-		avail, e := AvailableCredit(tx, req.HolderPartyID, inv.PatientID)
+		// I-A: applications consume spendable credit (ledger − active refund reservations).
+		avail, e := SpendableCredit(tx, req.HolderPartyID, inv.PatientID)
 		if e != nil {
 			return e
 		}
 		if req.Amount > avail {
-			return creditAppConflict(CodeCreditApplicationInsufficient, "Crédit disponible insuffisant")
+			return creditAppConflict(CodeCreditApplicationInsufficient, "Crédit utilisable insuffisant")
 		}
 
 		credited, e := CreditedOnInvoice(tx, inv.ID)
@@ -539,7 +540,7 @@ func (s *Service) ListPatientCreditBalances(patientID uint) ([]CreditSummary, er
 		if e != nil {
 			return nil, e
 		}
-		if sum.AvailableCredit > 0 || sum.TotalCredited > 0 {
+		if sum.LedgerAvailable > 0 || sum.ReservedForRefund > 0 || sum.TotalCredited > 0 {
 			out = append(out, *sum)
 		}
 	}

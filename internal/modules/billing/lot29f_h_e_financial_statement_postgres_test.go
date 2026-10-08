@@ -2,6 +2,7 @@ package billing
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -686,29 +687,21 @@ func TestLOT29F_HE_PostgresProjection(t *testing.T) {
 	})
 }
 
-// H-E37: future Refund event constants can extend the model without redesign.
+// H-E37: I-A wired request/decision events; EXECUTED remains future-only (no money moved wording).
 func TestLOT29F_HE_RefundEventExtensionReady(t *testing.T) {
-	future := []string{
-		"REFUND_REQUESTED",
-		"REFUND_APPROVED",
-		"REFUND_REJECTED",
-		"REFUND_CANCELLED",
-		"REFUND_EXECUTED",
+	if FinEventRefundRequested == "" || FinEventRefundApproved == "" || FinEventRefundRejected == "" || FinEventRefundCancelled == "" {
+		t.Fatal("H-E37 I-A refund event constants missing")
 	}
-	existing := map[string]bool{
-		FinEventInvoiceIssued: true, FinEventPaymentReceived: true, FinEventPaymentReversed: true,
-		FinEventCreditNoteIssued: true, FinEventCreditEarned: true, FinEventCreditApplied: true,
-		FinEventCreditApplicationReversed: true,
-	}
-	for _, ev := range future {
-		if existing[ev] {
+	// EXECUTED must not collide with I-A constants and is not emitted yet.
+	executed := "REFUND_EXECUTED"
+	for _, ev := range []string{FinEventRefundRequested, FinEventRefundApproved, FinEventRefundRejected, FinEventRefundCancelled} {
+		if ev == executed {
 			t.Fatalf("H-E37 collision %s", ev)
 		}
 	}
-	// Projection labels must not pretend Refund exists today.
-	for _, label := range []string{"Paiement contrepassé", "Utilisation de crédit annulée", "Crédit acquis"} {
-		if containsRefund(label) {
-			t.Fatalf("H-E37 premature refund wording %q", label)
+	for _, label := range []string{"Paiement contrepassé", "Utilisation de crédit annulée", "Crédit acquis", "Remboursement autorisé", "Demande de remboursement"} {
+		if strings.Contains(strings.ToLower(label), "effectué") || strings.Contains(strings.ToLower(label), "versé") {
+			t.Fatalf("H-E37 premature execution wording %q", label)
 		}
 	}
 }

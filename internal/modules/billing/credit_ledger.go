@@ -47,14 +47,21 @@ type CreditLedgerEntry struct {
 
 func (CreditLedgerEntry) TableName() string { return "billing_credit_ledger_entries" }
 
-// CreditSummary is the backend-authoritative available-credit projection.
+// CreditSummary is the backend-authoritative available-credit projection (LOT29F-I-A).
+// LedgerAvailable = CREDIT − APPLY − REFUND(executed).
+// ReservedForRefund = Σ REQUESTED+APPROVED refund amounts.
+// SpendableCredit / AvailableCredit = max(0, LedgerAvailable − ReservedForRefund).
+// AvailableCredit remains the apply/UX spendable field (backward-compatible name).
 type CreditSummary struct {
-	HolderPartyID   uint  `json:"holderPartyId"`
-	PatientID       uint  `json:"patientId"`
-	TotalCredited   int64 `json:"totalCredited"`
-	TotalApplied    int64 `json:"totalApplied"`
-	TotalRefunded   int64 `json:"totalRefunded"`
-	AvailableCredit int64 `json:"availableCredit"`
+	HolderPartyID     uint  `json:"holderPartyId"`
+	PatientID         uint  `json:"patientId"`
+	TotalCredited     int64 `json:"totalCredited"`
+	TotalApplied      int64 `json:"totalApplied"`
+	TotalRefunded     int64 `json:"totalRefunded"`
+	LedgerAvailable   int64 `json:"ledgerAvailable"`
+	ReservedForRefund int64 `json:"reservedForRefund"`
+	SpendableCredit   int64 `json:"spendableCredit"`
+	AvailableCredit   int64 `json:"availableCredit"` // == SpendableCredit (apply ceiling)
 }
 
 func CorrectedPatientObligation(patientAmount, credited int64) int64 {
@@ -81,13 +88,13 @@ func RemainingReceivable(correctedObligation, effectivePaid int64) int64 {
 	return v
 }
 
-// AvailableCredit derives spendable credit for holder+patient (never negative).
+// AvailableCredit derives spendable credit for holder+patient (ledger − refund reservations).
 func AvailableCredit(tx *gorm.DB, holderPartyID, patientID uint) (int64, error) {
 	sum, err := CreditSummaryFor(tx, holderPartyID, patientID)
 	if err != nil {
 		return 0, err
 	}
-	return sum.AvailableCredit, nil
+	return sum.SpendableCredit, nil
 }
 
 func CreditSummaryFor(tx *gorm.DB, holderPartyID, patientID uint) (*CreditSummary, error) {
@@ -115,11 +122,22 @@ func CreditSummaryFor(tx *gorm.DB, holderPartyID, patientID uint) (*CreditSummar
 			out.TotalRefunded = r.Total
 		}
 	}
-	avail := out.TotalCredited - out.TotalApplied - out.TotalRefunded
-	if avail < 0 {
-		avail = 0
+	ledger := out.TotalCredited - out.TotalApplied - out.TotalRefunded
+	if ledger < 0 {
+		ledger = 0
 	}
-	out.AvailableCredit = avail
+	out.LedgerAvailable = ledger
+	reserved, e := ReservedForRefund(tx, holderPartyID, patientID)
+	if e != nil {
+		return nil, e
+	}
+	out.ReservedForRefund = reserved
+	spendable := ledger - reserved
+	if spendable < 0 {
+		spendable = 0
+	}
+	out.SpendableCredit = spendable
+	out.AvailableCredit = spendable
 	return out, nil
 }
 

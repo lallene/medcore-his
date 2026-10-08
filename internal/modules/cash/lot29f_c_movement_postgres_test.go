@@ -339,20 +339,28 @@ func TestLOT29F_C_CashMovementMatrix(t *testing.T) {
 		db.Model(&billing.PaymentReversal{}).Count(&beforeRev)
 		beforeCN := int64(0)
 		db.Model(&billing.CreditNote{}).Count(&beforeCN)
+		beforeRefund := int64(0)
+		if db.Migrator().HasTable("billing_refunds") {
+			db.Model(&billing.Refund{}).Count(&beforeRefund)
+		}
 		if _, e := s.CreateMovement(open.Session.ID, MovementRequest{
 			Direction: MovementIn, Type: MovementManualIn, Amount: 100, Reason: "Sans effets", IdempotencyKey: "cm39",
 		}, 52); e != nil {
 			t.Fatal(e)
 		}
-		var afterPay, afterRev, afterCN int64
+		var afterPay, afterRev, afterCN, afterRefund int64
 		db.Model(&billing.Payment{}).Count(&afterPay)
 		db.Model(&billing.PaymentReversal{}).Count(&afterRev)
 		db.Model(&billing.CreditNote{}).Count(&afterCN)
 		if afterPay != beforePay || afterRev != beforeRev || afterCN != beforeCN {
 			t.Fatal("CM39-42 side domains mutated")
 		}
+		// LOT29F-I-A: refund aggregate may exist, but cash movements must not create refund rows.
 		if db.Migrator().HasTable("billing_refunds") {
-			t.Fatal("CM41 refund table")
+			db.Model(&billing.Refund{}).Count(&afterRefund)
+			if afterRefund != beforeRefund {
+				t.Fatal("CM41 cash movement must not create billing refunds")
+			}
 		}
 	})
 

@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Financial event types (extensible for future Refund without redesign).
+// Financial event types (Refund request lifecycle added in LOT29F-I-A; EXECUTED is I-B).
 const (
 	FinEventInvoiceIssued             = "INVOICE_ISSUED"
 	FinEventPaymentReceived           = "PAYMENT_RECEIVED"
@@ -23,6 +23,10 @@ const (
 	FinEventCreditEarned              = "CREDIT_EARNED"
 	FinEventCreditApplied             = "CREDIT_APPLIED"
 	FinEventCreditApplicationReversed = "CREDIT_APPLICATION_REVERSED"
+	FinEventRefundRequested           = "REFUND_REQUESTED"
+	FinEventRefundApproved            = "REFUND_APPROVED"
+	FinEventRefundRejected            = "REFUND_REJECTED"
+	FinEventRefundCancelled           = "REFUND_CANCELLED"
 )
 
 // FinancialStatement is a read-only projection over authoritative domain records (LOT29F-H-E).
@@ -50,7 +54,11 @@ type FinancialStatementSummary struct {
 	CreditEarned               int64 `json:"creditEarned"`
 	CreditRestored             int64 `json:"creditRestored"`
 	CreditUsed                 int64 `json:"creditUsed"`
+	// CreditAvailable = spendable (ledger − reserved). Pending refunds are not money returned.
 	CreditAvailable            int64 `json:"creditAvailable"`
+	LedgerCreditAvailable      int64 `json:"ledgerCreditAvailable"`
+	ReservedForRefund          int64 `json:"reservedForRefund"`
+	SpendableCredit            int64 `json:"spendableCredit"`
 }
 
 type FinancialInvoiceLine struct {
@@ -71,15 +79,18 @@ type FinancialInvoiceLine struct {
 }
 
 type FinancialHolderCredit struct {
-	HolderPartyID   uint   `json:"holderPartyId"`
-	Kind            string `json:"kind"`
-	DisplayName     string `json:"displayName"`
-	Phone           string `json:"phone,omitempty"`
-	CreditEarned    int64  `json:"creditEarned"`
-	CreditRestored  int64  `json:"creditRestored"`
-	CreditUsed      int64  `json:"creditUsed"`
-	CreditRefunded  int64  `json:"creditRefunded"`
-	AvailableCredit int64  `json:"availableCredit"`
+	HolderPartyID     uint   `json:"holderPartyId"`
+	Kind              string `json:"kind"`
+	DisplayName       string `json:"displayName"`
+	Phone             string `json:"phone,omitempty"`
+	CreditEarned      int64  `json:"creditEarned"`
+	CreditRestored    int64  `json:"creditRestored"`
+	CreditUsed        int64  `json:"creditUsed"`
+	CreditRefunded    int64  `json:"creditRefunded"`
+	LedgerAvailable   int64  `json:"ledgerAvailable"`
+	ReservedForRefund int64  `json:"reservedForRefund"`
+	SpendableCredit   int64  `json:"spendableCredit"`
+	AvailableCredit   int64  `json:"availableCredit"` // spendable
 }
 
 type FinancialHistoryEvent struct {
@@ -230,9 +241,11 @@ func buildFinancialStatement(tx *gorm.DB, p patients.Patient, includePayerPII bo
 	if err != nil {
 		return nil, err
 	}
-	var totalAvail, earned, restored, used int64
+	var totalSpendable, totalLedger, totalReserved, earned, restored, used int64
 	for _, h := range holders {
-		totalAvail += h.AvailableCredit
+		totalSpendable += h.SpendableCredit
+		totalLedger += h.LedgerAvailable
+		totalReserved += h.ReservedForRefund
 		earned += h.CreditEarned
 		restored += h.CreditRestored
 		used += h.CreditUsed
@@ -240,7 +253,10 @@ func buildFinancialStatement(tx *gorm.DB, p patients.Patient, includePayerPII bo
 	sum.CreditEarned = earned
 	sum.CreditRestored = restored
 	sum.CreditUsed = used
-	sum.CreditAvailable = totalAvail
+	sum.LedgerCreditAvailable = totalLedger
+	sum.ReservedForRefund = totalReserved
+	sum.SpendableCredit = totalSpendable
+	sum.CreditAvailable = totalSpendable
 
 	name := strings.TrimSpace(strings.TrimSpace(p.Prenoms) + " " + strings.TrimSpace(p.Nom))
 	return &FinancialStatement{
@@ -251,7 +267,7 @@ func buildFinancialStatement(tx *gorm.DB, p patients.Patient, includePayerPII bo
 		Summary:                     sum,
 		Invoices:                    lines,
 		Holders:                     holders,
-		PatientCreditTotalAvailable: totalAvail,
+		PatientCreditTotalAvailable: totalSpendable,
 	}, nil
 }
 
@@ -382,24 +398,35 @@ func holderCreditsForPatient(tx *gorm.DB, patientID uint, includePayerPII bool) 
 				refunded += r.Total
 			}
 		}
-		avail := earned + restored - used - refunded
-		if avail < 0 {
-			avail = 0
+		ledger := earned + restored - used - refunded
+		if ledger < 0 {
+			ledger = 0
+		}
+		reserved, e := ReservedForRefund(tx, h.HolderPartyID, patientID)
+		if e != nil {
+			return nil, e
+		}
+		spendable := ledger - reserved
+		if spendable < 0 {
+			spendable = 0
 		}
 		phone := ""
 		if includePayerPII {
 			phone = party.Phone
 		}
 		out = append(out, FinancialHolderCredit{
-			HolderPartyID:   party.ID,
-			Kind:            party.Kind,
-			DisplayName:     party.DisplayName,
-			Phone:           phone,
-			CreditEarned:    earned,
-			CreditRestored:  restored,
-			CreditUsed:      used,
-			CreditRefunded:  refunded,
-			AvailableCredit: avail,
+			HolderPartyID:     party.ID,
+			Kind:              party.Kind,
+			DisplayName:       party.DisplayName,
+			Phone:             phone,
+			CreditEarned:      earned,
+			CreditRestored:    restored,
+			CreditUsed:        used,
+			CreditRefunded:    refunded,
+			LedgerAvailable:   ledger,
+			ReservedForRefund: reserved,
+			SpendableCredit:   spendable,
+			AvailableCredit:   spendable,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].HolderPartyID < out[j].HolderPartyID })
@@ -677,6 +704,40 @@ func collectFinancialEvents(tx *gorm.DB, f FinancialHistoryFilter) ([]FinancialH
 			CreditNoteID:  &cnID,
 			Label:         "Crédit acquis",
 		})
+	}
+
+	// Refund workflow events (I-A — never REFUND_EXECUTED).
+	var refunds []Refund
+	rq := tx.Where("patient_id=?", f.PatientID)
+	if f.HolderID > 0 {
+		rq = rq.Where("holder_party_id=?", f.HolderID)
+	}
+	if e := rq.Order("id ASC").Find(&refunds).Error; e != nil {
+		return nil, e
+	}
+	for _, r := range refunds {
+		hid := r.HolderPartyID
+		appendRefund := func(eventType, label string, at time.Time, sourceID uint) {
+			events = append(events, FinancialHistoryEvent{
+				EventType:     eventType,
+				OccurredAt:    at,
+				Amount:        r.Amount,
+				SourceType:    "REFUND",
+				SourceID:      sourceID,
+				HolderPartyID: &hid,
+				Label:         label,
+			})
+		}
+		appendRefund(FinEventRefundRequested, "Demande de remboursement", r.RequestedAt, r.ID)
+		if r.ApprovedAt != nil {
+			appendRefund(FinEventRefundApproved, "Remboursement autorisé", *r.ApprovedAt, r.ID)
+		}
+		if r.RejectedAt != nil {
+			appendRefund(FinEventRefundRejected, "Demande de remboursement rejetée", *r.RejectedAt, r.ID)
+		}
+		if r.CancelledAt != nil {
+			appendRefund(FinEventRefundCancelled, "Demande de remboursement annulée", *r.CancelledAt, r.ID)
+		}
 	}
 
 	// Filters

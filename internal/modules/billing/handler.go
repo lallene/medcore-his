@@ -428,3 +428,126 @@ func (h *Handler) KPIs(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, x)
 }
+
+func (h *Handler) RequestRefund(c *gin.Context) {
+	var r RefundRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Demande de remboursement invalide"))
+		return
+	}
+	if header := strings.TrimSpace(c.GetHeader("Idempotency-Key")); header != "" {
+		r.IdempotencyKey = header
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.RequestRefund(r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) ApproveRefund(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r RefundDecisionRequest
+	_ = c.ShouldBindJSON(&r)
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.ApproveRefund(n, r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) RejectRefund(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r RefundDecisionRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Rejet invalide"))
+		return
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.RejectRefund(n, r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) CancelRefund(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	var r RefundDecisionRequest
+	if c.ShouldBindJSON(&r) != nil {
+		fail(c, coreerrors.BadRequest("Annulation invalide"))
+		return
+	}
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.CancelRefund(n, r, u)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) GetRefund(c *gin.Context) {
+	n, ok := id(c)
+	if !ok {
+		return
+	}
+	x, e := h.service.GetRefund(n)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	if !exposePayerPhone(c) {
+		x.BeneficiaryPhone = ""
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) ListRefunds(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	patientID, _ := strconv.ParseUint(c.Query("patientId"), 10, 64)
+	holderID, _ := strconv.ParseUint(c.Query("holderPartyId"), 10, 64)
+	x, e := h.service.ListRefunds(RefundListFilter{
+		Page:          page,
+		Limit:         limit,
+		Status:        strings.TrimSpace(c.Query("status")),
+		PatientID:     uint(patientID),
+		HolderPartyID: uint(holderID),
+		ReasonCode:    strings.TrimSpace(c.Query("reasonCode")),
+		DateFrom:      strings.TrimSpace(c.Query("dateFrom")),
+		DateTo:        strings.TrimSpace(c.Query("dateTo")),
+		IncludePII:    exposePayerPhone(c),
+	})
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
