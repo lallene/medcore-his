@@ -101,6 +101,7 @@ func init() {
 	add("billing.credit_note.read", "Lire un avoir", "Billing", "SERVICE")
 	add("billing.credit.read", "Lire le crédit client (titulaire/patient)", "Billing", "SERVICE")
 	add("billing.credit.apply", "Appliquer le crédit client à une facture", "Billing", "SERVICE")
+	add("billing.statement.read", "Lire le relevé financier patient", "Billing", "SERVICE")
 	add("billing.tariff.read", "Lire les tarifs", "Billing", "GLOBAL")
 	add("billing.tariff.manage", "Gérer les tarifs", "Billing", "GLOBAL")
 	add("act_catalog.read", "Lire le référentiel des actes", "Actes", "GLOBAL")

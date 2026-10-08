@@ -332,6 +332,46 @@ func (h *Handler) ListPatientCreditBalances(c *gin.Context) {
 	}
 	c.JSON(200, x)
 }
+func (h *Handler) GetFinancialStatement(c *gin.Context) {
+	pid, e := strconv.ParseUint(c.Param("patientId"), 10, 64)
+	if e != nil || pid == 0 {
+		fail(c, coreerrors.BadRequest("Identifiant invalide"))
+		return
+	}
+	x, err := h.service.GetFinancialStatement(uint(pid), exposePayerPhone(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, x)
+}
+func (h *Handler) ListFinancialHistory(c *gin.Context) {
+	pid, e := strconv.ParseUint(c.Param("patientId"), 10, 64)
+	if e != nil || pid == 0 {
+		fail(c, coreerrors.BadRequest("Identifiant invalide"))
+		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	invoiceID, _ := strconv.ParseUint(c.Query("invoiceId"), 10, 64)
+	holderID, _ := strconv.ParseUint(c.Query("holderPartyId"), 10, 64)
+	x, err := h.service.ListFinancialHistory(FinancialHistoryFilter{
+		PatientID:  uint(pid),
+		Page:       page,
+		Limit:      limit,
+		DateFrom:   strings.TrimSpace(c.Query("dateFrom")),
+		DateTo:     strings.TrimSpace(c.Query("dateTo")),
+		EventType:  strings.TrimSpace(c.Query("eventType")),
+		InvoiceID:  uint(invoiceID),
+		HolderID:   uint(holderID),
+		IncludePII: exposePayerPhone(c),
+	})
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.JSON(200, x)
+}
 func (h *Handler) ApplyCredit(c *gin.Context) {
 	n, ok := id(c)
 	if !ok {

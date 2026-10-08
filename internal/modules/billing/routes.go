@@ -26,6 +26,8 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.GET("/credit-summary", rbac.Permission("billing.credit.read"), h.GetCreditSummary)
 	g.GET("/credit-ledger", rbac.Permission("billing.credit.read"), h.ListCreditLedger)
 	g.GET("/patients/:patientId/credit-balances", rbac.Permission("billing.credit.read"), h.ListPatientCreditBalances)
+	g.GET("/patients/:patientId/financial-statement", rbac.Permission("billing.statement.read"), h.GetFinancialStatement)
+	g.GET("/patients/:patientId/financial-history", rbac.Permission("billing.statement.read"), h.ListFinancialHistory)
 	g.GET("/kpis", rbac.Permission("billing.read"), h.KPIs)
 	r.GET("/patients/:id/invoices", rbac.Permission("billing.read"), func(c *gin.Context) {
 		q := c.Request.URL.Query()

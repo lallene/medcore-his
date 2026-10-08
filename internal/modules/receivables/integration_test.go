@@ -1,13 +1,15 @@
 package receivables
 
 import (
+	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
 	"gorm.io/driver/postgres"
@@ -24,39 +26,60 @@ type receivablePatient struct {
 
 func (receivablePatient) TableName() string { return "patients" }
 
-func receivableSchemaDSN(dsn, schema string) string {
-	if strings.Contains(dsn, "://") {
-		separator := "?"
-		if strings.Contains(dsn, "?") {
-			separator = "&"
-		}
-		return dsn + separator + "search_path=" + url.QueryEscape(schema)
-	}
-	return dsn + " search_path=" + schema
-}
-
+// receivablePostgres opens a schema-isolated PG pool with per-connection search_path.
+// DSN query search_path is not reliable with pgx (same as billingDB / cashDB).
 func receivablePostgres(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Receivables ignorés")
 	}
+	dsn = strings.Replace(dsn, "-pooler", "", 1)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	schema := fmt.Sprintf("receivables_%d", time.Now().UnixNano())
-	if err = admin.Exec(`CREATE SCHEMA "` + schema + `"`).Error; err != nil {
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	if err = admin.Exec("CREATE SCHEMA " + schemaIdent).Error; err != nil {
 		t.Fatal(err)
 	}
-	db, err := gorm.Open(postgres.Open(receivableSchemaDSN(dsn, schema)), &gorm.Config{})
+	pgConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(err)
+	}
+	if pgConfig.RuntimeParams == nil {
+		pgConfig.RuntimeParams = map[string]string{}
+	}
+	pgConfig.RuntimeParams["search_path"] = schemaIdent
+	sqlDB := stdlib.OpenDB(*pgConfig, stdlib.OptionAfterConnect(func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET search_path TO "+schemaIdent)
+		return err
+	}))
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(10)
+	pingCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err = sqlDB.PingContext(pingCtx); err != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		_ = sqlDB.Close()
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE")
+		t.Fatal(err)
+	}
+	adminSQL, err := admin.DB()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sqlDB, _ := db.DB()
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
-		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
+		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE").Error
+		_ = adminSQL.Close()
 	})
 	if err = db.AutoMigrate(&receivablePatient{}, &billing.Invoice{}, &billing.InvoiceLine{}, &billing.Payment{}, &billing.PaymentReversal{}, &billing.CreditNote{}, &billing.CreditLedgerEntry{}, &billing.CreditApplication{}, &billing.CreditApplicationReversal{}, &cash.Receipt{}, &Metadata{}, &FollowUp{}); err != nil {
 		t.Fatal(err)

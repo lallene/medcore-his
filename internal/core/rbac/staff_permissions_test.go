@@ -52,6 +52,15 @@ func TestEffectiveStaffPermissionsAreCumulativeAndSeparated(t *testing.T) {
 	if !has(comptable, "billing.credit.apply") || !has(facturation, "billing.credit.apply") {
 		t.Fatal("comptable/facturation must apply customer credit")
 	}
+	if !has(comptable, "billing.statement.read") || !has(facturation, "billing.statement.read") {
+		t.Fatal("comptable/facturation must read financial statement")
+	}
+	if has(EffectiveStaffPermissions("staff", []string{"CAISSIER"}, nil), "billing.statement.read") {
+		t.Fatal("caissier must not read full financial statement")
+	}
+	if has(EffectiveStaffPermissions("staff", []string{"INFIRMIER"}, nil), "billing.statement.read") {
+		t.Fatal("clinical must not read financial statement")
+	}
 	if !has(caissier, "cash.movement.read") || has(caissier, "cash.movement.create") {
 		t.Fatalf("caissier cash.movement=%v", caissier)
 	}
