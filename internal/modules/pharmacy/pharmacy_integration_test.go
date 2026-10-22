@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -40,10 +40,7 @@ func (testPrescription) TableName() string { return "consultation_prescriptions"
 
 func pharmacyDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL pharmacie ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

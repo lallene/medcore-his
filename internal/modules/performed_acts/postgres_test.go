@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/authorization"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -25,10 +25,7 @@ const performedActsIsolationConfigError = "TEST_DATABASE_URL connection mode can
 
 func performedActsDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL performed_acts ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	// Prefer direct/session endpoint: Neon -pooler (transaction mode) cannot preserve
 	// per-connection search_path under concurrent workers.
 	dsn = strings.Replace(dsn, "-pooler", "", 1)

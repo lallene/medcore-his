@@ -3,7 +3,6 @@ package authorization
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -58,21 +58,27 @@ func preparePerformedActDB(t *testing.T) (*gorm.DB, fixture) {
 	return db, seedAuthorization(t, db)
 }
 
-// authorizationDBConcurrent opens a schema-isolated PG pool with multiple
-// connections and per-connection search_path (same pattern as performed_acts).
-// Required for real concurrent Create races; MaxOpenConns(1) would serialize.
+// authorizationDBConcurrent is the schema-isolated multi-connection PEC harness
+// with the performed_acts stub table (LOT27H) on top of authorizationDB.
 func authorizationDBConcurrent(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL PEC ignorés")
-	}
+	db := openAuthorizationPool(t, "authorization_conc")
+	migrateAuthorizationSchema(t, db, &authorizationPerformedAct{})
+	return db
+}
+
+// openAuthorizationPool opens a schema-isolated PG pool with multiple connections
+// and per-connection search_path. LOT30-A′: MaxOpenConns(1) serialized every
+// "concurrent" PEC test; real races need several physical connections.
+func openAuthorizationPool(t *testing.T, prefix string) *gorm.DB {
+	t.Helper()
+	dsn := pgtest.DSN(t)
 	dsn = strings.Replace(dsn, "-pooler", "", 1)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := fmt.Sprintf("authorization_conc_%d", time.Now().UnixNano())
+	schema := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 	schemaIdent := pgx.Identifier{schema}.Sanitize()
 	if err = admin.Exec("CREATE SCHEMA " + schemaIdent).Error; err != nil {
 		t.Fatal(err)
@@ -114,21 +120,27 @@ func authorizationDBConcurrent(t *testing.T) *gorm.DB {
 		_ = admin.Exec("DROP SCHEMA IF EXISTS " + schemaIdent + " CASCADE").Error
 		_ = adminSQL.Close()
 	})
-	// Same stub tables as authorizationDB: Create→FindByID→query LEFT JOINs
-	// imaging_orders / laboratory_orders even for PERFORMED_ACT rows.
-	if err = db.AutoMigrate(
+	return db
+}
+
+// migrateAuthorizationSchema creates the PEC stub schema plus the production
+// partial unique index (EnsureAuthorizationIndexes, as cmd/migrate does).
+// Create→FindByID→query LEFT JOINs imaging_orders / laboratory_orders even for PERFORMED_ACT rows.
+func migrateAuthorizationSchema(t *testing.T, db *gorm.DB, extra ...any) {
+	t.Helper()
+	models := []any{
 		&patients.Patient{}, &company.InsuranceCompany{}, &guarantor.InsuranceGuarantor{},
 		&coverage.PatientCoverage{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{},
 		&authorizationConsultation{}, &authorizationMedicalExam{}, &authorizationLaboratoryOrder{},
 		&authorizationImagingOrder{}, &authorizationHospitalization{}, &authorizationPrescription{},
-		&InsuranceAuthorization{}, &InsuranceAuthorizationAct{}, &authorizationPerformedAct{},
-	); err != nil {
+		&InsuranceAuthorization{}, &InsuranceAuthorizationAct{},
+	}
+	if err := db.AutoMigrate(append(models, extra...)...); err != nil {
 		t.Fatal(err)
 	}
 	if err := EnsureAuthorizationIndexes(db); err != nil {
 		t.Fatal(err)
 	}
-	return db
 }
 
 func newPerformedAct(patientID uint, code string, eligible bool, status string) authorizationPerformedAct {

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -31,10 +31,7 @@ func staffDSN(dsn, schema string) string {
 }
 func staffDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent")
-	}
+	dsn := pgtest.DSN(t)
 	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)

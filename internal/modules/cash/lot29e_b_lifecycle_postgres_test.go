@@ -442,7 +442,7 @@ func TestLOT29E_B_SessionLifecycleMatrix(t *testing.T) {
 		sess, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cs36-o"}, 11)
 		inv := seedCashInvoice(t, db, "INV-CS36", 3, 8000, 11)
 		bill := billing.NewService(db)
-		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 3000, PaymentMethod: "CASH", IdempotencyKey: "cs36-bill", Payer: billing.PatientPayerRequest()}, 11); e != nil {
+		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 3000, PaymentMethod: "CARD", IdempotencyKey: "cs36-bill", Payer: billing.PatientPayerRequest()}, 11); e != nil {
 			t.Fatal(e)
 		}
 		sum, _ := s.Get(sess.Session.ID)

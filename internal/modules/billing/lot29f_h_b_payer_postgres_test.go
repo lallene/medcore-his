@@ -18,7 +18,7 @@ func TestLOT29F_HB_PayerAuthority(t *testing.T) {
 		})
 		inv := issuedPayReady(t, s, p, c, tariffID)
 		out, e := s.Pay(inv.ID, PaymentRequest{
-			Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "hb-p01",
+			Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "hb-p01",
 			Payer: PatientPayerRequest(),
 		}, c)
 		if e != nil {
@@ -42,7 +42,7 @@ func TestLOT29F_HB_PayerAuthority(t *testing.T) {
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
 		out, e := s.Pay(inv.ID, PaymentRequest{
-			Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "hb-p03",
+			Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "hb-p03",
 			Payer: &PayerRequest{
 				Mode: PayerModeIndividual, DisplayName: "Parent Test",
 				Phone: "+2250700112233", Relationship: "Parent",
@@ -85,7 +85,7 @@ func TestLOT29F_HB_PayerAuthority(t *testing.T) {
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
 		out, e := s.Pay(inv.ID, PaymentRequest{
-			Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "hb-p05",
+			Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "hb-p05",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, DisplayName: "Snap Name", Phone: "+2250700778899", Relationship: "Conjoint"},
 		}, c)
 		if e != nil {
@@ -116,11 +116,11 @@ func TestLOT29F_HB_PayerAuthority(t *testing.T) {
 		s := NewService(db).WithReceiptIssuer(localSessionlessReceiptIssuer)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "hb-p09"}, c); e == nil {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "hb-p09"}, c); e == nil {
 			t.Fatal("H-P09 expected missing payer reject")
 		}
 		if _, e := s.Pay(inv.ID, PaymentRequest{
-			Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "hb-p08",
+			Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "hb-p08",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, DisplayName: "X", Phone: "12", Relationship: "Ami"},
 		}, c); e == nil {
 			t.Fatal("H-P08 expected invalid phone reject")
@@ -175,7 +175,7 @@ func TestLOT29F_HB_PayerAuthority(t *testing.T) {
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
 		req := PaymentRequest{
-			Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "hb-p13",
+			Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "hb-p13",
 			Payer: PatientPayerRequest(),
 		}
 		a, e := s.Pay(inv.ID, req, c)
@@ -187,7 +187,7 @@ func TestLOT29F_HB_PayerAuthority(t *testing.T) {
 			t.Fatalf("H-P13 replay %v", e)
 		}
 		if _, e := s.Pay(inv.ID, PaymentRequest{
-			Amount: req.Amount, PaymentMethod: "CASH", IdempotencyKey: "hb-p13",
+			Amount: req.Amount, PaymentMethod: "CARD", IdempotencyKey: "hb-p13",
 			Payer: &PayerRequest{Mode: PayerModeOrganization, DisplayName: "Other Org", Phone: "+2250700998877"},
 		}, c); e == nil || !isConflict(e) {
 			t.Fatalf("H-P14 expected conflict got %v", e)
@@ -202,7 +202,7 @@ func TestLOT29F_HB_PayerAuthority(t *testing.T) {
 		before, _ := EffectivePaidOnInvoice(db, inv.ID)
 		badID := uint(999999)
 		_, e := s.Pay(inv.ID, PaymentRequest{
-			Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "hb-p15",
+			Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "hb-p15",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, PartyID: &badID, DisplayName: "Ghost", Phone: "+2250700123456", Relationship: "Ami"},
 		}, c)
 		if e == nil {

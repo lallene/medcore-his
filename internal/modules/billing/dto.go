@@ -55,6 +55,8 @@ type BillableAct struct {
 	CoverageResolution  string  `json:"coverageResolution"`
 	AuthorizationNumber string  `json:"authorizationNumber"`
 	AlreadyBilled       bool    `json:"alreadyBilled"`
+	// EligibleTariffs is the server-authoritative tariff choice set for this occurrence (LOT30-A′).
+	EligibleTariffs []Tariff `json:"eligibleTariffs"`
 }
 type KPIs struct {
 	PendingInvoices   int64 `json:"pendingInvoices"`

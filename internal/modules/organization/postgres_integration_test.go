@@ -3,21 +3,18 @@ package organization
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func organizationPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Organization ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

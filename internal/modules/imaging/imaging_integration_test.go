@@ -4,23 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func imagingDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL imagerie ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)

@@ -3,7 +3,6 @@ package performed_acts
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +18,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -41,10 +41,7 @@ func (voidOrgServiceStub) TableName() string { return "organization_services" }
 // voidReconDB is a multi-conn schema-isolated harness for LOT27H Void reconciliation.
 func voidReconDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Void reconciliation ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	dsn = strings.Replace(dsn, "-pooler", "", 1)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -477,7 +474,7 @@ func TestPostgresVoidBlockedByPaidInvoice(t *testing.T) {
 	if _, err := bill.Issue(inv.ID, 2); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 5000, PaymentMethod: "CASH", IdempotencyKey: "vr-pay-1", Payer: billing.PatientPayerRequest()}, 3); err != nil {
+	if _, err := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 5000, PaymentMethod: "CARD", IdempotencyKey: "vr-pay-1", Payer: billing.PatientPayerRequest()}, 3); err != nil {
 		t.Fatal(err)
 	}
 	var payBefore int64
@@ -517,7 +514,7 @@ func TestPostgresSessionlessReverseCancelVoidSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	paid, err := bill.Pay(issued.ID, billing.PaymentRequest{
-		Amount: issued.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "rcv-seq-pay", Payer: billing.PatientPayerRequest(),
+		Amount: issued.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "rcv-seq-pay", Payer: billing.PatientPayerRequest(),
 	}, 3)
 	if err != nil || len(paid.Payments) != 1 {
 		t.Fatalf("pay %+v %v", paid, err)

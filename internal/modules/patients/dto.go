@@ -56,6 +56,8 @@ type PatientResponse struct {
 	IsAssure        bool    `json:"isAssure"`
 	TauxCouverture  float64 `json:"tauxCouverture"`
 	MatriculeAssure string  `json:"matriculeAssure"`
+	// InsuranceDetailsVisible is false when tauxCouverture/matriculeAssure are redacted (LOT30-A′).
+	InsuranceDetailsVisible bool `json:"insuranceDetailsVisible"`
 }
 
 type PatientSummary struct {
@@ -79,4 +81,6 @@ type PatientSummary struct {
 	IsAssure        bool    `json:"isAssure"`
 	TauxCouverture  float64 `json:"tauxCouverture"`
 	MatriculeAssure string  `json:"matriculeAssure"`
+	// InsuranceDetailsVisible is false when tauxCouverture/matriculeAssure are redacted (LOT30-A′).
+	InsuranceDetailsVisible bool `json:"insuranceDetailsVisible"`
 }

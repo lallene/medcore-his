@@ -156,7 +156,7 @@ func TestLOT29F_EPrime_PostCloseCashReversal(t *testing.T) {
 
 		inv2 := seedCashInvoice(t, db, "INV-PCR31", 73, 1500, 73)
 		paid2, e := bill.Pay(inv2.ID, billing.PaymentRequest{
-			Amount: 1500, PaymentMethod: "CASH", IdempotencyKey: "pcr31-p", Payer: billing.PatientPayerRequest()}, 73)
+			Amount: 1500, PaymentMethod: "CARD", IdempotencyKey: "pcr31-p", Payer: billing.PatientPayerRequest()}, 73)
 		if e != nil {
 			t.Fatal(e)
 		}

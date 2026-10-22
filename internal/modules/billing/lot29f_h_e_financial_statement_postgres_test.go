@@ -52,7 +52,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		p := hePatient(t)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HE03"), tariff(t, db, "CONSULTATION", "HE03", 30000))
-		paySessionless(t, s, inv.ID, 30000, "CASH", "he03-pay", 501)
+		paySessionless(t, s, inv.ID, 30000, "CARD", "he03-pay", 501)
 		st, e := s.GetFinancialStatement(p, true)
 		if e != nil || st.Summary.EffectiveMoneyPaid != 30000 || st.Summary.ReceivableOutstanding != 0 {
 			t.Fatalf("H-E03 %+v %v", st, e)
@@ -63,7 +63,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		p := hePatient(t)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HE04"), tariff(t, db, "CONSULTATION", "HE04", 20000))
-		paid := paySessionless(t, s, inv.ID, 20000, "CASH", "he04-pay", 502)
+		paid := paySessionless(t, s, inv.ID, 20000, "CARD", "he04-pay", 502)
 		if _, e := s.ReversePayment(paid.Payments[0].ID, ReversePaymentRequest{Reason: "Erreur de saisie HE04", IdempotencyKey: "he04-rev"}, 502); e != nil {
 			t.Fatal(e)
 		}
@@ -111,7 +111,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		p := hePatient(t)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HE06"), tariff(t, db, "CONSULTATION", "HE06", 50000))
-		paySessionless(t, s, inv.ID, 50000, "CASH", "he06-pay", 504)
+		paySessionless(t, s, inv.ID, 50000, "CARD", "he06-pay", 504)
 		out, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: 10000, Reason: "Réduction 10k", IdempotencyKey: "he06"}, 504)
 		if e != nil || out.CustomerCreditAmount != 10000 {
 			t.Fatalf("setup %v", e)
@@ -137,7 +137,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		p := hePatient(t)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HE07"), tariff(t, db, "CONSULTATION", "HE07", 50000))
-		paySessionless(t, s, inv.ID, 30000, "CASH", "he07-pay", 505)
+		paySessionless(t, s, inv.ID, 30000, "CARD", "he07-pay", 505)
 		out, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: 10000, Reason: "Réduction partielle", IdempotencyKey: "he07"}, 505)
 		if e != nil || out.CustomerCreditAmount != 0 {
 			t.Fatalf("setup %+v %v", out, e)
@@ -217,7 +217,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		p := hePatient(t)
 		holder := earnCredit(t, s, db, p, 30000, "he11", 508)
 		target := issuedPayReady(t, s, p, consultation(t, db, p, "HE11t"), tariff(t, db, "CONSULTATION", "HE11t", 50000))
-		paySessionless(t, s, target.ID, 20000, "CASH", "he11-pay", 508)
+		paySessionless(t, s, target.ID, 20000, "CARD", "he11-pay", 508)
 		if _, e := s.ApplyCredit(target.ID, CreditApplicationRequest{HolderPartyID: holder, Amount: 30000, IdempotencyKey: "he11"}, 508); e != nil {
 			t.Fatal(e)
 		}
@@ -266,7 +266,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		p := hePatient(t)
 		a := issuedPayReady(t, s, p, consultation(t, db, p, "HE13a"), tariff(t, db, "CONSULTATION", "HE13a", 10000))
 		b := issuedPayReady(t, s, p, consultation(t, db, p, "HE13b"), tariff(t, db, "CONSULTATION", "HE13b", 20000))
-		paySessionless(t, s, a.ID, 10000, "CASH", "he13a", 510)
+		paySessionless(t, s, a.ID, 10000, "CARD", "he13a", 510)
 		st, e := s.GetFinancialStatement(p, true)
 		if e != nil {
 			t.Fatal(e)
@@ -291,7 +291,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		holderA := earnCredit(t, s, db, p, 10000, "he14a", 511)
 		invB := issuedPayReady(t, s, p, consultation(t, db, p, "HE14b"), tariff(t, db, "CONSULTATION", "HE14b", 50000))
 		if _, e := s.Pay(invB.ID, PaymentRequest{
-			Amount: 50000, PaymentMethod: "CASH", IdempotencyKey: "he14b-pay",
+			Amount: 50000, PaymentMethod: "CARD", IdempotencyKey: "he14b-pay",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, DisplayName: "Tuteur HE14", Phone: "+2250700141414", Relationship: "Tuteur"},
 		}, 511); e != nil {
 			t.Fatal(e)
@@ -327,7 +327,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		p := hePatient(t)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HE16"), tariff(t, db, "CONSULTATION", "HE16", 10000))
-		paid := paySessionless(t, s, inv.ID, 10000, "CASH", "he16-pay", 512)
+		paid := paySessionless(t, s, inv.ID, 10000, "CARD", "he16-pay", 512)
 		if e := db.Model(&Payment{}).Where("id=?", paid.Payments[0].ID).Updates(map[string]any{
 			"payer_provenance": PayerProvenanceLegacyUnconfirmed, "payer_party_id": nil, "payer_display_name": "",
 		}).Error; e != nil {
@@ -356,7 +356,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		p := hePatient(t)
 		holder := earnCredit(t, s, db, p, 10000, "he20", 513)
 		target := issuedPayReady(t, s, p, consultation(t, db, p, "HE20t"), tariff(t, db, "CONSULTATION", "HE20t", 25000))
-		paySessionless(t, s, target.ID, 5000, "CASH", "he20-pay", 513)
+		paySessionless(t, s, target.ID, 5000, "CARD", "he20-pay", 513)
 		if _, e := s.ApplyCredit(target.ID, CreditApplicationRequest{HolderPartyID: holder, Amount: 10000, IdempotencyKey: "he20"}, 513); e != nil {
 			t.Fatal(e)
 		}
@@ -380,8 +380,8 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		p := hePatient(t)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HE22"), tariff(t, db, "CONSULTATION", "HE22", 10000))
-		paySessionless(t, s, inv.ID, 5000, "CASH", "he22a", 514)
-		paySessionless(t, s, inv.ID, 5000, "CASH", "he22b", 514)
+		paySessionless(t, s, inv.ID, 5000, "CARD", "he22a", 514)
+		paySessionless(t, s, inv.ID, 5000, "CARD", "he22b", 514)
 		h1, e := s.ListFinancialHistory(FinancialHistoryFilter{PatientID: p, Page: 1, Limit: 2})
 		if e != nil {
 			t.Fatal(e)
@@ -469,7 +469,7 @@ func TestLOT29F_HE_FinancialStatementMatrix(t *testing.T) {
 		_ = db.Model(&patients.Patient{}).Where("id=?", p).Updates(map[string]any{"telephone": "+2250700003031"})
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HE30"), tariff(t, db, "CONSULTATION", "HE30", 50000))
 		if _, e := s.Pay(inv.ID, PaymentRequest{
-			Amount: 50000, PaymentMethod: "CASH", IdempotencyKey: "he30-pay",
+			Amount: 50000, PaymentMethod: "CARD", IdempotencyKey: "he30-pay",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, DisplayName: "Parent HE30", Phone: "+2250700303030", Relationship: "Parent"},
 		}, 516); e != nil {
 			t.Fatal(e)
@@ -566,7 +566,7 @@ func TestLOT29F_HE_PostgresProjection(t *testing.T) {
 		h1 := earnCredit(t, s, db, p, 10000, "hex01a", 601)
 		invB := issuedPayReady(t, s, p, consultation(t, db, p, "HEX01b"), tariff(t, db, "CONSULTATION", "HEX01b", 50000))
 		if _, e := s.Pay(invB.ID, PaymentRequest{
-			Amount: 50000, PaymentMethod: "CASH", IdempotencyKey: "hex01b-pay",
+			Amount: 50000, PaymentMethod: "CARD", IdempotencyKey: "hex01b-pay",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, DisplayName: "Autre HEX", Phone: "+2250700010101", Relationship: "Ami"},
 		}, 601); e != nil {
 			t.Fatal(e)
@@ -609,7 +609,7 @@ func TestLOT29F_HE_PostgresProjection(t *testing.T) {
 		p := hePatient(t)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HEX03"), tariff(t, db, "CONSULTATION", "HEX03", 30000))
 		for i := 0; i < 6; i++ {
-			paySessionless(t, s, inv.ID, 5000, "CASH", "hex03-"+string(rune('a'+i)), 602)
+			paySessionless(t, s, inv.ID, 5000, "CARD", "hex03-"+string(rune('a'+i)), 602)
 		}
 		keys := []string{}
 		for page := 1; page <= 4; page++ {

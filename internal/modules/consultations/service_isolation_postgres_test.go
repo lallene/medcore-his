@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -22,10 +22,7 @@ import (
 // consultationServiceScopeDB opens an ephemeral schema for F24-01 characterization.
 func consultationServiceScopeDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL consultations ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

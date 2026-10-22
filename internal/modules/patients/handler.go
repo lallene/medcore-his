@@ -42,10 +42,13 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 
+	rows := ToSummaryList(result.Data)
+	applySummaryInsuranceVisibility(rows, canReadInsuranceDetails(c))
+
 	response.SuccessWithMeta(
 		c,
 		"Patients chargés",
-		ToSummaryList(result.Data),
+		rows,
 		map[string]any{
 			"page":       result.Page,
 			"limit":      result.Limit,
@@ -93,7 +96,9 @@ func (h *Handler) FindByID(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, "Patient trouvé", ToResponse(patient))
+	out := ToResponse(patient)
+	applyInsuranceVisibility(&out, canReadInsuranceDetails(c))
+	response.Success(c, "Patient trouvé", out)
 }
 
 // Create godoc
@@ -130,7 +135,9 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	response.Created(c, "Patient créé avec succès", ToResponse(patient))
+	out := ToResponse(patient)
+	applyInsuranceVisibility(&out, canReadInsuranceDetails(c))
+	response.Created(c, "Patient créé avec succès", out)
 }
 
 // Update godoc
@@ -169,6 +176,18 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	visible := canReadInsuranceDetails(c)
+	if !visible {
+		// Caller cannot see the stored insurance details: never let a redacted form overwrite them.
+		current, findErr := h.service.FindByID(id)
+		if findErr != nil {
+			response.Error(c, coreerrors.NotFound("PATIENT"))
+			return
+		}
+		req.TauxCouverture = current.TauxCouverture
+		req.MatriculeAssure = current.MatriculeAssure
+	}
+
 	patient, err := h.service.Update(id, req)
 
 	if err != nil {
@@ -182,7 +201,9 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, "Patient modifié avec succès", ToResponse(patient))
+	out := ToResponse(patient)
+	applyInsuranceVisibility(&out, visible)
+	response.Success(c, "Patient modifié avec succès", out)
 }
 
 // Delete godoc

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -39,10 +39,7 @@ const queuePostgresIsolationConfigError = "TEST_DATABASE_URL connection mode can
 // Never prints DSN / host / credentials.
 func queuePostgres(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL patient_queue ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)

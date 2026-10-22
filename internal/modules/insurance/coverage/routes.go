@@ -9,7 +9,10 @@ import (
 func RegisterRoutes(router *gin.RouterGroup, handler *Handler) {
 	group := router.Group("/insurance/coverages")
 
-	group.GET("", rbac.Permission("insurance.coverage.read"), handler.List)
+	// LOT30-A′: the organisation-wide membership list is a coverage-administration view.
+	// Readers without create/update rights use the patient-scoped route below.
+	group.GET("", rbac.Permission("insurance.coverage.read"),
+		rbac.AnyPermission("insurance.coverage.create", "insurance.coverage.update"), handler.List)
 	group.GET(
 		"/patient/:patientId",
 		rbac.Permission("insurance.coverage.read"),

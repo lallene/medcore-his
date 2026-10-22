@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/authorization"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -177,10 +177,7 @@ func (billingPerformedAct) TableName() string { return "performed_acts" }
 // keep MaxOpenConns>1 valid for concurrent invoice races (LOT27G).
 func billingDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Billing ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	dsn = strings.Replace(dsn, "-pooler", "", 1)
 	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
@@ -296,11 +293,11 @@ func TestPostgresInvoiceSnapshotAntiDuplicateAndPayments(t *testing.T) {
 	if e != nil || invoice.IssuedBy == nil || *invoice.IssuedBy != 43 {
 		t.Fatalf("issue/JWT: %+v %v", invoice, e)
 	}
-	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "LOT12-PAYMENT-001", Payer: PatientPayerRequest()}, 44)
+	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CARD", IdempotencyKey: "LOT12-PAYMENT-001", Payer: PatientPayerRequest()}, 44)
 	if e != nil || invoice.Status != InvoicePartiallyPaid || invoice.BalanceAmount != 10000 {
 		t.Fatalf("partial: %+v %v", invoice, e)
 	}
-	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "LOT12-PAYMENT-001", Payer: PatientPayerRequest()}, 44)
+	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CARD", IdempotencyKey: "LOT12-PAYMENT-001", Payer: PatientPayerRequest()}, 44)
 	if e != nil || invoice.PaidAmount != 10000 {
 		t.Fatalf("retry: %+v %v", invoice, e)
 	}
@@ -314,7 +311,7 @@ func TestPostgresInvoiceSnapshotAntiDuplicateAndPayments(t *testing.T) {
 	if paid.ReceivedBy != 44 {
 		t.Fatalf("received_by=%d", paid.ReceivedBy)
 	}
-	if _, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10001, PaymentMethod: "CASH", IdempotencyKey: "pay-over", Payer: PatientPayerRequest()}, 44); !isConflict(e) {
+	if _, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10001, PaymentMethod: "CARD", IdempotencyKey: "pay-over", Payer: PatientPayerRequest()}, 44); !isConflict(e) {
 		t.Fatalf("overpayment=%v", e)
 	}
 	invoice, e = s.Pay(invoice.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CARD", IdempotencyKey: "pay-final", Payer: PatientPayerRequest()}, 45)
@@ -592,7 +589,7 @@ func TestPostgresConcurrentAllocationAndPayment(t *testing.T) {
 			go func(n int) {
 				defer wg.Done()
 				<-start
-				_, e := s.Pay(x.ID, PaymentRequest{Amount: 20000, PaymentMethod: "CASH", IdempotencyKey: fmt.Sprintf("concurrent-%d", n), Payer: PatientPayerRequest()}, 3)
+				_, e := s.Pay(x.ID, PaymentRequest{Amount: 20000, PaymentMethod: "CARD", IdempotencyKey: fmt.Sprintf("concurrent-%d", n), Payer: PatientPayerRequest()}, 3)
 				errs <- e
 			}(i)
 		}

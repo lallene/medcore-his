@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -24,10 +24,7 @@ const actCatalogIsolationConfigError = "TEST_DATABASE_URL connection mode cannot
 // Never prints DSN / credentials.
 func actCatalogDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL act_catalog ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

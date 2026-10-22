@@ -3,22 +3,19 @@ package ticketing
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func ticketingPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Ticketing ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)

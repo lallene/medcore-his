@@ -148,7 +148,7 @@ func TestLOT29E_C_SessionSummaryMatrix(t *testing.T) {
 	t.Run("SM15_sessionless_excluded", func(t *testing.T) {
 		out := openOn(t, "SM15", 5000, "sm15-o")
 		inv := seedCashInvoice(t, db, "INV-sm15-sl", 5, 9000, 21)
-		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 9000, PaymentMethod: "CASH", IdempotencyKey: "sm15-sl", Payer: billing.PatientPayerRequest()}, 21); e != nil {
+		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 9000, PaymentMethod: "CARD", IdempotencyKey: "sm15-sl", Payer: billing.PatientPayerRequest()}, 21); e != nil {
 			t.Fatal(e)
 		}
 		sum, _ := s.Get(out.Session.ID)

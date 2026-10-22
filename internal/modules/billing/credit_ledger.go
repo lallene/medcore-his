@@ -35,7 +35,7 @@ type CreditLedgerEntry struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
 	HolderPartyID  uint      `gorm:"not null;index;index:idx_credit_holder_patient,priority:1" json:"holderPartyId"`
 	PatientID      uint      `gorm:"not null;index;index:idx_credit_holder_patient,priority:2" json:"patientId"`
-	EntryType      string    `gorm:"size:20;not null;index" json:"entryType"` // CREDIT|APPLY|REFUND
+	EntryType      string    `gorm:"size:20;not null;index;check:billing_credit_ledger_entry_type_valid,entry_type IN ('CREDIT','APPLY','REFUND')" json:"entryType"` // CREDIT|APPLY|REFUND
 	Amount         int64     `gorm:"not null;check:billing_credit_ledger_amount_positive,amount > 0" json:"amount"`
 	SourceType     string    `gorm:"size:40;not null;uniqueIndex:ux_credit_ledger_source" json:"sourceType"`
 	SourceID       uint      `gorm:"not null;uniqueIndex:ux_credit_ledger_source" json:"sourceId"`

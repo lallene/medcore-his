@@ -18,6 +18,9 @@ import (
 var actTypes = map[string]bool{"CONSULTATION": true, "LABORATORY": true, "IMAGING": true, "HOSPITALIZATION": true, "MEDICATION": true, "PERFORMED_ACT": true}
 var paymentMethods = map[string]bool{"CASH": true, "CARD": true, "MOBILE_MONEY": true, "BANK_TRANSFER": true, "CHECK": true, "OTHER": true}
 
+// CodePaymentCashSessionRequired rejects sessionless CASH collection (LOT30-A′).
+const CodePaymentCashSessionRequired = "PAYMENT_CASH_SESSION_REQUIRED"
+
 // ReceiptIssuer creates/recovers the canonical cash_receipts row for a billing payment (same TX).
 type ReceiptIssuer func(tx *gorm.DB, payment *Payment, invoice *Invoice, paidBefore, balanceAfter int64, user uint) error
 
@@ -355,15 +358,10 @@ func (s *Service) CreateInvoice(req CreateInvoiceRequest, user uint) (*Invoice, 
 			if duplicate > 0 {
 				return coreerrors.Conflict("Cet acte est déjà facturé")
 			}
-			var tariff Tariff
-			if e := tx.Where("id=? AND is_active AND effective_from<=? AND (effective_to IS NULL OR effective_to>=?)", input.TariffID, time.Now(), time.Now()).First(&tariff).Error; e != nil {
-				return coreerrors.Conflict("Tarif inactif ou non applicable")
-			}
-			if tariff.ActType != typ {
-				return coreerrors.Conflict("Le tarif ne correspond pas au type d'acte")
-			}
-			if tariff.ReferenceID != nil && *tariff.ReferenceID != a.tariffReferenceID {
-				return coreerrors.Conflict("Le tarif ne correspond pas au référentiel de cet acte")
+			// LOT30-A′: tariffId must belong to the server-computed eligible set for this occurrence.
+			tariff, e := resolveRequestedTariff(tx, input.TariffID, typ, a.tariffReferenceID, time.Now())
+			if e != nil {
+				return e
 			}
 			gross := round(a.quantity * float64(tariff.UnitPrice))
 			resolution, auth, insurance, pending, e := s.financialCoverage(tx, req.PatientID, a, gross)
@@ -739,6 +737,13 @@ func (s *Service) PayInTransaction(tx *gorm.DB, id uint, req PaymentRequest, use
 		return nil, e
 	}
 
+	// LOT30-A′: physical cash must enter an OPEN CashSession (cash module path) so it is
+	// part of ExpectedCash. Historical sessionless CASH rows stay readable / replayable above.
+	if method == "CASH" && sessionID == nil {
+		return nil, coreerrors.New(409, CodePaymentCashSessionRequired,
+			"Un encaissement espèces doit être enregistré dans une session de caisse ouverte", nil)
+	}
+
 	if x.Status != InvoiceIssued && x.Status != InvoicePartiallyPaid {
 		return nil, coreerrors.Conflict("La facture n'accepte pas de paiement")
 	}
@@ -962,17 +967,11 @@ func (s *Service) BillableActs(patient uint) ([]BillableAct, error) {
 		if e := s.db.Model(&InvoiceLine{}).Where("billable_key=? AND is_active", key).Count(&billed).Error; e != nil {
 			return nil, e
 		}
-		var tariffs []Tariff
-		q := s.db.Where("act_type=? AND is_active AND effective_from<=? AND (effective_to IS NULL OR effective_to>=?)", r.ActType, now, now)
-		if r.TariffReferenceID > 0 {
-			q = q.Where("reference_id=? OR reference_id IS NULL", r.TariffReferenceID).Order("reference_id NULLS LAST,effective_from DESC")
-		} else {
-			q = q.Where("reference_id IS NULL").Order("effective_from DESC")
-		}
-		if e := q.Limit(1).Find(&tariffs).Error; e != nil {
+		tariffs, e := eligibleTariffs(s.db, r.ActType, r.TariffReferenceID, now)
+		if e != nil {
 			return nil, e
 		}
-		item := BillableAct{ActType: r.ActType, ReferenceID: r.ReferenceID, BillableKey: key, Label: r.Label, Date: r.Date.Format(time.RFC3339), Quantity: r.Quantity, AlreadyBilled: billed > 0}
+		item := BillableAct{ActType: r.ActType, ReferenceID: r.ReferenceID, BillableKey: key, Label: r.Label, Date: r.Date.Format(time.RFC3339), Quantity: r.Quantity, AlreadyBilled: billed > 0, EligibleTariffs: tariffs}
 		if len(tariffs) > 0 {
 			item.Tariff = &tariffs[0]
 		}

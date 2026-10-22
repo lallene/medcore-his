@@ -198,13 +198,13 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paySessionless(t, s, inv.ID, 5000, "CASH", "cn16-pay", 97)
+		paySessionless(t, s, inv.ID, 5000, "CARD", "cn16-pay", 97)
 		out, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: inv.PatientAmount, Reason: "Sur partiel", IdempotencyKey: "cn16"}, 97)
 		if e != nil || out.CustomerCreditAmount != 5000 {
 			t.Fatalf("CN16 want credit 5000 got %+v %v", out, e)
 		}
 		inv2 := issuedPayReady(t, s, p, consultation(t, db, p, "Médecine-2"), tariff(t, db, "CONSULTATION", "CONS-CN17", 15000))
-		paySessionless(t, s, inv2.ID, inv2.BalanceAmount, "CASH", "cn17-pay", 97)
+		paySessionless(t, s, inv2.ID, inv2.BalanceAmount, "CARD", "cn17-pay", 97)
 		out2, e := s.IssueCreditNote(inv2.ID, CreditNoteRequest{Amount: inv2.PatientAmount, Reason: "Sur payée", IdempotencyKey: "cn17"}, 97)
 		if e != nil || out2.CustomerCreditAmount != inv2.PatientAmount {
 			t.Fatalf("CN17 want credit %d got %+v %v", inv2.PatientAmount, out2, e)
@@ -331,7 +331,7 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: -1, PaymentMethod: "CASH", IdempotencyKey: "cn32", Payer: PatientPayerRequest()}, 102); !isBadRequest(e) {
+		if _, e := s.Pay(inv.ID, PaymentRequest{Amount: -1, PaymentMethod: "CARD", IdempotencyKey: "cn32", Payer: PatientPayerRequest()}, 102); !isBadRequest(e) {
 			t.Fatalf("CN32 %v", e)
 		}
 		if e := db.Create(&Payment{InvoiceID: inv.ID, Amount: -5, PaymentMethod: "CASH", IdempotencyKey: "cn32-db", PaidAt: time.Now(), ReceivedBy: 1}).Error; e == nil {
@@ -344,7 +344,7 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 3000, "CASH", "cn33-pay", 103)
+		paid := paySessionless(t, s, inv.ID, 3000, "CARD", "cn33-pay", 103)
 		rec := receiptByPayment(t, db, paid.Payments[0].ID)
 		num := rec.ReceiptNumber
 		if _, e := s.ReversePayment(paid.Payments[0].ID, ReversePaymentRequest{Reason: "Puis avoir possible", IdempotencyKey: "cn33-rev"}, 103); e != nil {
@@ -396,7 +396,7 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, payErr = s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CASH", IdempotencyKey: "cn37-pay", Payer: PatientPayerRequest()}, 105)
+			_, payErr = s.Pay(inv.ID, PaymentRequest{Amount: inv.BalanceAmount, PaymentMethod: "CARD", IdempotencyKey: "cn37-pay", Payer: PatientPayerRequest()}, 105)
 		}()
 		go func() {
 			defer wg.Done()
@@ -431,7 +431,7 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, inv.BalanceAmount, "CASH", "cn38-pay", 106)
+		paid := paySessionless(t, s, inv.ID, inv.BalanceAmount, "CARD", "cn38-pay", 106)
 		out, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: inv.PatientAmount, Reason: "Crédit créé", IdempotencyKey: "cn38-cn"}, 106)
 		if e != nil || out.CustomerCreditAmount != inv.PatientAmount {
 			t.Fatalf("CN38 cn %+v %v", out, e)
@@ -494,7 +494,7 @@ func TestLOT29F_B_CreditNoteMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 4000, "CASH", "cn41-pay", 109)
+		paid := paySessionless(t, s, inv.ID, 4000, "CARD", "cn41-pay", 109)
 		sid := uint(77)
 		if e := db.Model(&Payment{}).Where("id=?", paid.Payments[0].ID).Update("cash_session_id", sid).Error; e != nil {
 			t.Fatal(e)

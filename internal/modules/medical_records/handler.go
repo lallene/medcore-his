@@ -52,6 +52,9 @@ func (h *Handler) GetOrCreateByPatientID(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if !canReadInsuranceDetails(c) {
+		redactRecordInsurance(record)
+	}
 
 	c.JSON(http.StatusOK, record)
 }
@@ -79,6 +82,9 @@ func (h *Handler) GetOverview(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "dossier médical introuvable"})
 		return
+	}
+	if !canReadInsuranceDetails(c) {
+		redactRecordInsurance(&overview.MedicalRecord)
 	}
 
 	c.JSON(http.StatusOK, overview)
@@ -353,6 +359,9 @@ func (h *Handler) GetPatientMedicalSummary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if !canReadInsuranceDetails(c) {
+		redactRecordInsurance(&summary.MedicalRecord)
+	}
 
 	c.JSON(http.StatusOK, summary)
 }
@@ -374,6 +383,10 @@ func (h *Handler) GetCommonMedicalRecord(c *gin.Context) {
 		return
 	}
 
+	if !canReadInsuranceDetails(c) {
+		redactRecordInsurance(&record.MedicalRecord)
+		redactProfileInsurance(record.Profile)
+	}
 	c.JSON(http.StatusOK, record)
 }
 
@@ -399,6 +412,11 @@ func (h *Handler) UpdateCommonMedicalRecord(c *gin.Context) {
 		return
 	}
 
+	insuranceVisible := canReadInsuranceDetails(c)
+	if !insuranceVisible && req.Profile != nil {
+		// Redacted readers must not overwrite the stored insurance number.
+		req.Profile.InsuranceNumber = nil
+	}
 	record, err := h.service.UpdateCommonMedicalRecord(
 		uint(patientID),
 		req,
@@ -420,6 +438,10 @@ func (h *Handler) UpdateCommonMedicalRecord(c *gin.Context) {
 		return
 	}
 
+	if !insuranceVisible {
+		redactRecordInsurance(&record.MedicalRecord)
+		redactProfileInsurance(record.Profile)
+	}
 	c.JSON(http.StatusOK, record)
 }
 
@@ -468,5 +490,9 @@ func (h *Handler) GetPatientSummary(c *gin.Context) {
 		return
 	}
 
+	if !canReadInsuranceDetails(c) {
+		summary.Patient.CoverageRate = 0
+		summary.Patient.InsuranceNumber = ""
+	}
 	c.JSON(http.StatusOK, summary)
 }

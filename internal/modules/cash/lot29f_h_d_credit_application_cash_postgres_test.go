@@ -68,7 +68,7 @@ func TestLOT29F_HD_CashIsolation(t *testing.T) {
 		bill := billing.NewService(db)
 		earn := seedCashInvoice(t, db, "INV-HD10-E", 502, 40000, 502)
 		if _, e := bill.Pay(earn.ID, billing.PaymentRequest{
-			Amount: 40000, PaymentMethod: "CASH", IdempotencyKey: "hd10-earn",
+			Amount: 40000, PaymentMethod: "CARD", IdempotencyKey: "hd10-earn",
 			Payer: billing.PatientPayerRequest(),
 		}, 502); e != nil {
 			t.Fatal(e)

@@ -62,7 +62,7 @@ type Refund struct {
 	HolderPartyID uint `gorm:"not null;index;index:idx_refund_holder_patient,priority:1" json:"holderPartyId"`
 
 	Amount int64  `gorm:"not null;check:billing_refund_amount_positive,amount > 0" json:"amount"`
-	Status string `gorm:"size:20;not null;index" json:"status"`
+	Status string `gorm:"size:20;not null;index;check:billing_refund_status_valid,status IN ('REQUESTED','APPROVED','REJECTED','CANCELLED','EXECUTED')" json:"status"`
 
 	// RefundNumber is the official RMB-YYYY-XXXXXX assigned only at successful EXECUTED (LOT29F-I-C).
 	// Empty until execution; immutable thereafter. Unique among non-empty values (partial index).

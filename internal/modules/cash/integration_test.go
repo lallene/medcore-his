@@ -3,7 +3,6 @@ package cash
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -35,10 +35,7 @@ func (cashUser) TableName() string { return "users" }
 // DSN query search_path is not reliable with pgx (same as billingDB).
 func cashDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	d := os.Getenv("TEST_DATABASE_URL")
-	if d == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Cash ignorés")
-	}
+	d := pgtest.DSN(t)
 	d = strings.Replace(d, "-pooler", "", 1)
 	admin, e := gorm.Open(postgres.Open(d), &gorm.Config{})
 	if e != nil {

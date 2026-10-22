@@ -33,7 +33,7 @@ type RefundExecution struct {
 	ID       uint `gorm:"primaryKey" json:"id"`
 	RefundID uint `gorm:"not null;uniqueIndex" json:"refundId"`
 
-	Method string `gorm:"size:30;not null;index" json:"method"` // CASH|CARD|MOBILE_MONEY|TRANSFER
+	Method string `gorm:"size:30;not null;index;check:billing_refund_execution_method_valid,method IN ('CASH','CARD','MOBILE_MONEY','TRANSFER')" json:"method"` // CASH|CARD|MOBILE_MONEY|TRANSFER
 
 	ExecutedBy uint      `gorm:"not null;index" json:"executedBy"`
 	ExecutedAt time.Time `gorm:"not null;index" json:"executedAt"`

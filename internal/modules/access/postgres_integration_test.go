@@ -3,7 +3,6 @@ package access
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,16 +11,14 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func accessDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent")
-	}
+	dsn := pgtest.DSN(t)
 	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if e != nil {
 		t.Fatal(e)

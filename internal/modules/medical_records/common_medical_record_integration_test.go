@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lallene/medcore-his/backend/internal/core/rbac"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
@@ -23,10 +23,7 @@ import (
 
 func integrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL d'intégrité ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("connexion PostgreSQL de test: %v", err)

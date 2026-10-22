@@ -30,7 +30,7 @@ const (
 // Not a Patient, not a cashier, not an insurance company, not a CRM.
 type FinancialParty struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
-	Kind        string `gorm:"size:20;not null;index" json:"kind"`
+	Kind        string `gorm:"size:20;not null;index;check:billing_financial_party_kind_valid,kind IN ('INDIVIDUAL','ORGANIZATION')" json:"kind"`
 	DisplayName string `gorm:"size:250;not null" json:"displayName"`
 	Phone       string `gorm:"size:50" json:"phone,omitempty"`
 	// PatientID set when this party represents that patient as financial holder.
@@ -111,124 +111,107 @@ func boolStr(v bool) string {
 	return "0"
 }
 
-// PreviewPayerFingerprint validates payer payload and returns fingerprint without creating parties.
-func PreviewPayerFingerprint(tx *gorm.DB, patientID uint, req *PayerRequest) (string, error) {
-	if req == nil {
-		return "", coreerrors.BadRequest("Payeur obligatoire pour un nouvel encaissement")
-	}
-	mode := strings.ToUpper(strings.TrimSpace(req.Mode))
-	switch mode {
-	case PayerModePatient:
-		var patient struct {
-			ID                      uint
-			Nom, Prenoms, Telephone string
-		}
-		if e := tx.Table("patients").Select("id,nom,prenoms,telephone").Where("id=?", patientID).Scan(&patient).Error; e != nil {
-			return "", e
-		}
-		if patient.ID == 0 {
-			return "", coreerrors.NotFound("PATIENT")
-		}
-		name := strings.TrimSpace(patient.Prenoms + " " + patient.Nom)
-		if name == "" {
-			name = strings.TrimSpace(patient.Nom)
-		}
-		if name == "" {
-			return "", coreerrors.Conflict("Identité patient insuffisante pour le payeur")
-		}
-		phone, err := NormalizePayerPhone(patient.Telephone)
-		if err != nil {
-			return "", err
-		}
-		return payerFingerprint(ResolvedPayerSnapshot{
-			Kind: PartyKindIndividual, DisplayName: name, Phone: phone,
-			IsPatient: true, Provenance: PayerProvenanceCaptured,
-		}), nil
-	case PayerModeIndividual:
-		name, err := NormalizePayerName(req.DisplayName)
-		if err != nil {
-			return "", err
-		}
-		phone, err := NormalizePayerPhone(req.Phone)
-		if err != nil {
-			return "", err
-		}
-		if phone == "" {
-			return "", coreerrors.BadRequest("Téléphone du payeur obligatoire")
-		}
-		rel, err := NormalizePayerRelationship(req.Relationship)
-		if err != nil {
-			return "", err
-		}
-		if rel == "" {
-			return "", coreerrors.BadRequest("Lien avec le patient obligatoire")
-		}
-		if req.PartyID != nil && *req.PartyID > 0 {
-			var party FinancialParty
-			if e := tx.First(&party, *req.PartyID).Error; e != nil {
-				if errors.Is(e, gorm.ErrRecordNotFound) {
-					return "", coreerrors.NotFound("FINANCIAL_PARTY")
-				}
-				return "", e
-			}
-			if party.Kind != PartyKindIndividual {
-				return "", coreerrors.Conflict("Type de payeur incohérent avec la fiche référencée")
-			}
-		}
-		return payerFingerprint(ResolvedPayerSnapshot{
-			Kind: PartyKindIndividual, DisplayName: name, Phone: phone, Relationship: rel,
-			IsPatient: false, Provenance: PayerProvenanceCaptured,
-		}), nil
-	case PayerModeOrganization:
-		name, err := NormalizePayerName(req.DisplayName)
-		if err != nil {
-			return "", err
-		}
-		phone, err := NormalizePayerPhone(req.Phone)
-		if err != nil {
-			return "", err
-		}
-		if req.PartyID != nil && *req.PartyID > 0 {
-			var party FinancialParty
-			if e := tx.First(&party, *req.PartyID).Error; e != nil {
-				if errors.Is(e, gorm.ErrRecordNotFound) {
-					return "", coreerrors.NotFound("FINANCIAL_PARTY")
-				}
-				return "", e
-			}
-			if party.Kind != PartyKindOrganization {
-				return "", coreerrors.Conflict("Le payeur référencé n'est pas une organisation")
-			}
-		}
-		return payerFingerprint(ResolvedPayerSnapshot{
-			Kind: PartyKindOrganization, DisplayName: name, Phone: phone,
-			IsPatient: false, Provenance: PayerProvenanceCaptured,
-		}), nil
-	default:
-		return "", coreerrors.BadRequest("Type de payeur non supporté")
-	}
+// Payer authority conflict codes (LOT30-A′).
+const (
+	CodePayerPartyMismatch         = "PAYER_PARTY_MISMATCH"
+	CodePayerPartyPatientMismatch  = "PAYER_PARTY_PATIENT_MISMATCH"
+	CodePayerPartyRelationRequired = "PAYER_PARTY_RELATION_REQUIRED"
+)
+
+func payerConflict(code, message string) error {
+	return coreerrors.New(409, code, message, nil)
 }
 
-// ResolvePayerForPayment builds/loads FinancialParty and immutable snapshot for a NEW payment.
-// patientID is the invoice patient (clinical subject); never inferred as payer without Mode=PATIENT.
-func ResolvePayerForPayment(tx *gorm.DB, patientID uint, req *PayerRequest) (*ResolvedPayerSnapshot, error) {
+// validatedPayer is the server-validated payer identity before persistence.
+// existing != nil → snapshot comes from the FinancialParty master (server authority);
+// existing == nil → a new third-party FinancialParty will be created from client values.
+type validatedPayer struct {
+	mode     string
+	existing *FinancialParty
+	snap     ResolvedPayerSnapshot
+}
+
+// validatePayer applies payer authority rules without creating rows (LOT29F-H-B, LOT30-A′):
+//   - PATIENT: identity from the invoice patient; a supplied partyId must be that patient's party.
+//   - INDIVIDUAL / ORGANIZATION with partyId: party must exist with the same kind; display name /
+//     phone come from the master and conflicting client values are rejected (never rewritten).
+//     An INDIVIDUAL party must already be related to this patient (prior captured payment or
+//     credit for the same patient); an ORGANIZATION may pay for several patients.
+//   - Without partyId: client identity creates a new party (no fuzzy merge on name/phone).
+func validatePayer(tx *gorm.DB, patientID uint, req *PayerRequest) (*validatedPayer, error) {
 	if req == nil {
 		return nil, coreerrors.BadRequest("Payeur obligatoire pour un nouvel encaissement")
 	}
 	mode := strings.ToUpper(strings.TrimSpace(req.Mode))
+	partyID := uint(0)
+	if req.PartyID != nil {
+		partyID = *req.PartyID
+	}
 	switch mode {
 	case PayerModePatient:
-		return resolvePatientAsPayer(tx, patientID)
+		return validatePatientPayer(tx, patientID, partyID)
 	case PayerModeIndividual:
-		return resolveThirdPartyIndividual(tx, patientID, req)
+		rel, err := NormalizePayerRelationship(req.Relationship)
+		if err != nil {
+			return nil, err
+		}
+		if rel == "" {
+			return nil, coreerrors.BadRequest("Lien avec le patient obligatoire")
+		}
+		out := &validatedPayer{mode: mode, snap: ResolvedPayerSnapshot{
+			Kind: PartyKindIndividual, Relationship: rel, Provenance: PayerProvenanceCaptured,
+		}}
+		if partyID > 0 {
+			party, err := loadExistingThirdParty(tx, partyID, PartyKindIndividual, patientID, req)
+			if err != nil {
+				return nil, err
+			}
+			out.existing = party
+			out.snap.DisplayName, out.snap.Phone = party.DisplayName, party.Phone
+			return out, nil
+		}
+		name, err := NormalizePayerName(req.DisplayName)
+		if err != nil {
+			return nil, err
+		}
+		phone, err := NormalizePayerPhone(req.Phone)
+		if err != nil {
+			return nil, err
+		}
+		if phone == "" {
+			return nil, coreerrors.BadRequest("Téléphone du payeur obligatoire")
+		}
+		out.snap.DisplayName, out.snap.Phone = name, phone
+		return out, nil
 	case PayerModeOrganization:
-		return resolveOrganizationPayer(tx, req)
+		out := &validatedPayer{mode: mode, snap: ResolvedPayerSnapshot{
+			Kind: PartyKindOrganization, Provenance: PayerProvenanceCaptured,
+		}}
+		if partyID > 0 {
+			party, err := loadExistingThirdParty(tx, partyID, PartyKindOrganization, patientID, req)
+			if err != nil {
+				return nil, err
+			}
+			out.existing = party
+			out.snap.DisplayName, out.snap.Phone = party.DisplayName, party.Phone
+			return out, nil
+		}
+		name, err := NormalizePayerName(req.DisplayName)
+		if err != nil {
+			return nil, err
+		}
+		phone, err := NormalizePayerPhone(req.Phone)
+		if err != nil {
+			return nil, err
+		}
+		out.snap.DisplayName, out.snap.Phone = name, phone
+		return out, nil
 	default:
 		return nil, coreerrors.BadRequest("Type de payeur non supporté")
 	}
 }
 
-func resolvePatientAsPayer(tx *gorm.DB, patientID uint) (*ResolvedPayerSnapshot, error) {
+func validatePatientPayer(tx *gorm.DB, patientID, partyID uint) (*validatedPayer, error) {
 	var patient struct {
 		ID                      uint
 		Nom, Prenoms, Telephone string
@@ -238,6 +221,18 @@ func resolvePatientAsPayer(tx *gorm.DB, patientID uint) (*ResolvedPayerSnapshot,
 	}
 	if patient.ID == 0 {
 		return nil, coreerrors.NotFound("PATIENT")
+	}
+	if partyID > 0 {
+		var party FinancialParty
+		if e := tx.First(&party, partyID).Error; e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return nil, coreerrors.NotFound("FINANCIAL_PARTY")
+			}
+			return nil, e
+		}
+		if party.PatientID == nil || *party.PatientID != patientID {
+			return nil, payerConflict(CodePayerPartyPatientMismatch, "Ce titulaire financier ne représente pas le patient de la facture")
+		}
 	}
 	name := strings.TrimSpace(patient.Prenoms + " " + patient.Nom)
 	if name == "" {
@@ -250,17 +245,100 @@ func resolvePatientAsPayer(tx *gorm.DB, patientID uint) (*ResolvedPayerSnapshot,
 	if err != nil {
 		return nil, err
 	}
-	party, err := ensurePatientParty(tx, patientID, name, phone)
+	return &validatedPayer{mode: PayerModePatient, snap: ResolvedPayerSnapshot{
+		Kind: PartyKindIndividual, DisplayName: name, Phone: phone,
+		IsPatient: true, Provenance: PayerProvenanceCaptured,
+	}}, nil
+}
+
+// loadExistingThirdParty loads a referenced INDIVIDUAL / ORGANIZATION party and enforces
+// kind, patient-representation, client-value consistency and (INDIVIDUAL) patient relation.
+func loadExistingThirdParty(tx *gorm.DB, partyID uint, kind string, patientID uint, req *PayerRequest) (*FinancialParty, error) {
+	var party FinancialParty
+	if e := tx.First(&party, partyID).Error; e != nil {
+		if errors.Is(e, gorm.ErrRecordNotFound) {
+			return nil, coreerrors.NotFound("FINANCIAL_PARTY")
+		}
+		return nil, e
+	}
+	if party.Kind != kind {
+		if kind == PartyKindOrganization {
+			return nil, coreerrors.Conflict("Le payeur référencé n'est pas une organisation")
+		}
+		return nil, coreerrors.Conflict("Type de payeur incohérent avec la fiche référencée")
+	}
+	if party.PatientID != nil {
+		return nil, coreerrors.Conflict("Ce payeur représente déjà le patient — utilisez le mode patient")
+	}
+	if name := strings.TrimSpace(req.DisplayName); name != "" && !strings.EqualFold(name, strings.TrimSpace(party.DisplayName)) {
+		return nil, payerConflict(CodePayerPartyMismatch, "Le nom saisi ne correspond pas au titulaire financier référencé")
+	}
+	if phone := strings.TrimSpace(req.Phone); phone != "" && phone != strings.TrimSpace(party.Phone) {
+		return nil, payerConflict(CodePayerPartyMismatch, "Le téléphone saisi ne correspond pas au titulaire financier référencé")
+	}
+	if kind == PartyKindIndividual {
+		related, err := partyRelatedToPatient(tx, party.ID, patientID)
+		if err != nil {
+			return nil, err
+		}
+		if !related {
+			return nil, payerConflict(CodePayerPartyRelationRequired, "Ce payeur n'a aucune relation financière avec ce patient")
+		}
+	}
+	return &party, nil
+}
+
+// partyRelatedToPatient: a captured payment for this patient's invoices, or credit held for this patient.
+func partyRelatedToPatient(tx *gorm.DB, partyID, patientID uint) (bool, error) {
+	var n int64
+	if e := tx.Raw(`
+		SELECT COUNT(*) FROM billing_payments p
+		JOIN billing_invoices i ON i.id = p.invoice_id
+		WHERE p.payer_party_id = ? AND p.payer_provenance = ? AND i.patient_id = ?
+	`, partyID, PayerProvenanceCaptured, patientID).Scan(&n).Error; e != nil {
+		return false, e
+	}
+	if n > 0 {
+		return true, nil
+	}
+	if e := tx.Model(&CreditLedgerEntry{}).Where("holder_party_id=? AND patient_id=?", partyID, patientID).Count(&n).Error; e != nil {
+		return false, e
+	}
+	return n > 0, nil
+}
+
+// PreviewPayerFingerprint validates payer payload and returns fingerprint without creating parties.
+func PreviewPayerFingerprint(tx *gorm.DB, patientID uint, req *PayerRequest) (string, error) {
+	v, err := validatePayer(tx, patientID, req)
+	if err != nil {
+		return "", err
+	}
+	return payerFingerprint(v.snap), nil
+}
+
+// ResolvePayerForPayment builds/loads FinancialParty and immutable snapshot for a NEW payment.
+// patientID is the invoice patient (clinical subject); never inferred as payer without Mode=PATIENT.
+func ResolvePayerForPayment(tx *gorm.DB, patientID uint, req *PayerRequest) (*ResolvedPayerSnapshot, error) {
+	v, err := validatePayer(tx, patientID, req)
 	if err != nil {
 		return nil, err
 	}
-	snap := ResolvedPayerSnapshot{
-		PartyID:     party.ID,
-		Kind:        PartyKindIndividual,
-		DisplayName: name,
-		Phone:       phone,
-		IsPatient:   true,
-		Provenance:  PayerProvenanceCaptured,
+	snap := v.snap
+	switch {
+	case v.mode == PayerModePatient:
+		party, err := ensurePatientParty(tx, patientID, snap.DisplayName, snap.Phone)
+		if err != nil {
+			return nil, err
+		}
+		snap.PartyID = party.ID
+	case v.existing != nil:
+		snap.PartyID = v.existing.ID
+	default:
+		party := FinancialParty{Kind: snap.Kind, DisplayName: snap.DisplayName, Phone: snap.Phone}
+		if e := tx.Create(&party).Error; e != nil {
+			return nil, e
+		}
+		snap.PartyID = party.ID
 	}
 	snap.Fingerprint = payerFingerprint(snap)
 	return &snap, nil
@@ -296,95 +374,6 @@ func ensurePatientParty(tx *gorm.DB, patientID uint, name, phone string) (*Finan
 		if load := tx.Where("patient_id=?", patientID).First(&raced).Error; load == nil {
 			return &raced, nil
 		}
-		return nil, e
-	}
-	return &party, nil
-}
-
-func resolveThirdPartyIndividual(tx *gorm.DB, patientID uint, req *PayerRequest) (*ResolvedPayerSnapshot, error) {
-	_ = patientID // association is via relationship text only in H-B
-	name, err := NormalizePayerName(req.DisplayName)
-	if err != nil {
-		return nil, err
-	}
-	phone, err := NormalizePayerPhone(req.Phone)
-	if err != nil {
-		return nil, err
-	}
-	if phone == "" {
-		return nil, coreerrors.BadRequest("Téléphone du payeur obligatoire")
-	}
-	rel, err := NormalizePayerRelationship(req.Relationship)
-	if err != nil {
-		return nil, err
-	}
-	if rel == "" {
-		return nil, coreerrors.BadRequest("Lien avec le patient obligatoire")
-	}
-	party, err := loadOrCreateParty(tx, req.PartyID, PartyKindIndividual, name, phone)
-	if err != nil {
-		return nil, err
-	}
-	if party.PatientID != nil {
-		return nil, coreerrors.Conflict("Ce payeur représente déjà le patient — utilisez le mode patient")
-	}
-	snap := ResolvedPayerSnapshot{
-		PartyID:      party.ID,
-		Kind:         PartyKindIndividual,
-		DisplayName:  name,
-		Phone:        phone,
-		Relationship: rel,
-		IsPatient:    false,
-		Provenance:   PayerProvenanceCaptured,
-	}
-	snap.Fingerprint = payerFingerprint(snap)
-	return &snap, nil
-}
-
-func resolveOrganizationPayer(tx *gorm.DB, req *PayerRequest) (*ResolvedPayerSnapshot, error) {
-	name, err := NormalizePayerName(req.DisplayName)
-	if err != nil {
-		return nil, err
-	}
-	phone, err := NormalizePayerPhone(req.Phone)
-	if err != nil {
-		return nil, err
-	}
-	party, err := loadOrCreateParty(tx, req.PartyID, PartyKindOrganization, name, phone)
-	if err != nil {
-		return nil, err
-	}
-	if party.Kind != PartyKindOrganization {
-		return nil, coreerrors.Conflict("Le payeur référencé n'est pas une organisation")
-	}
-	snap := ResolvedPayerSnapshot{
-		PartyID:     party.ID,
-		Kind:        PartyKindOrganization,
-		DisplayName: name,
-		Phone:       phone,
-		IsPatient:   false,
-		Provenance:  PayerProvenanceCaptured,
-	}
-	snap.Fingerprint = payerFingerprint(snap)
-	return &snap, nil
-}
-
-func loadOrCreateParty(tx *gorm.DB, partyID *uint, kind, name, phone string) (*FinancialParty, error) {
-	if partyID != nil && *partyID > 0 {
-		var party FinancialParty
-		if e := tx.First(&party, *partyID).Error; e != nil {
-			if errors.Is(e, gorm.ErrRecordNotFound) {
-				return nil, coreerrors.NotFound("FINANCIAL_PARTY")
-			}
-			return nil, e
-		}
-		if party.Kind != kind {
-			return nil, coreerrors.Conflict("Type de payeur incohérent avec la fiche référencée")
-		}
-		return &party, nil
-	}
-	party := FinancialParty{Kind: kind, DisplayName: name, Phone: phone}
-	if e := tx.Create(&party).Error; e != nil {
 		return nil, e
 	}
 	return &party, nil

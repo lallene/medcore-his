@@ -47,7 +47,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, inv.BalanceAmount, "CASH", "rv01-pay", 70)
+		paid := paySessionless(t, s, inv.ID, inv.BalanceAmount, "CARD", "rv01-pay", 70)
 		payID := paid.Payments[0].ID
 		out, e := s.ReversePayment(payID, ReversePaymentRequest{Reason: "Erreur de saisie", IdempotencyKey: "rv01-rev"}, 70)
 		if e != nil {
@@ -77,7 +77,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		a := paySessionless(t, s, inv.ID, 8000, "CASH", "rv10a", 71)
+		a := paySessionless(t, s, inv.ID, 8000, "CARD", "rv10a", 71)
 		b := paySessionless(t, s, inv.ID, 12000, "CARD", "rv10b", 71)
 		idA, idB := a.Payments[0].ID, b.Payments[1].ID
 
@@ -97,7 +97,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
 		insBefore, patientBefore := inv.InsuranceAmount, inv.PatientAmount
-		paid := paySessionless(t, s, inv.ID, 5000, "CASH", "rv14-pay", 73)
+		paid := paySessionless(t, s, inv.ID, 5000, "CARD", "rv14-pay", 73)
 		out, e := s.ReversePayment(paid.Payments[0].ID, ReversePaymentRequest{Reason: "Correction assurance", IdempotencyKey: "rv14"}, 73)
 		if e != nil {
 			t.Fatal(e)
@@ -112,7 +112,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 7000, "CASH", "rv15-pay", 74)
+		paid := paySessionless(t, s, inv.ID, 7000, "CARD", "rv15-pay", 74)
 		if _, e := s.ReversePayment(paid.Payments[0].ID, ReversePaymentRequest{Reason: "Recouvrement", IdempotencyKey: "rv15"}, 74); e != nil {
 			t.Fatal(e)
 		}
@@ -127,7 +127,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 4000, "CASH", "rv16-pay", 75)
+		paid := paySessionless(t, s, inv.ID, 4000, "CARD", "rv16-pay", 75)
 		req := ReversePaymentRequest{Reason: "Motif stable", IdempotencyKey: "rv16-key"}
 		first, e := s.ReversePayment(paid.Payments[0].ID, req, 75)
 		if e != nil {
@@ -150,7 +150,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 3000, "CASH", "rv18-pay", 76)
+		paid := paySessionless(t, s, inv.ID, 3000, "CARD", "rv18-pay", 76)
 		if _, e := s.ReversePayment(paid.Payments[0].ID, ReversePaymentRequest{Reason: "Premier", IdempotencyKey: "rv18a"}, 76); e != nil {
 			t.Fatal(e)
 		}
@@ -170,7 +170,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 6000, "CASH", "rv19-pay", 77)
+		paid := paySessionless(t, s, inv.ID, 6000, "CARD", "rv19-pay", 77)
 		payID := paid.Payments[0].ID
 		start := make(chan struct{})
 		errs := make(chan error, 2)
@@ -211,7 +211,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 5000, "CASH", "rv20-pay", 78)
+		paid := paySessionless(t, s, inv.ID, 5000, "CARD", "rv20-pay", 78)
 		payID := paid.Payments[0].ID
 		start := make(chan struct{})
 		errs := make(chan error, 2)
@@ -251,7 +251,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, inv.BalanceAmount, "CASH", "rv21-pay", 79)
+		paid := paySessionless(t, s, inv.ID, inv.BalanceAmount, "CARD", "rv21-pay", 79)
 		if _, e := s.Cancel(inv.ID, "avant reverse", 79); !isConflict(e) {
 			t.Fatal("RV21 cancel while paid should fail")
 		}
@@ -269,7 +269,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 2000, "CASH", "rv22-pay", 80)
+		paid := paySessionless(t, s, inv.ID, 2000, "CARD", "rv22-pay", 80)
 		gin.SetMode(gin.TestMode)
 		h := NewHandler(s)
 		deny := gin.New()
@@ -312,7 +312,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 2500, "CASH", "rv24-pay", 81)
+		paid := paySessionless(t, s, inv.ID, 2500, "CARD", "rv24-pay", 81)
 		req := ReversePaymentRequest{Reason: "Timeline", IdempotencyKey: "rv24"}
 		if _, e := s.ReversePayment(paid.Payments[0].ID, req, 81); e != nil {
 			t.Fatal(e)
@@ -360,7 +360,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 4500, "CASH", "rv28-pay", 84)
+		paid := paySessionless(t, s, inv.ID, 4500, "CARD", "rv28-pay", 84)
 		payID := paid.Payments[0].ID
 		beforePaid, beforeBal, beforeStatus := paid.PaidAmount, paid.BalanceAmount, paid.Status
 		e := db.Transaction(func(tx *gorm.DB) error {
@@ -406,7 +406,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 5000, "CASH", "rv30-pay", 86)
+		paid := paySessionless(t, s, inv.ID, 5000, "CARD", "rv30-pay", 86)
 		sid := uint(99)
 		if e := db.Model(&Payment{}).Where("id=?", paid.Payments[0].ID).Update("cash_session_id", sid).Error; e != nil {
 			t.Fatal(e)
@@ -424,7 +424,7 @@ func TestLOT29D_C_PaymentReversalMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, c, tariffID := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, c, tariffID)
-		paid := paySessionless(t, s, inv.ID, 1000, "CASH", "rv05-pay", 85)
+		paid := paySessionless(t, s, inv.ID, 1000, "CARD", "rv05-pay", 85)
 		if _, e := s.ReversePayment(paid.Payments[0].ID, ReversePaymentRequest{Reason: "  ", IdempotencyKey: "rv05"}, 85); !isBadRequest(e) {
 			t.Fatalf("RV05 want bad request %v", e)
 		}

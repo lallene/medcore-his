@@ -2,11 +2,11 @@ package consultations
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -15,10 +15,7 @@ import (
 // Explicit TableName() models must resolve via search_path into the ephemeral
 // schema, not public.
 func TestPostgresConsultationIntegrationDBIsolatesPharmacyDispensationFromPublic(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: test PostgreSQL JWT ignoré")
-	}
+	dsn := pgtest.DSN(t)
 
 	db := consultationIntegrationDB(t)
 

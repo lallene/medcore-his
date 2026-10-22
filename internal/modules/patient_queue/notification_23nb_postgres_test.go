@@ -19,8 +19,8 @@ func TestPostgresNotificationLifecycleBookRescheduleCancel23NB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Keep >24h from wall clock so ReminderT24HEligible stays true (LOT29F-D unblock; was 2026-10-05).
-	start := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC) // Monday
+	// Keep >24h from wall clock so ReminderT24HEligible stays true (relative Monday — no date time bomb).
+	start := futureMondayUTC(10, 0)
 	appt := bookLife(t, svc, admin, 901, prac, start, at.ID)
 
 	var booked, reminders int64
@@ -60,7 +60,7 @@ func TestPostgresNotificationLifecycleBookRescheduleCancel23NB(t *testing.T) {
 	}
 
 	cur := mustReload(t, db, appt.ID)
-	newStart := time.Date(2026, 11, 2, 14, 0, 0, 0, time.UTC)
+	newStart := futureMondayUTC(14, 0)
 	req := rsReq(cur, newStart)
 	req.IdempotencyKey = "rs-notif-1"
 	if _, err := svc.RescheduleAppointment(appt.ID, req, admin); err != nil {
@@ -348,7 +348,7 @@ func TestPostgresNotificationRearmAndWorker23NB(t *testing.T) {
 
 func TestPostgresNotificationCompletedReminderSkipped23NB(t *testing.T) {
 	db, svc := notificationTestDB(t)
-	start := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
+	start := futureMondayUTC(10, 0)
 	mustExecSQL(t, db, `INSERT INTO patients(id, code_patient, nom, prenoms) VALUES (910,'P-Q-910','Test','Completed') ON CONFLICT DO NOTHING`)
 	appt := Appointment{
 		PatientID: 910, ServiceID: 10, ScheduledAt: start, Status: ApptCompleted,
@@ -457,7 +457,7 @@ func TestPostgresNotificationCancelSuppressesProcessing23NB(t *testing.T) {
 	if err := EnsureNotificationIndexes(db); err != nil {
 		t.Fatal(err)
 	}
-	start := time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)
+	start := futureMondayUTC(10, 0)
 	appt := bookLife(t, svc, admin, 903, prac, start, at.ID)
 	var rem AppointmentNotificationIntent
 	if err := db.Where("appointment_id=? AND kind=?", appt.ID, NotifKindReminderT24H).First(&rem).Error; err != nil {
@@ -479,7 +479,7 @@ func TestPostgresNotificationNoShowSuppresses23NB(t *testing.T) {
 	if err := EnsureNotificationIndexes(db); err != nil {
 		t.Fatal(err)
 	}
-	start := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
+	start := futureMondayUTC(10, 0)
 	appt := bookLife(t, svc, admin, 904, prac, start, at.ID)
 	past := time.Now().UTC().Add(-2 * time.Hour)
 	db.Model(&Appointment{}).Where("id=?", appt.ID).Updates(map[string]any{
@@ -507,7 +507,7 @@ func TestPostgresNotificationIdempotentBookDoesNotRearmTerminal23NB(t *testing.T
 	if err := EnsureNotificationIndexes(db); err != nil {
 		t.Fatal(err)
 	}
-	start := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC) // Monday
+	start := futureMondayUTC(10, 0)
 	idem := "book-notif-idem-1"
 	req := BookAppointmentRequest{
 		PatientID: 905, ServiceID: 10, PractitionerID: &prac,
@@ -561,7 +561,7 @@ func TestPostgresNotificationIdempotentBookDoesNotRearmTerminal23NB(t *testing.T
 
 	// NO_SHOW terminal: replay must not rearm
 	idemNS := "book-notif-idem-ns"
-	startNS := time.Date(2026, 11, 2, 11, 0, 0, 0, time.UTC)
+	startNS := futureMondayUTC(11, 0)
 	reqNS := BookAppointmentRequest{
 		PatientID: 904, ServiceID: 10, PractitionerID: &prac,
 		AppointmentTypeID: &at.ID, StartAt: startNS, IdempotencyKey: idemNS,
@@ -885,4 +885,15 @@ func TestPostgresNotificationStaleRecoveryConcurrency23NB(t *testing.T) {
 	if maxAtt != int64(NotificationMaxAttempts) {
 		t.Fatalf("attempt count want %d got %d", NotificationMaxAttempts, maxAtt)
 	}
+}
+
+// futureMondayUTC returns a Monday at hh:mm UTC between 7 and 13 days ahead of the wall
+// clock, so T-24h reminder fixtures stay eligible whatever the run date (LOT30-A′:
+// hard-coded 2026-10 dates had expired and failed the Scheduling PostgreSQL gate).
+func futureMondayUTC(hour, minute int) time.Time {
+	d := time.Now().UTC().AddDate(0, 0, 7)
+	for d.Weekday() != time.Monday {
+		d = d.AddDate(0, 0, 1)
+	}
+	return time.Date(d.Year(), d.Month(), d.Day(), hour, minute, 0, 0, time.UTC)
 }

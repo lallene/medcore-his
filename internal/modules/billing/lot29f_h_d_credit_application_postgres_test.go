@@ -15,7 +15,7 @@ import (
 func earnCredit(t *testing.T, s *Service, db *gorm.DB, p uint, credit int64, tag string, user uint) (holder uint) {
 	t.Helper()
 	inv := issuedPayReady(t, s, p, consultation(t, db, p, tag+"-earn"), tariff(t, db, "CONSULTATION", tag+"-earn", 50000))
-	paySessionless(t, s, inv.ID, 50000, "CASH", tag+"-earn-pay", user)
+	paySessionless(t, s, inv.ID, 50000, "CARD", tag+"-earn-pay", user)
 	out, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: credit, Reason: "Crédit source " + tag, IdempotencyKey: tag + "-earn-cn"}, user)
 	if e != nil || out.CreditHolderPartyID == nil || out.CustomerCreditAmount != credit {
 		t.Fatalf("earnCredit %s %+v %v", tag, out, e)
@@ -161,7 +161,7 @@ func TestLOT29F_HD_CreditApplicationMatrix(t *testing.T) {
 		// Holder B: third-party payer on another earn invoice
 		invB := issuedPayReady(t, s, p, consultation(t, db, p, "HD16b"), tariff(t, db, "CONSULTATION", "HD16b", 50000))
 		if _, e := s.Pay(invB.ID, PaymentRequest{
-			Amount: 50000, PaymentMethod: "CASH", IdempotencyKey: "hd16b-pay",
+			Amount: 50000, PaymentMethod: "CARD", IdempotencyKey: "hd16b-pay",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, DisplayName: "Tuteur HD16", Phone: "+2250700161616", Relationship: "Tuteur"},
 		}, 308); e != nil {
 			t.Fatal(e)
@@ -222,7 +222,7 @@ func TestLOT29F_HD_CreditApplicationMatrix(t *testing.T) {
 		}
 		invB := issuedPayReady(t, s, p, consultation(t, db, p, "HD20b"), tariff(t, db, "CONSULTATION", "HD20b", 50000))
 		if _, e := s.Pay(invB.ID, PaymentRequest{
-			Amount: 50000, PaymentMethod: "CASH", IdempotencyKey: "hd20b-pay",
+			Amount: 50000, PaymentMethod: "CARD", IdempotencyKey: "hd20b-pay",
 			Payer: &PayerRequest{Mode: PayerModeIndividual, DisplayName: "Autre HD20", Phone: "+2250700202020", Relationship: "Ami"},
 		}, 309); e != nil {
 			t.Fatal(e)
@@ -270,7 +270,7 @@ func TestLOT29F_HD_CreditApplicationMatrix(t *testing.T) {
 		_, p, _, _ := seedBilling(t, db)
 		holder := earnCredit(t, s, db, p, 30000, "hd26", 311)
 		target := issuedPayReady(t, s, p, consultation(t, db, p, "HD26t"), tariff(t, db, "CONSULTATION", "HD26t", 50000))
-		paySessionless(t, s, target.ID, 20000, "CASH", "hd26-pay", 311)
+		paySessionless(t, s, target.ID, 20000, "CARD", "hd26-pay", 311)
 		res, e := s.ApplyCredit(target.ID, CreditApplicationRequest{HolderPartyID: holder, Amount: 30000, IdempotencyKey: "hd26"}, 311)
 		if e != nil {
 			t.Fatal(e)
@@ -298,7 +298,7 @@ func TestLOT29F_HD_CreditApplicationMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, _, _ := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HD28"), tariff(t, db, "CONSULTATION", "HD28", 40000))
-		paid := paySessionless(t, s, inv.ID, 40000, "CASH", "hd28-pay", 313)
+		paid := paySessionless(t, s, inv.ID, 40000, "CARD", "hd28-pay", 313)
 		cn, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: 10000, Reason: "Crédit HD28", IdempotencyKey: "hd28-cn"}, 313)
 		if e != nil {
 			t.Fatal(e)
@@ -318,7 +318,7 @@ func TestLOT29F_HD_CreditApplicationMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, _, _ := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HD30"), tariff(t, db, "CONSULTATION", "HD30", 30000))
-		paySessionless(t, s, inv.ID, 30000, "CASH", "hd30-pay", 314)
+		paySessionless(t, s, inv.ID, 30000, "CARD", "hd30-pay", 314)
 		out, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: 5000, Reason: "Toujours producteur", IdempotencyKey: "hd30"}, 314)
 		if e != nil || out.CustomerCreditAmount != 5000 {
 			t.Fatalf("H-D30 %+v %v", out, e)
@@ -375,7 +375,7 @@ func TestLOT29F_HD_CreditApplicationMatrix(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, _, _ := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HD35"), tariff(t, db, "CONSULTATION", "HD35", 20000))
-		paid := paySessionless(t, s, inv.ID, 20000, "CASH", "hd35-pay", 316)
+		paid := paySessionless(t, s, inv.ID, 20000, "CARD", "hd35-pay", 316)
 		if e := db.Model(&Payment{}).Where("id=?", paid.Payments[0].ID).Updates(map[string]any{
 			"payer_provenance": PayerProvenanceLegacyUnconfirmed, "payer_party_id": nil, "payer_is_patient": false,
 		}).Error; e != nil {
@@ -553,7 +553,7 @@ func TestLOT29F_HD_Concurrency(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			if _, e := s.Pay(target.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CASH", IdempotencyKey: "hdx04-pay", Payer: PatientPayerRequest()}, 404); e == nil {
+			if _, e := s.Pay(target.ID, PaymentRequest{Amount: 10000, PaymentMethod: "CARD", IdempotencyKey: "hdx04-pay", Payer: PatientPayerRequest()}, 404); e == nil {
 				atomic.AddInt32(&payOK, 1)
 			}
 		}()
@@ -637,7 +637,7 @@ func TestLOT29F_HD_Concurrency(t *testing.T) {
 		holder := earnCredit(t, s, db, p, 10000, "hdx07a", 407)
 		// Target invoice partially paid so CN can create more credit while apply races
 		target := issuedPayReady(t, s, p, consultation(t, db, p, "HDX07t"), tariff(t, db, "CONSULTATION", "HDX07t", 30000))
-		paySessionless(t, s, target.ID, 30000, "CASH", "hdx07-pay", 407)
+		paySessionless(t, s, target.ID, 30000, "CARD", "hdx07-pay", 407)
 		other := issuedPayReady(t, s, p, consultation(t, db, p, "HDX07o"), tariff(t, db, "CONSULTATION", "HDX07o", 10000))
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -661,7 +661,7 @@ func TestLOT29F_HD_Concurrency(t *testing.T) {
 		s := receiptBilling(t, db)
 		_, p, _, _ := seedBilling(t, db)
 		inv := issuedPayReady(t, s, p, consultation(t, db, p, "HDX08"), tariff(t, db, "CONSULTATION", "HDX08", 20000))
-		paid := paySessionless(t, s, inv.ID, 20000, "CASH", "hdx08-pay", 408)
+		paid := paySessionless(t, s, inv.ID, 20000, "CARD", "hdx08-pay", 408)
 		cn, e := s.IssueCreditNote(inv.ID, CreditNoteRequest{Amount: 10000, Reason: "Race D11", IdempotencyKey: "hdx08-cn"}, 408)
 		if e != nil {
 			t.Fatal(e)

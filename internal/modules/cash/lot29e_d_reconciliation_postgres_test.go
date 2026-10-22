@@ -120,7 +120,7 @@ func TestLOT29E_D_ReconciliationMatrix(t *testing.T) {
 		reg, _ := s.SaveRegister(0, RegisterRequest{Code: "CR21", Name: "Sl"}, 31)
 		out, _ := s.Open(OpenRequest{CashRegisterID: reg.ID, OpeningFloat: 0, IdempotencyKey: "cr21-o"}, 31)
 		inv := seedCashInvoice(t, db, "INV-cr21-sl", 7, 8000, 31)
-		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 8000, PaymentMethod: "CASH", IdempotencyKey: "cr21-sl", Payer: billing.PatientPayerRequest()}, 31); e != nil {
+		if _, e := bill.Pay(inv.ID, billing.PaymentRequest{Amount: 8000, PaymentMethod: "CARD", IdempotencyKey: "cr21-sl", Payer: billing.PatientPayerRequest()}, 31); e != nil {
 			t.Fatal(e)
 		}
 		sum, _ := s.Get(out.Session.ID)

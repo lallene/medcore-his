@@ -155,7 +155,7 @@ func TestLOT29F_D_OpenCashSessionReversal(t *testing.T) {
 		bill := billing.NewService(db)
 		inv := seedCashInvoice(t, db, "INV-RVC24", 63, 4000, 63)
 		paid, e := bill.Pay(inv.ID, billing.PaymentRequest{
-			Amount: 4000, PaymentMethod: "CASH", IdempotencyKey: "rvc24-p", Payer: billing.PatientPayerRequest()}, 63)
+			Amount: 4000, PaymentMethod: "CARD", IdempotencyKey: "rvc24-p", Payer: billing.PatientPayerRequest()}, 63)
 		if e != nil {
 			t.Fatal(e)
 		}

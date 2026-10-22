@@ -34,7 +34,7 @@ type Invoice struct {
 	Number             string        `gorm:"size:30;not null;uniqueIndex" json:"number"`
 	PatientID          uint          `gorm:"not null;index" json:"patientId"`
 	MedicalRecordID    *uint         `gorm:"index" json:"medicalRecordId"`
-	Status             string        `gorm:"size:30;not null;index" json:"status"`
+	Status             string        `gorm:"size:30;not null;index;check:billing_invoice_status_valid,status IN ('DRAFT','ISSUED','PARTIALLY_PAID','PAID','CANCELLED')" json:"status"`
 	GrossAmount        int64         `gorm:"not null;check:billing_invoice_gross_nonnegative,gross_amount >= 0" json:"grossAmount"`
 	InsuranceAmount    int64         `gorm:"not null;check:billing_invoice_insurance_nonnegative,insurance_amount >= 0" json:"insuranceAmount"`
 	PatientAmount      int64         `gorm:"not null;check:billing_invoice_patient_nonnegative,patient_amount >= 0" json:"patientAmount"`
@@ -123,7 +123,7 @@ type Payment struct {
 	PayerRelationship string `gorm:"size:80" json:"payerRelationship,omitempty"`
 	PayerIsPatient    bool   `gorm:"not null;default:false" json:"payerIsPatient"`
 	// CAPTURED for new payments; LEGACY_UNCONFIRMED for pre-H-B rows (never invent history).
-	PayerProvenance  string    `gorm:"size:30;not null;default:LEGACY_UNCONFIRMED;index" json:"payerProvenance"`
+	PayerProvenance  string    `gorm:"size:30;not null;default:LEGACY_UNCONFIRMED;index;check:billing_payment_payer_provenance_valid,payer_provenance IN ('CAPTURED','LEGACY_UNCONFIRMED')" json:"payerProvenance"`
 	PayerFingerprint string    `gorm:"size:500" json:"-"`
 	CreatedAt        time.Time `json:"createdAt"`
 	// Canonical cash_receipts identity (decorated on read; not a column).

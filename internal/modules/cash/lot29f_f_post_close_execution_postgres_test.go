@@ -373,7 +373,7 @@ func TestLOT29F_F_PostCloseCashExecution(t *testing.T) {
 		_, _ = s.Close(open.Session.ID, CloseRequest{CountedCashAmount: 1000, IdempotencyKey: "pce53-c"}, 85, false)
 		inv2 := seedCashInvoice(t, db, "INV-PCE55", 85, 500, 85)
 		paid, _ := bill.Pay(inv2.ID, billing.PaymentRequest{
-			Amount: 500, PaymentMethod: "CASH", IdempotencyKey: "pce55-p", Payer: billing.PatientPayerRequest()}, 85)
+			Amount: 500, PaymentMethod: "CARD", IdempotencyKey: "pce55-p", Payer: billing.PatientPayerRequest()}, 85)
 		before := movementCount(t, db)
 		if _, e := bill.ReversePayment(paid.Payments[0].ID, billing.ReversePaymentRequest{
 			Reason: "Sessionless", IdempotencyKey: "pce55-r",

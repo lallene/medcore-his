@@ -3,7 +3,6 @@ package receivables
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -30,10 +30,7 @@ func (receivablePatient) TableName() string { return "patients" }
 // DSN query search_path is not reliable with pgx (same as billingDB / cashDB).
 func receivablePostgres(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL Receivables ignorés")
-	}
+	dsn := pgtest.DSN(t)
 	dsn = strings.Replace(dsn, "-pooler", "", 1)
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {

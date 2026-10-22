@@ -2,7 +2,6 @@ package authorization
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,7 +13,6 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
 	"github.com/lallene/medcore-his/backend/internal/modules/medical_records"
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -75,38 +73,8 @@ type authorizationPharmacyRow struct{ ID uint }
 
 func authorizationDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent: tests PostgreSQL PEC ignorés")
-	}
-	admin, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if e != nil {
-		t.Fatal(e)
-	}
-	schema := fmt.Sprintf("authorization_%d", time.Now().UnixNano())
-	if e = admin.Exec(`CREATE SCHEMA "` + schema + `"`).Error; e != nil {
-		t.Fatal(e)
-	}
-	db, e := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if e != nil {
-		t.Fatal(e)
-	}
-	sqlDB, e := db.DB()
-	if e != nil {
-		t.Fatal(e)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	if e = db.Exec(`SET search_path TO "` + schema + `"`).Error; e != nil {
-		t.Fatal(e)
-	}
-	t.Cleanup(func() {
-		_ = db.Exec("RESET search_path").Error
-		_ = sqlDB.Close()
-		_ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
-	})
-	if e = db.AutoMigrate(&patients.Patient{}, &company.InsuranceCompany{}, &guarantor.InsuranceGuarantor{}, &coverage.PatientCoverage{}, &medical_records.MedicalRecord{}, &medical_records.MedicalTimelineEvent{}, &authorizationConsultation{}, &authorizationMedicalExam{}, &authorizationLaboratoryOrder{}, &authorizationImagingOrder{}, &authorizationHospitalization{}, &authorizationPrescription{}, &InsuranceAuthorization{}, &InsuranceAuthorizationAct{}); e != nil {
-		t.Fatal(e)
-	}
+	db := openAuthorizationPool(t, "authorization")
+	migrateAuthorizationSchema(t, db)
 	return db
 }
 
@@ -209,14 +177,17 @@ func TestAuthorizationActReuseAndExplicitCoverage(t *testing.T) {
 	db.Create(&concurrentImaging)
 	results := make(chan error, 2)
 	var wg sync.WaitGroup
+	linkStart := make(chan struct{})
 	for _, authorizationID := range []uint{primary.ID, secondAuthorization.ID} {
 		wg.Add(1)
 		go func(candidate uint) {
 			defer wg.Done()
+			<-linkStart
 			_, linkErr := s.LinkAct(candidate, ActRequest{ReferenceType: "IMAGING", ReferenceID: concurrentImaging.ID}, 72, UnrestrictedAccess(72))
 			results <- linkErr
 		}(authorizationID)
 	}
+	close(linkStart)
 	wg.Wait()
 	close(results)
 	successes := 0
@@ -398,27 +369,159 @@ func TestConcurrentFinalDecisionProducesOneWinner(t *testing.T) {
 	if _, e = s.Submit(item.ID, SubmitRequest{}, 1, UnrestrictedAccess(1)); e != nil {
 		t.Fatal(e)
 	}
-	rate := 50.0
+	assertMultiConnectionPool(t, db)
+	// LOT30-A′: real race — N deciders released together on a multi-connection pool.
+	const deciders = 6
+	start := make(chan struct{})
 	var wg sync.WaitGroup
-	results := make(chan error, 2)
-	for i := 0; i < 2; i++ {
+	results := make(chan error, deciders)
+	for i := 0; i < deciders; i++ {
 		wg.Add(1)
 		go func(user uint) {
 			defer wg.Done()
+			rate := float64(10 * user)
+			<-start
 			_, e := s.Decide(item.ID, DecisionRequest{Status: StatusApproved, ExternalReference: fmt.Sprintf("EXT-%d", user), ExternalDecisionDate: "2026-08-11", ApprovedRate: &rate}, user, UnrestrictedAccess(user))
 			results <- e
 		}(uint(i + 2))
 	}
+	close(start)
 	wg.Wait()
 	close(results)
-	success := 0
+	success, conflicts := 0, 0
 	for e := range results {
-		if e == nil {
+		switch {
+		case e == nil:
 			success++
+		case IsConflict(e):
+			conflicts++
+		default:
+			t.Fatalf("unexpected decision error: %v", e)
 		}
 	}
-	if success != 1 {
-		t.Fatalf("winners=%d", success)
+	if success != 1 || conflicts != deciders-1 {
+		t.Fatalf("winners=%d conflicts=%d", success, conflicts)
+	}
+	// Exactly one economically valid decision persisted: winner's rate, amount and reference agree.
+	var stored InsuranceAuthorization
+	if e := db.First(&stored, item.ID).Error; e != nil {
+		t.Fatal(e)
+	}
+	if stored.Status != StatusApproved || stored.DecidedBy == nil || stored.ApprovedRate == nil || stored.InsuranceAmount == nil {
+		t.Fatalf("stored decision=%#v", stored)
+	}
+	winner := *stored.DecidedBy
+	if *stored.ApprovedRate != float64(10*winner) || stored.ExternalReference != fmt.Sprintf("EXT-%d", winner) || *stored.InsuranceAmount != amount*float64(10*winner)/100 {
+		t.Fatalf("mixed decision fields: %#v", stored)
+	}
+	var decided int64
+	db.Model(&medical_records.MedicalTimelineEvent{}).Where("event_type=? AND reference_id=?", "insurance_authorization_approved", item.ID).Count(&decided)
+	if decided != 1 {
+		t.Fatalf("decision timeline events=%d", decided)
+	}
+}
+
+// A′-PG07: concurrent Create on the same act yields exactly one active PEC.
+func TestConcurrentCreateSameActProducesOneAuthorization(t *testing.T) {
+	db := authorizationDB(t)
+	assertMultiConnectionPool(t, db)
+	f := seedAuthorization(t, db)
+	s := NewService(db)
+	amount := 1000.0
+	const creators = 6
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	results := make(chan error, creators)
+	for i := 0; i < creators; i++ {
+		wg.Add(1)
+		go func(user uint) {
+			defer wg.Done()
+			<-start
+			_, e := s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: f.act.ID, RequestedAmount: &amount}, user)
+			results <- e
+		}(uint(i + 10))
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	success, conflicts := 0, 0
+	for e := range results {
+		switch {
+		case e == nil:
+			success++
+		case IsConflict(e):
+			conflicts++
+		default:
+			t.Fatalf("unexpected create error: %v", e)
+		}
+	}
+	if success != 1 || conflicts != creators-1 {
+		t.Fatalf("creates success=%d conflicts=%d", success, conflicts)
+	}
+	var active int64
+	db.Model(&InsuranceAuthorization{}).Where("reference_type=? AND reference_id=? AND status<>?", "CONSULTATION", f.act.ID, StatusCancelled).Count(&active)
+	if active != 1 {
+		t.Fatalf("active authorizations=%d", active)
+	}
+}
+
+// A′-PG07: concurrent primary Create vs covered-act Link on the same act — one winner, never both.
+func TestConcurrentCreateVersusLinkSameAct(t *testing.T) {
+	db := authorizationDB(t)
+	assertMultiConnectionPool(t, db)
+	f := seedAuthorization(t, db)
+	s := NewService(db)
+	amount := 1000.0
+	parent, err := s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "CONSULTATION", ReferenceID: f.act.ID, RequestedAmount: &amount}, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exam := authorizationMedicalExam{Name: "Echographie"}
+	db.Create(&exam)
+	for round := 0; round < 5; round++ {
+		target := authorizationImagingOrder{PatientID: f.patient.ID, MedicalExamID: exam.ID, ConsultationID: f.act.ID}
+		db.Create(&target)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		var createErr, linkErr error
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, createErr = s.Create(CreateRequest{PatientID: f.patient.ID, PatientCoverageID: f.coverage.ID, ReferenceType: "IMAGING", ReferenceID: target.ID, RequestedAmount: &amount}, 21)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			_, linkErr = s.LinkAct(parent.ID, ActRequest{ReferenceType: "IMAGING", ReferenceID: target.ID}, 22, UnrestrictedAccess(22))
+		}()
+		close(start)
+		wg.Wait()
+		if (createErr == nil) == (linkErr == nil) {
+			t.Fatalf("round %d: exactly one must win create=%v link=%v", round, createErr, linkErr)
+		}
+		for _, e := range []error{createErr, linkErr} {
+			if e != nil && !IsConflict(e) {
+				t.Fatalf("round %d: unexpected error %v", round, e)
+			}
+		}
+		var primaries, links int64
+		db.Model(&InsuranceAuthorization{}).Where("reference_type=? AND reference_id=? AND status<>?", "IMAGING", target.ID, StatusCancelled).Count(&primaries)
+		db.Model(&InsuranceAuthorizationAct{}).Where("reference_type=? AND reference_id=? AND is_active", "IMAGING", target.ID).Count(&links)
+		if primaries+links != 1 {
+			t.Fatalf("round %d: primaries=%d links=%d", round, primaries, links)
+		}
+	}
+}
+
+func assertMultiConnectionPool(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if max := sqlDB.Stats().MaxOpenConnections; max < 2 {
+		t.Fatalf("concurrency harness must allow several connections, MaxOpenConnections=%d", max)
 	}
 }
 

@@ -3,10 +3,10 @@ package database_test
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	"github.com/lallene/medcore-his/backend/internal/database"
+	"github.com/lallene/medcore-his/backend/internal/testsupport/pgtest"
 )
 
 // Proves production Connect enforces business timezone on every physical pooled
@@ -15,10 +15,7 @@ import (
 // current_setting('TimeZone') on each — without a post-hoc SET TIME ZONE on
 // the assertion handle.
 func TestConnectAppliesBusinessTimezoneToPooledConnections(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL absent")
-	}
+	dsn := pgtest.DSN(t)
 	const want = "America/New_York"
 	const n = 4
 	db := database.Connect(dsn, want)

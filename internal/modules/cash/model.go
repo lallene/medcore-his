@@ -35,7 +35,7 @@ type Session struct {
 	OpeningNote    string    `gorm:"type:text" json:"openingNote"`
 	// OpenIdempotencyKey namespaces OPEN intents (distinct from billing/close keys).
 	OpenIdempotencyKey string     `gorm:"size:120;uniqueIndex" json:"openIdempotencyKey,omitempty"`
-	Status             string     `gorm:"size:20;not null;index" json:"status"`
+	Status             string     `gorm:"size:20;not null;index;check:cash_session_status_valid,status IN ('OPEN','CLOSED')" json:"status"`
 	ClosedBy           *uint      `gorm:"index" json:"closedBy"`
 	ClosedAt           *time.Time `json:"closedAt"`
 	ExpectedCashAmount *int64     `json:"expectedCashAmount"`
@@ -119,7 +119,7 @@ const (
 type CashMovement struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
 	CashSessionID  uint      `gorm:"not null;index" json:"cashSessionId"`
-	Direction      string    `gorm:"size:10;not null;index" json:"direction"`
+	Direction      string    `gorm:"size:10;not null;index;check:cash_movement_direction_valid,direction IN ('IN','OUT')" json:"direction"`
 	Type           string    `gorm:"size:30;not null;index" json:"type"`
 	Amount         int64     `gorm:"not null;check:cash_movement_amount_positive,amount > 0" json:"amount"`
 	Reason         string    `gorm:"size:500;not null" json:"reason"`
