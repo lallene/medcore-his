@@ -286,6 +286,10 @@ func TestPostgresLOT28CStartVsLegacyInvoiceRace(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active=true")
+	// Legacy-first interleaving resolves coverage (activeCoverage) — stub table, no coverage rows.
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS patient_coverages (id bigserial PRIMARY KEY, patient_id bigint, is_active boolean, valid_from timestamptz, valid_to timestamptz, deleted_at timestamptz)`).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	svc, id, patientID := seedImagingWithProducer(t, db)
 	var examID uint
