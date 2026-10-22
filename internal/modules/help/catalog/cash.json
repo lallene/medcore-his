@@ -1,0 +1,58 @@
+[
+  {
+    "key": "cash.session.opening_float",
+    "module": "cash",
+    "page": "/cash",
+    "elementType": "field",
+    "label": "Fond initial",
+    "short": "Espèces présentes dans le tiroir à l'ouverture. Il est inclus dans les espèces attendues.",
+    "detailed": "Espèces attendues = fond initial + encaissements espèces + entrées − sorties de la session. Une seule session peut être ouverte par caisse ; seul le caissier qui l'a ouverte peut y encaisser.",
+    "action": "",
+    "requiredPermissions": [
+      "cash.session.open"
+    ],
+    "sortOrder": 10
+  },
+  {
+    "key": "cash.session.close",
+    "module": "cash",
+    "page": "/cash",
+    "elementType": "action",
+    "label": "Clôturer la session",
+    "short": "Fige le comptage du tiroir. Une session clôturée ne peut plus être modifiée.",
+    "detailed": "Saisir le montant d'espèces réellement compté. L'écart avec les espèces attendues est enregistré dans le rapport de clôture. Toute correction ultérieure passe par une correction de caisse sur une session ouverte de la même caisse.",
+    "action": "",
+    "requiredPermissions": [
+      "cash.session.close"
+    ],
+    "sortOrder": 20
+  },
+  {
+    "key": "cash.movement.justification",
+    "module": "cash",
+    "page": "/cash",
+    "elementType": "field",
+    "label": "Justification du mouvement",
+    "short": "Motif obligatoire de toute entrée ou sortie manuelle d'espèces.",
+    "detailed": "Les mouvements sont en ajout seul : un mouvement enregistré n'est jamais modifié ni supprimé.",
+    "action": "",
+    "requiredPermissions": [
+      "cash.movement.create"
+    ],
+    "sortOrder": 30
+  },
+  {
+    "key": "cash.correction.post_close",
+    "module": "cash",
+    "page": "/billing/[id]",
+    "elementType": "action",
+    "label": "Correction de caisse postérieure à la clôture",
+    "short": "Sortie physique d'espèces après une contrepassation intervenue une fois la session d'origine clôturée.",
+    "detailed": "La correction s'exécute sur une session ouverte de la même caisse, qui doit contenir assez d'espèces. Le rapport de la session d'origine reste inchangé.",
+    "action": "",
+    "requiredPermissions": [
+      "cash.correction.execute"
+    ],
+    "sortOrder": 40
+  }
+]

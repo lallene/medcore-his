@@ -1,0 +1,14 @@
+[
+  {
+    "key": "ticket.create.urgency",
+    "module": "tickets",
+    "page": "/tickets/create",
+    "elementType": "select",
+    "label": "Urgence perçue",
+    "short": "Combinée à l'impact, elle détermine la priorité P1 à P4 et le délai de traitement attendu.",
+    "detailed": "La priorité est calculée par le serveur : plus l'impact (individu, service, département, établissement) et l'urgence sont élevés, plus la priorité est forte. P1 correspond à une prise en compte sous 15 minutes, P4 au délai le plus long.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 10
+  }
+]

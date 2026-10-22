@@ -1,0 +1,28 @@
+[
+  {
+    "key": "performed_act.void",
+    "module": "performed_acts",
+    "page": "/patients/[id]",
+    "elementType": "action",
+    "label": "Annuler l'acte réalisé",
+    "short": "Annule un acte enregistré par erreur. Motif obligatoire, action définitive.",
+    "detailed": "Un acte encore facturé sur une facture active ne peut pas être annulé : il faut d'abord annuler la facture (si elle n'est pas encaissée). Les demandes de PEC encore ouvertes sur cet acte sont annulées en même temps.",
+    "action": "Saisir le motif, puis confirmer.",
+    "requiredPermissions": [
+      "performed_acts.void"
+    ],
+    "sortOrder": 10
+  },
+  {
+    "key": "performed_act.billable",
+    "module": "performed_acts",
+    "page": "/patients/[id]",
+    "elementType": "field",
+    "label": "Facturable",
+    "short": "Indique si l'acte peut être ajouté à une facture. Valeur figée à la réalisation, issue du catalogue.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 20
+  }
+]

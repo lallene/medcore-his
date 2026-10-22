@@ -1,0 +1,14 @@
+[
+  {
+    "key": "hospitalization.discharge.diagnosis",
+    "module": "hospitalizations",
+    "page": "/hospitalizations/[id]",
+    "elementType": "field",
+    "label": "Diagnostic de sortie",
+    "short": "Diagnostic retenu à la fin du séjour, repris dans la fiche de sortie.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 10
+  }
+]

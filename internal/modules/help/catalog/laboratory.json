@@ -1,0 +1,16 @@
+[
+  {
+    "key": "laboratory.result.validate",
+    "module": "laboratory",
+    "page": "/laboratory/[id]",
+    "elementType": "action",
+    "label": "Valider définitivement",
+    "short": "Validation biologique : les résultats deviennent définitifs et consultables par le prescripteur.",
+    "detailed": "Une demande validée ne peut plus être modifiée. Lorsque la production automatique des actes réalisés est activée, la validation enregistre l'acte réalisé correspondant, qui pourra ensuite être facturé.",
+    "action": "",
+    "requiredPermissions": [
+      "laboratory.validate"
+    ],
+    "sortOrder": 10
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "key": "agenda.appointment.check_in",
+    "module": "agenda",
+    "page": "/agenda",
+    "elementType": "action",
+    "label": "Check-in",
+    "short": "Enregistre l'arrivée du patient et crée son ticket de file d'attente.",
+    "detailed": "Le check-in est possible à partir de 60 minutes avant l'heure du rendez-vous (paramètre de déploiement). Un patient en retard peut être enregistré tant que le rendez-vous est encore planifié. Le ticket créé démarre en attente de triage.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 10
+  }
+]

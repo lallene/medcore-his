@@ -1,0 +1,40 @@
+[
+  {
+    "key": "patient.insurance.is_insured",
+    "module": "patients",
+    "page": "/patients/[id]/edit",
+    "elementType": "field",
+    "label": "Patient assuré",
+    "short": "Indicateur informatif : le patient déclare une assurance ou une mutuelle.",
+    "detailed": "Cet indicateur ne déclenche aucune prise en charge. La couverture réelle (compagnie, garant, numéro d'adhérent) se gère dans le module Assurance, et la prise en charge d'un acte passe par une PEC.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 10
+  },
+  {
+    "key": "patient.insurance.member_details",
+    "module": "patients",
+    "page": "/patients/[id]/edit",
+    "elementType": "section",
+    "label": "Taux de couverture et matricule assuré",
+    "short": "Données d'adhésion historiques, visibles uniquement par les profils assurance.",
+    "detailed": "Le taux et le matricule saisis ici sont des informations déclaratives. Ils ne servent pas au calcul de la facture : la part assurance est déterminée par la PEC. Les utilisateurs sans droit assurance ne voient pas ces valeurs et ne peuvent pas les écraser.",
+    "action": "",
+    "requiredPermissions": [
+      "insurance.coverage.read"
+    ],
+    "sortOrder": 20
+  },
+  {
+    "key": "patient.contact.emergency",
+    "module": "patients",
+    "page": "/patients/create",
+    "elementType": "field",
+    "label": "Contact d’urgence",
+    "short": "Personne à prévenir en cas d'urgence (nom et lien avec le patient).",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 30
+  }
+]

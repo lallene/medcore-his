@@ -1,0 +1,40 @@
+[
+  {
+    "key": "imaging.report.findings",
+    "module": "imaging",
+    "page": "/imaging/[id]",
+    "elementType": "field",
+    "label": "Constatations",
+    "short": "Description objective de ce qui est observé sur les images. Champ obligatoire du compte rendu.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 10
+  },
+  {
+    "key": "imaging.report.conclusion",
+    "module": "imaging",
+    "page": "/imaging/[id]",
+    "elementType": "field",
+    "label": "Conclusion",
+    "short": "Synthèse interprétative destinée au prescripteur. Champ obligatoire du compte rendu.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 20
+  },
+  {
+    "key": "imaging.exam.start",
+    "module": "imaging",
+    "page": "/imaging/[id]",
+    "elementType": "action",
+    "label": "Démarrer l’examen",
+    "short": "Passe l'examen en cours et horodate sa réalisation.",
+    "detailed": "Lorsque la production automatique des actes réalisés est activée, le démarrage enregistre l'acte réalisé d'imagerie, qui pourra ensuite être facturé.",
+    "action": "",
+    "requiredPermissions": [
+      "imaging.perform"
+    ],
+    "sortOrder": 30
+  }
+]

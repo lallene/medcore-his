@@ -1,0 +1,72 @@
+[
+  {
+    "key": "insurance.authorization.requested_amount",
+    "module": "insurance",
+    "page": "/insurance/authorizations",
+    "elementType": "field",
+    "label": "Montant demandé",
+    "short": "Montant soumis à l'assureur pour la prise en charge (PEC).",
+    "detailed": "Il sert de base au calcul de la part assureur lors de la décision. Il peut être prérempli depuis la tarification lorsqu'elle est disponible, mais jamais depuis le prix catalogue de référence de l'acte.",
+    "action": "",
+    "requiredPermissions": [
+      "insurance.authorization.create"
+    ],
+    "sortOrder": 10
+  },
+  {
+    "key": "insurance.authorization.decision",
+    "module": "insurance",
+    "page": "/insurance/authorizations",
+    "elementType": "section",
+    "label": "Décision assureur",
+    "short": "Accord, accord partiel ou refus, avec la référence et la date de l'assureur. Une décision finale est définitive.",
+    "detailed": "La part assureur est calculée par le serveur à partir du taux accordé, du montant accordé et du plafond. La part patient affichée est un contrôle : si elle diffère du calcul, la décision est refusée. Un refus exige un motif.",
+    "action": "",
+    "requiredPermissions": [
+      "insurance.authorization.decide"
+    ],
+    "sortOrder": 20
+  },
+  {
+    "key": "insurance.authorization.approved_rate",
+    "module": "insurance",
+    "page": "/insurance/authorizations",
+    "elementType": "field",
+    "label": "Taux accordé",
+    "short": "Pourcentage pris en charge par l'assureur (0 à 100).",
+    "detailed": "Appliqué au montant de l'acte. Si un montant accordé ou un plafond est aussi renseigné, la part assureur retenue est la plus faible.",
+    "action": "",
+    "requiredPermissions": [
+      "insurance.authorization.decide"
+    ],
+    "sortOrder": 30
+  },
+  {
+    "key": "insurance.authorization.approved_amount",
+    "module": "insurance",
+    "page": "/insurance/authorizations",
+    "elementType": "field",
+    "label": "Montant accordé",
+    "short": "Montant forfaitaire pris en charge par l'assureur.",
+    "detailed": "Utilisé seul, ou avec un taux : dans ce cas, la part retenue est la plus faible des deux.",
+    "action": "",
+    "requiredPermissions": [
+      "insurance.authorization.decide"
+    ],
+    "sortOrder": 40
+  },
+  {
+    "key": "insurance.authorization.ceiling",
+    "module": "insurance",
+    "page": "/insurance/authorizations",
+    "elementType": "field",
+    "label": "Plafond",
+    "short": "Montant maximal pris en charge, quelles que soient les autres conditions.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [
+      "insurance.authorization.decide"
+    ],
+    "sortOrder": 50
+  }
+]

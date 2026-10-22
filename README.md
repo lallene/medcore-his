@@ -4,7 +4,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@medcore.local",
-    "password": "admin123"
+    "password": "<mot-de-passe>"
   }' | jq -r '.data.token')
 
 

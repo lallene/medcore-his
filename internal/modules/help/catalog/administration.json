@@ -1,0 +1,74 @@
+[
+  {
+    "key": "administration.act_catalog.billable",
+    "module": "administration",
+    "page": "/admin/act-catalog",
+    "elementType": "field",
+    "label": "Facturable",
+    "short": "L'acte réalisé à partir de cette entrée pourra être ajouté à une facture.",
+    "detailed": "La valeur est recopiée sur chaque acte réalisé au moment de sa réalisation : la modifier ensuite ne change pas les actes déjà enregistrés.",
+    "action": "",
+    "requiredPermissions": [
+      "act_catalog.manage"
+    ],
+    "sortOrder": 10
+  },
+  {
+    "key": "administration.act_catalog.insurance_eligible",
+    "module": "administration",
+    "page": "/admin/act-catalog",
+    "elementType": "field",
+    "label": "Éligible PEC",
+    "short": "Une demande de prise en charge assurance pourra être créée pour les actes réalisés correspondants.",
+    "detailed": "Comme « Facturable », la valeur est figée sur l'acte réalisé au moment de sa réalisation.",
+    "action": "",
+    "requiredPermissions": [
+      "act_catalog.manage"
+    ],
+    "sortOrder": 20
+  },
+  {
+    "key": "administration.scheduling.start_wallclock",
+    "module": "administration",
+    "page": "/admin/scheduling",
+    "elementType": "field",
+    "label": "Début (wall-clock)",
+    "short": "Heure locale affichée sur le planning, interprétée dans le fuseau de planification de l'établissement.",
+    "detailed": "Une heure « wall-clock » reste la même tout au long de l'année, quel que soit le fuseau du poste utilisé pour la saisie.",
+    "action": "",
+    "requiredPermissions": [
+      "schedule.manage.all",
+      "schedule.manage.service"
+    ],
+    "sortOrder": 30
+  },
+  {
+    "key": "administration.scheduling.end_exclusive",
+    "module": "administration",
+    "page": "/admin/scheduling",
+    "elementType": "field",
+    "label": "Fin (exclusive)",
+    "short": "Heure de fin non incluse : une plage 08:00–12:00 se termine à 12:00, aucun créneau ne commence à 12:00.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [
+      "schedule.manage.all",
+      "schedule.manage.service"
+    ],
+    "sortOrder": 40
+  },
+  {
+    "key": "administration.access.exceptions_only",
+    "module": "administration",
+    "page": "/admin/access",
+    "elementType": "field",
+    "label": "Exceptions seulement",
+    "short": "N'affiche que les utilisateurs ayant des droits individuels ajoutés ou retirés par rapport à leurs fonctions.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [
+      "rbac.read"
+    ],
+    "sortOrder": 50
+  }
+]

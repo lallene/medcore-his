@@ -1,0 +1,184 @@
+[
+  {
+    "key": "billing.invoice.tariff_choice",
+    "module": "billing",
+    "page": "/billing",
+    "elementType": "select",
+    "label": "Tarif applicable",
+    "short": "Seuls les tarifs éligibles pour cet acte sont proposés ; le montant brut est calculé par le serveur.",
+    "detailed": "Un tarif dédié à l'examen, à la présentation ou à l'acte du catalogue prime sur un tarif générique. Lorsque plusieurs tarifs restent applicables (par exemple deux tarifs de consultation), choisir celui qui correspond à la prestation. Tout autre tarif est refusé à la création de la facture.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.create"
+    ],
+    "sortOrder": 10
+  },
+  {
+    "key": "billing.payment.method",
+    "module": "billing",
+    "page": "/billing/[id]",
+    "elementType": "select",
+    "label": "Mode de paiement",
+    "short": "Carte, Mobile Money, virement, chèque ou autre. Les espèces s'encaissent depuis une session de caisse ouverte.",
+    "detailed": "Un encaissement en espèces doit être rattaché à une session de caisse ouverte afin d'être compté dans les espèces attendues du tiroir. Depuis la fiche facture, seuls les modes non espèces sont donc proposés. Pour les espèces, passer par le menu Caisse.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.payment.create"
+    ],
+    "sortOrder": 20
+  },
+  {
+    "key": "billing.payment.payer",
+    "module": "billing",
+    "page": "/billing/[id]",
+    "elementType": "section",
+    "label": "Payeur",
+    "short": "Personne ou organisation qui paie réellement. Elle peut être différente du patient.",
+    "detailed": "Le payeur est figé sur l'encaissement au moment du paiement. Il détermine à qui appartient un éventuel crédit en cas de trop-perçu. Décocher « Le patient est le payeur » pour saisir un tiers (nom, téléphone, lien) ou une organisation.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.payment.create"
+    ],
+    "sortOrder": 30
+  },
+  {
+    "key": "billing.payment.reverse",
+    "module": "billing",
+    "page": "/billing/[id]",
+    "elementType": "action",
+    "label": "Annuler l'encaissement",
+    "short": "Contrepassation complète d'un paiement : l'encaissement d'origine est conservé et neutralisé.",
+    "detailed": "La contrepassation n'est ni un remboursement ni un avoir. Elle rétablit le reste à payer de la facture. Pour un paiement espèces d'une session encore ouverte, une sortie de caisse est créée automatiquement. Après clôture de la session, la sortie physique se fait par une correction de caisse séparée. Une contrepassation est refusée si un crédit client a déjà été créé sur cette facture.",
+    "action": "Motif obligatoire (3 caractères minimum).",
+    "requiredPermissions": [
+      "billing.payment.reverse"
+    ],
+    "sortOrder": 40
+  },
+  {
+    "key": "billing.credit_note.amount",
+    "module": "billing",
+    "page": "/billing/[id]",
+    "elementType": "field",
+    "label": "Montant de la réduction",
+    "short": "Réduction de l'obligation du patient. Un seul avoir par facture, définitif.",
+    "detailed": "Le montant ne peut pas dépasser la part patient restant corrigeable. Si la facture était déjà payée au-delà de la nouvelle obligation, l'excédent devient un crédit client au nom du payeur, à condition qu'un payeur unique et confirmé existe. Une facture avec part assurance ne peut pas recevoir d'avoir.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.credit_note.create"
+    ],
+    "sortOrder": 50
+  },
+  {
+    "key": "billing.credit.apply_amount",
+    "module": "billing",
+    "page": "/billing/[id]",
+    "elementType": "field",
+    "label": "Montant à appliquer",
+    "short": "Utilise le crédit disponible d'un titulaire pour régler cette facture. Ce n'est ni un encaissement ni un remboursement.",
+    "detailed": "Le montant est limité au crédit utilisable du titulaire (crédit au registre moins les remboursements en cours) et au reste dû de la facture. L'application de crédit ne crée aucun mouvement de caisse et peut être annulée ensuite.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.credit.apply"
+    ],
+    "sortOrder": 60
+  },
+  {
+    "key": "billing.statement.balances",
+    "module": "billing",
+    "page": "/billing/patients/[id]/statement",
+    "elementType": "section",
+    "label": "Reste à payer et crédit disponible",
+    "short": "Deux dimensions distinctes : ce que le patient doit encore, et le crédit détenu par chaque titulaire.",
+    "detailed": "Le relevé ne compense jamais automatiquement l'un avec l'autre. Le crédit appartient à un titulaire (le payeur d'origine) pour ce patient ; il s'utilise par une application de crédit explicite ou fait l'objet d'un remboursement.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.statement.read"
+    ],
+    "sortOrder": 70
+  },
+  {
+    "key": "billing.refund.reason",
+    "module": "billing",
+    "page": "/billing/refunds",
+    "elementType": "select",
+    "label": "Motif du remboursement",
+    "short": "Motif réglementé de la restitution. Le motif « Autre » exige une validation managériale explicite.",
+    "detailed": "Le motif « prestation annulée ou non réalisée » exige en plus une référence d'attestation clinique. Une demande réserve immédiatement le crédit correspondant : il n'est plus utilisable ailleurs tant qu'elle est en cours.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.refund.request"
+    ],
+    "sortOrder": 80
+  },
+  {
+    "key": "billing.refund.attestation_ref",
+    "module": "billing",
+    "page": "/billing/refunds",
+    "elementType": "field",
+    "label": "Référence d’attestation clinique",
+    "short": "Référence du document attestant que la prestation n'a pas été réalisée.",
+    "detailed": "Obligatoire pour le motif « prestation annulée ou non réalisée ». Sans cette référence, la demande est refusée.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.refund.request"
+    ],
+    "sortOrder": 90
+  },
+  {
+    "key": "billing.refund.alternate_beneficiary",
+    "module": "billing",
+    "page": "/billing/refunds",
+    "elementType": "section",
+    "label": "Bénéficiaire alternatif",
+    "short": "Rembourser une autre personne que le titulaire du crédit exige son consentement écrit.",
+    "detailed": "Renseigner l'identité du bénéficiaire, son lien avec le titulaire et la référence du consentement écrit du titulaire. Par défaut, le remboursement va au titulaire du crédit.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.refund.request"
+    ],
+    "sortOrder": 100
+  },
+  {
+    "key": "billing.refund.workflow",
+    "module": "billing",
+    "page": "/billing/refunds",
+    "elementType": "status",
+    "label": "Cycle du remboursement",
+    "short": "Demandé → Autorisé → Exécuté. L'autorisateur doit être une personne différente du demandeur et de l'exécutant.",
+    "detailed": "Une demande peut être rejetée ou annulée avant exécution, ce qui libère le crédit réservé. L'exécution est définitive : elle débite le crédit et attribue le numéro officiel RMB.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.refund.read"
+    ],
+    "sortOrder": 110
+  },
+  {
+    "key": "billing.refund.execution_method",
+    "module": "billing",
+    "page": "/billing/refunds",
+    "elementType": "select",
+    "label": "Mode d’exécution",
+    "short": "Espèces depuis une session de caisse ouverte, ou mode externe (carte, Mobile Money, virement) avec référence.",
+    "detailed": "En espèces, une sortie de caisse est créée dans la session et le tiroir doit contenir assez d'espèces. Pour un mode externe, la référence de l'opération et le compte ou numéro du bénéficiaire sont obligatoires. Une organisation est remboursée uniquement par virement.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.refund.execute"
+    ],
+    "sortOrder": 120
+  },
+  {
+    "key": "billing.refund.rmb_number",
+    "module": "billing",
+    "page": "/billing/refunds",
+    "elementType": "field",
+    "label": "N° RMB",
+    "short": "Numéro officiel du remboursement (RMB-année-numéro), attribué uniquement à l'exécution.",
+    "detailed": "La numérotation est continue sur l'année, sans trou : un numéro n'est consommé que si l'exécution réussit. Une réimpression du bon conserve le même numéro.",
+    "action": "",
+    "requiredPermissions": [
+      "billing.refund.read"
+    ],
+    "sortOrder": 130
+  }
+]

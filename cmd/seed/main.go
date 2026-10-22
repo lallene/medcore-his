@@ -7,14 +7,12 @@ import (
 	"os"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/lallene/medcore-his/backend/internal/config"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
 	"github.com/lallene/medcore-his/backend/internal/core/workflow"
 	"github.com/lallene/medcore-his/backend/internal/database"
-	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/coverage"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/guarantor"
@@ -22,7 +20,35 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 )
 
+// Demo seed modes. Every mode is fictitious data and goes through requireDemoSeed
+// (APP_ENV != production, allowed DB, Neon refused, MEDCORE_ALLOW_DEMO_SEED=1,
+// MEDCORE_DEMO_SEED_PASSWORD) before any write. No mode runs without an explicit flag.
+var demoSeedModes = map[string]string{
+	"--demo-full":       "parcours DEMO complet (patients fictifs, file, clinique, facturation, caisse)",
+	"--demo-pharmacy":   "workflow pharmacie DEMO (après --demo-full)",
+	"--demo-scheduling": "types de rendez-vous et plannings DEMO",
+	"--pharmacy-only":   "catalogue pharmacie DEMO",
+	"--demo-legacy":     "ancien générateur (300 patients aléatoires, bons assurance)",
+}
+
+func usage() {
+	fmt.Fprintln(os.Stderr, "Usage: seed <mode>   (données FICTIVES uniquement — jamais en production)")
+	for _, mode := range []string{"--demo-full", "--demo-pharmacy", "--demo-scheduling", "--pharmacy-only", "--demo-legacy"} {
+		fmt.Fprintf(os.Stderr, "  %-18s %s\n", mode, demoSeedModes[mode])
+	}
+	fmt.Fprintf(os.Stderr, "Variables obligatoires : %s=1, %s (>= %d caractères).\n", EnvAllowDemoSeed, EnvDemoSeedPassword, minDemoPasswordLen)
+}
+
 func main() {
+	if len(os.Args) != 2 {
+		usage()
+		os.Exit(2)
+	}
+	mode := os.Args[1]
+	if _, ok := demoSeedModes[mode]; !ok {
+		usage()
+		os.Exit(2)
+	}
 	cfg := config.Load()
 	if err := validateSeedEnvironment(cfg.AppEnv); err != nil {
 		log.Fatal(err)
@@ -30,17 +56,16 @@ func main() {
 	logger.Init(cfg.AppEnv)
 
 	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
-	if len(os.Args) > 1 && os.Args[1] == "--demo-pharmacy" {
+	requireDemoSeed(db, cfg.AppEnv)
+
+	switch mode {
+	case "--demo-pharmacy":
 		seedFullDemoPharmacy(db)
 		log.Println("Workflow Pharmacy DEMO exécuté avec succès")
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "--demo-full" {
+	case "--demo-full":
 		seedFullDemo(db)
 		log.Println("Seed DEMO complet exécuté avec succès")
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "--demo-scheduling" {
+	case "--demo-scheduling":
 		seedAdmin(db)
 		var adminID uint
 		db.Table("users").Select("id").Where("email = ?", "admin@medcore.local").Scan(&adminID)
@@ -49,25 +74,20 @@ func main() {
 		}
 		seedDemoScheduling(db, adminID)
 		log.Println("Seed DEMO scheduling exécuté avec succès")
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "--pharmacy-only" {
+	case "--pharmacy-only":
 		seedPharmacyCatalog(db)
 		log.Println("Seed DEMO pharmacie exécuté avec succès")
-		return
+	case "--demo-legacy":
+		rand.Seed(20260713)
+		seedAdmin(db)
+		patientItems := seedPatients(db, 300)
+		companyItems := seedCompanies(db)
+		guarantorItems := seedGuarantors(db, companyItems)
+		coverageItems := seedCoverages(db, patientItems, companyItems, guarantorItems)
+		seedVouchers(db, coverageItems, 800)
+		seedClinicalDemo(db, patientItems)
+		log.Println("Seed Demo Hospital exécuté avec succès")
 	}
-	rand.Seed(20260713)
-
-	seedAdmin(db)
-
-	patientItems := seedPatients(db, 300)
-	companyItems := seedCompanies(db)
-	guarantorItems := seedGuarantors(db, companyItems)
-	coverageItems := seedCoverages(db, patientItems, companyItems, guarantorItems)
-	seedVouchers(db, coverageItems, 800)
-	seedClinicalDemo(db, patientItems)
-	log.Println("Seed Demo Hospital exécuté avec succès")
-	log.Println("Login: admin@medcore.local / admin123")
 }
 
 type patientSeedProfile struct {
@@ -224,29 +244,6 @@ var patientDistricts = []string{
 	"Songon",
 	"Riviera",
 	"Angré",
-}
-
-func seedAdmin(db *gorm.DB) {
-	hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-
-	user := auth.User{
-		Name:         "Administrateur",
-		Email:        "admin@medcore.local",
-		PasswordHash: string(hash),
-		Role:         "admin",
-		IsActive:     true,
-	}
-
-	result := db.Where("email = ?", user.Email).Assign(auth.User{
-		Name:         user.Name,
-		PasswordHash: user.PasswordHash,
-		Role:         user.Role,
-		IsActive:     user.IsActive,
-	}).FirstOrCreate(&user)
-
-	if result.Error != nil {
-		log.Fatalf("Erreur seed admin: %v", result.Error)
-	}
 }
 
 func seedPatients(

@@ -1,0 +1,50 @@
+[
+  {
+    "key": "queue.ticket.stage",
+    "module": "queue",
+    "page": "/queue",
+    "elementType": "status",
+    "label": "Étape du parcours",
+    "short": "Position du patient dans le parcours : attente triage, triage en cours, à traiter, en consultation, terminé.",
+    "detailed": "Après un check-in validé, le ticket démarre toujours en « Attente triage » : il n'existe pas de passage direct en consultation. Les statuts Annulé, En pause, Absent et Redirigé terminent ou suspendent le parcours.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 10
+  },
+  {
+    "key": "queue.ticket.priority",
+    "module": "queue",
+    "page": "/queue/triage",
+    "elementType": "status",
+    "label": "Priorité",
+    "short": "Urgent, Haute, Normale ou Basse. Une priorité Urgent est signalée en rouge.",
+    "detailed": "La priorité ordonne la prise en charge dans la file. Elle peut être ajustée par les profils autorisés ; chaque changement est historisé sur le ticket.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 20
+  },
+  {
+    "key": "queue.ticket.wait_time",
+    "module": "queue",
+    "page": "/queue/triage",
+    "elementType": "table_column",
+    "label": "Attente",
+    "short": "Temps d'attente depuis l'entrée dans l'étape. Orange à partir de 20 minutes, rouge à partir de 30 minutes.",
+    "detailed": "",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 30
+  },
+  {
+    "key": "queue.ticket.finance_status",
+    "module": "queue",
+    "page": "/queue",
+    "elementType": "status",
+    "label": "Statut financier",
+    "short": "OK, Paiement requis ou Assurance en attente, d'après la facturation du patient.",
+    "detailed": "Ce statut est calculé à partir de la facturation et des créances. Il signale une situation à régulariser ; une dérogation éventuelle est tracée.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 40
+  }
+]

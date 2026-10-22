@@ -18,7 +18,6 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/patients"
 	"github.com/lallene/medcore-his/backend/internal/modules/pharmacy"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -271,22 +270,19 @@ func seedDemoAuthorizationStates(db *gorm.DB, patientByCode map[string]*patients
 }
 
 func seedDemoInactiveStaff(db *gorm.DB, actor uint) {
-	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	// Negative RBAC fixture, created inactive once with its profile (atomically);
+	// an existing account is left untouched.
+	_, _, err := createDemoAccount(db, "Compte inactif DEMO", "demo.inactive@medcore.local", "staff", false, func(tx *gorm.DB, user auth.User) error {
+		active := false
+		if _, err := staff.NewService(tx).Upsert(0, staff.UpsertRequest{UserID: user.ID, EmployeeCode: "DEMO-STAFF-INACTIVE", JobTitle: "Compte désactivé", PrimaryDepartment: "Administration", Active: &active, Functions: []string{"CAISSIER"}}, actor); err != nil {
+			return err
+		}
+		// Upsert synchronizes the account flag; keep this just-created fixture inactive.
+		return tx.Model(&user).Update("is_active", false).Error
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	user := auth.User{Name: "Compte inactif DEMO", Email: "demo.inactive@medcore.local", PasswordHash: string(hash), Role: "staff", IsActive: false}
-	must(db.Where("email=?", user.Email).FirstOrCreate(&user).Error)
-	active := false
-	var profile staff.Profile
-	db.Where("user_id=?", user.ID).First(&profile)
-	_, err = staff.NewService(db).Upsert(profile.ID, staff.UpsertRequest{UserID: user.ID, EmployeeCode: "DEMO-STAFF-INACTIVE", JobTitle: "Compte désactivé", PrimaryDepartment: "Administration", Active: &active, Functions: []string{"CAISSIER"}}, actor)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Upsert synchronizes the profile; the authentication account is explicitly
-	// kept inactive as a negative RBAC fixture.
-	must(db.Model(&user).Update("is_active", false).Error)
 }
 
 func ensureDemoTimeline(db *gorm.DB, patientID uint, eventType, category, title, description, referenceType string, referenceID uint, actor uint, date time.Time) {

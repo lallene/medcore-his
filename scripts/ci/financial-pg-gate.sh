@@ -24,7 +24,7 @@ events="$out_dir/financial-pg-events.json"
 evidence="$out_dir/financial-pg-evidence.txt"
 : >"$evidence"
 
-required="modules/billing,modules/cash,modules/performed_acts,modules/insurance/authorization,modules/insurance_receivables,modules/receivables,modules/pharmacy,modules/laboratory,modules/imaging,modules/hospitalizations,modules/consultations,cmd/migrate"
+required="modules/billing,modules/cash,modules/performed_acts,modules/insurance/authorization,modules/insurance_receivables,modules/receivables,modules/pharmacy,modules/laboratory,modules/imaging,modules/hospitalizations,modules/consultations,modules/help,cmd/migrate,cmd/seed"
 
 packages=(
 	./internal/modules/billing/
@@ -40,7 +40,9 @@ packages=(
 	./internal/modules/consultations/
 	./internal/core/rbac/
 	./internal/testsupport/...
+	./internal/modules/help/
 	./cmd/migrate/
+	./cmd/seed/
 	./cmd/pgtest-gate/
 )
 

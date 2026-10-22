@@ -1,0 +1,26 @@
+[
+  {
+    "key": "pharmacy.batch.fefo",
+    "module": "pharmacy",
+    "page": "/pharmacy",
+    "elementType": "table_column",
+    "label": "Priorité FEFO",
+    "short": "Ordre de sortie des lots : le lot qui expire en premier est délivré en premier (First Expired, First Out).",
+    "detailed": "Le rang FEFO #1 désigne le lot valide dont la date d'expiration est la plus proche. Les lots expirés ou épuisés n'ont pas de rang.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 10
+  },
+  {
+    "key": "pharmacy.dispensation.status",
+    "module": "pharmacy",
+    "page": "/pharmacy",
+    "elementType": "status",
+    "label": "Statut de dispensation",
+    "short": "À dispenser, Partielle, Dispensée ou Annulée.",
+    "detailed": "Une dispensation partielle signifie qu'une partie seulement de la quantité prescrite a été délivrée, par exemple faute de stock suffisant. Le reliquat reste à dispenser.",
+    "action": "",
+    "requiredPermissions": [],
+    "sortOrder": 20
+  }
+]

@@ -27,14 +27,12 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/receivables"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
 	"github.com/lallene/medcore-his/backend/internal/modules/ticketing"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 // seedFullDemo enrichit exclusivement une base locale de démonstration. Chaque
 // ressource possède une clé DEMO stable afin qu'un second passage soit sans effet.
 func seedFullDemo(db *gorm.DB) {
-	requireDemoDatabase(db)
 	seedAdmin(db)
 	var adminID uint
 	db.Table("users").Select("id").Where("email = ?", "admin@medcore.local").Scan(&adminID)
@@ -386,13 +384,14 @@ func seedDemoClinicalBilling(db *gorm.DB, actor uint) {
 	}
 }
 
+type demoStaffSpec struct {
+	code, name, email, title, department string
+	functions, specialties, capabilities []string
+	serviceCode                          string
+}
+
 func seedDemoStaff(db *gorm.DB, actor uint) {
-	type spec struct {
-		code, name, email, title, department string
-		functions, specialties, capabilities []string
-		serviceCode                          string
-	}
-	items := []spec{
+	items := []demoStaffSpec{
 		{"DEMO-URGENTISTE", "Dr Urgentiste DEMO", "demo.urgentiste@medcore.local", "Urgentiste", "Urgences", nil, []string{"URGENCES"}, nil, ""},
 		{"DEMO-GENERALISTE", "Dr Généraliste DEMO", "demo.generaliste@medcore.local", "Médecin généraliste", "Médecine générale", nil, []string{"MEDECINE_GENERALE"}, nil, "URG"},
 		{"DEMO-GYNECOLOGUE", "Dr Gynécologue DEMO", "demo.gynecologue@medcore.local", "Gynécologue", "Gynécologie", nil, []string{"GYNECOLOGIE"}, nil, ""},
@@ -419,36 +418,40 @@ func seedDemoStaff(db *gorm.DB, actor uint) {
 		{"DEMO-SUPPORT-MANAGER", "Responsable support DEMO", "demo.support.manager@medcore.local", "Responsable support", "Administration", []string{"SUPPORT_MANAGER"}, nil, nil, "ADMIN"},
 		{"DEMO-SUPPORT-NOSERVICE", "Support sans service DEMO", "demo.support.noservice@medcore.local", "Support sans service", "", []string{"SUPPORT_AGENT"}, nil, nil, ""},
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-	if err != nil {
-		log.Fatal(err)
-	}
-	service := staff.NewService(db)
-	active := true
+	created := 0
 	for _, item := range items {
-		u := auth.User{Name: item.name, Email: item.email, PasswordHash: string(hash), Role: "staff", IsActive: true}
-		if err = db.Where("email=?", item.email).FirstOrCreate(&u).Error; err != nil {
-			log.Fatal(err)
+		isNew, err := createDemoStaffAccount(db, item, actor)
+		if err != nil {
+			log.Fatalf("Staff DEMO %s: %v", item.email, err)
 		}
-		if err = db.Model(&u).Updates(map[string]any{"name": item.name, "role": "staff", "is_active": true}).Error; err != nil {
-			log.Fatal(err)
+		if isNew {
+			created++
 		}
-		var profile staff.Profile
-		db.Where("user_id=?", u.ID).First(&profile)
+	}
+	log.Printf("Staff DEMO: %d comptes créés, %d existants conservés sans modification", created, len(items)-created)
+}
+
+// createDemoStaffAccount creates a demo staff account AND its staff profile atomically
+// (see createDemoAccount). Create-only: an existing account and its profile are never
+// modified, reactivated, renamed, re-roled or completed.
+func createDemoStaffAccount(db *gorm.DB, item demoStaffSpec, actor uint) (bool, error) {
+	_, created, err := createDemoAccount(db, item.name, item.email, "staff", true, func(tx *gorm.DB, u auth.User) error {
+		active := true
 		req := staff.UpsertRequest{UserID: u.ID, EmployeeCode: item.code, JobTitle: item.title, PrimaryDepartment: item.department, Active: &active, Functions: item.functions, Specialties: item.specialties, Capabilities: item.capabilities}
 		if item.serviceCode != "" {
 			var sid uint
-			if err = db.Table("organization_services").Select("id").Where("code=?", item.serviceCode).Scan(&sid).Error; err != nil || sid == 0 {
-				log.Fatalf("service %s introuvable pour %s", item.serviceCode, item.email)
+			if err := tx.Table("organization_services").Select("id").Where("code=?", item.serviceCode).Scan(&sid).Error; err != nil {
+				return err
+			}
+			if sid == 0 {
+				return fmt.Errorf("service %s introuvable", item.serviceCode)
 			}
 			req.PrimaryServiceID = &sid
 		}
-		_, err = service.Upsert(profile.ID, req, actor)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	log.Printf("Staff DEMO: %d profils idempotents", len(items))
+		_, err := staff.NewService(tx).Upsert(0, req, actor)
+		return err
+	})
+	return created, err
 }
 
 func addDemoCoverage(db *gorm.DB, patientID, companyID uint, member string, rate float64, principal bool, validTo time.Time) {
@@ -1001,7 +1004,6 @@ func reconcileDemoFEFOStock(db *gorm.DB, presentationID uint) {
 }
 
 func seedFullDemoPharmacy(db *gorm.DB) {
-	requireDemoDatabase(db)
 	var adminID uint
 	db.Table("users").Select("id").Where("email=?", "admin@medcore.local").Scan(&adminID)
 	if adminID == 0 {
@@ -1012,17 +1014,6 @@ func seedFullDemoPharmacy(db *gorm.DB) {
 		log.Fatal("consultation Pharmacy DEMO introuvable: ", err)
 	}
 	seedDemoPharmacyWorkflow(db, adminID, &consultation)
-}
-
-func requireDemoDatabase(db *gorm.DB) {
-	var name string
-	if err := db.Raw("SELECT current_database()").Scan(&name).Error; err != nil {
-		log.Fatal(err)
-	}
-	if err := validateDemoTarget(name); err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Base DEMO locale ciblée: %s", name)
 }
 
 func validateDemoTarget(databaseName string) error {

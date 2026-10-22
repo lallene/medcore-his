@@ -13,6 +13,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
+	"github.com/lallene/medcore-his/backend/internal/modules/help"
 	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
 	"github.com/lallene/medcore-his/backend/internal/modules/imaging"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/authorization"
@@ -167,6 +168,7 @@ func schemaModels() []any {
 		&patient_queue.ScheduleAuditEvent{},
 		&patient_queue.AppointmentNotificationIntent{},
 		&patient_queue.AppointmentNotificationAttempt{},
+		&help.Entry{},
 	}
 }
 
@@ -216,6 +218,10 @@ func applyMigrations(db *gorm.DB) error {
 	}
 	if err := organization.BackfillLegacy(db, 1); err != nil {
 		return fmt.Errorf("organization.BackfillLegacy: %w", err)
+	}
+	// LOT AIDE: versioned help catalog (system data, no patient/user/credential).
+	if _, err := help.SyncCatalog(db); err != nil {
+		return fmt.Errorf("help.SyncCatalog: %w", err)
 	}
 	for _, statement := range []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_active_billable_key ON billing_invoice_lines (billable_key) WHERE is_active = true",
