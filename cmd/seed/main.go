@@ -11,6 +11,7 @@ import (
 
 	"github.com/lallene/medcore-his/backend/internal/config"
 	"github.com/lallene/medcore-his/backend/internal/core/logger"
+	"github.com/lallene/medcore-his/backend/internal/core/scheduling"
 	"github.com/lallene/medcore-his/backend/internal/core/workflow"
 	"github.com/lallene/medcore-his/backend/internal/database"
 	"github.com/lallene/medcore-his/backend/internal/modules/insurance/company"
@@ -59,6 +60,10 @@ func main() {
 		log.Fatal(err)
 	}
 	logger.Init(cfg.AppEnv)
+
+	if err := scheduling.SetLocation(cfg.Timezone); err != nil {
+		log.Fatalf("timezone planning invalide %q: %v", cfg.Timezone, err)
+	}
 
 	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
 	requireDemoSeed(db, cfg.AppEnv, cfg.DatabaseURL)
