@@ -162,19 +162,29 @@ func createSeries(ctx *StepContext, g *RNG) error {
 	count := g.Between(4, 10)
 	interval := Pick(g, []int{1, 2, 2, 4})
 	tid := typ.ID
-	// Reserve the future occurrence slots in the booking model.
+	// Verify every future occurrence before reserving any of them.
+	// The anchor has already been reserved by freeSlot.
 	for k := 1; k < count; k++ {
 		t := anchor.AddDate(0, 0, 7*interval*k)
-		occ := w.Clinic.slots[doc.UserID]
-		for m := 0; m < typ.DefaultDurationMinutes; m += 15 {
-			occ[t.Add(time.Duration(m)*time.Minute).Unix()] = true
+		if !w.Clinic.slotAvailable(doc.UserID, t, typ.DefaultDurationMinutes) {
+			w.Clinic.releaseSlot(doc.UserID, anchor, typ.DefaultDurationMinutes)
+			return nil
 		}
+	}
+	for k := 1; k < count; k++ {
+		t := anchor.AddDate(0, 0, 7*interval*k)
+		w.Clinic.reserveSlot(doc.UserID, t, typ.DefaultDurationMinutes)
 	}
 	agent := w.Staff.Admin
 	dto, _, err := w.Svc.Queue.CreateAppointmentSeries(patient_queue.CreateAppointmentSeriesRequest{PatientID: p.PatientID, ServiceID: w.Org.ServiceID(svc), PractitionerID: doc.UserID, AppointmentTypeID: &tid,
 		Freq: "WEEKLY", IntervalWeeks: interval, ByWeekdays: []int{int(anchor.Weekday())}, Count: &count, Timezone: w.Cfg.Location.String(), AnchorStartAt: anchor,
 		IdempotencyKey: fmt.Sprintf("dc-series-%d-%d", p.PatientID, ctx.Sim.Unix())}, agent.QueueAccess(w))
 	if err != nil {
+		w.Clinic.releaseSlot(doc.UserID, anchor, typ.DefaultDurationMinutes)
+		for k := 1; k < count; k++ {
+			t := anchor.AddDate(0, 0, 7*interval*k)
+			w.Clinic.releaseSlot(doc.UserID, t, typ.DefaultDurationMinutes)
+		}
 		return err
 	}
 	var occs []patient_queue.Appointment

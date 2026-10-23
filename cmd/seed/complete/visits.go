@@ -217,6 +217,46 @@ func (c *clinicState) release(p *Profile, visit int) {
 	c.busy[p.PatientID] = kept
 }
 
+func (c *clinicState) slotAvailable(practitionerID uint, start time.Time, durationMinutes int) bool {
+	if durationMinutes <= 0 {
+		durationMinutes = 30
+	}
+	occupied := c.slots[practitionerID]
+	for m := 0; m < durationMinutes; m += 15 {
+		if occupied[start.Add(time.Duration(m)*time.Minute).Unix()] {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *clinicState) reserveSlot(practitionerID uint, start time.Time, durationMinutes int) {
+	if durationMinutes <= 0 {
+		durationMinutes = 30
+	}
+	occupied := c.slots[practitionerID]
+	if occupied == nil {
+		occupied = map[int64]bool{}
+		c.slots[practitionerID] = occupied
+	}
+	for m := 0; m < durationMinutes; m += 15 {
+		occupied[start.Add(time.Duration(m)*time.Minute).Unix()] = true
+	}
+}
+
+func (c *clinicState) releaseSlot(practitionerID uint, start time.Time, durationMinutes int) {
+	if durationMinutes <= 0 {
+		durationMinutes = 30
+	}
+	occupied := c.slots[practitionerID]
+	if occupied == nil {
+		return
+	}
+	for m := 0; m < durationMinutes; m += 15 {
+		delete(occupied, start.Add(time.Duration(m)*time.Minute).Unix())
+	}
+}
+
 // ---------------------------------------------------------------------------------------
 // Booking.
 
@@ -270,15 +310,21 @@ func planSameDayAppointment(w *World, g *RNG, d Day, start time.Time) {
 		return
 	}
 	doc := docs[g.Intn(len(docs))]
+	dur := w.Ref.ApptTypes[visitServiceType["URG"]].DefaultDurationMinutes
+	if dur <= 0 {
+		dur = 30
+	}
 	occ := w.Clinic.slots[doc.UserID]
 	if occ == nil {
 		occ = map[int64]bool{}
 		w.Clinic.slots[doc.UserID] = occ
 	}
-	if occ[start.Unix()] {
-		return
+	for m := 0; m < dur; m += 15 {
+		if occ[start.Add(time.Duration(m)*time.Minute).Unix()] {
+			return
+		}
 	}
-	occ[start.Unix()] = true
+	w.Clinic.reserveSlot(doc.UserID, start, dur)
 	w.Clinic.visits++
 	v := &Visit{ID: w.Clinic.visits, P: p, Service: "URG", Doctor: doc, Start: start, Priority: patient_queue.PriorityNormal, Outcome: "HONORED", g: g}
 	w.Clinic.reserve(p, v.ID, start.Add(-2*time.Hour), start.Add(6*time.Hour))
@@ -330,9 +376,7 @@ func freeSlot(w *World, g *RNG, doc *Member, day time.Time, typ string) (time.Ti
 		if clash {
 			continue
 		}
-		for k := int64(0); k < int64(dur); k += 15 {
-			occupied[key+k*60] = true
-		}
+		w.Clinic.reserveSlot(doc.UserID, start, dur)
 		return start, true
 	}
 	return time.Time{}, false
@@ -357,6 +401,9 @@ func (v *Visit) book(ctx *StepContext) error {
 		StartAt: v.Start, Reason: Pick(v.g, bookingReasons), IdempotencyKey: fmt.Sprintf("dc-booking-%d", v.ID),
 	}, agent.QueueAccess(w))
 	if err != nil {
+		w.Clinic.release(v.P, v.ID)
+		dur := w.Ref.ApptTypes[visitServiceType[v.Service]].DefaultDurationMinutes
+		w.Clinic.releaseSlot(v.Doctor.UserID, v.Start, dur)
 		return err
 	}
 	v.ApptID = appt.ID
@@ -418,10 +465,13 @@ func (v *Visit) reschedule(ctx *StepContext, agent *Member) error {
 	if doc.UserID != v.Doctor.UserID {
 		req.PractitionerID = &pid
 	}
+	dur := w.Ref.ApptTypes[visitServiceType[v.Service]].DefaultDurationMinutes
 	if _, err := w.Svc.Queue.RescheduleAppointment(v.ApptID, req, agent.QueueAccess(w)); err != nil {
+		w.Clinic.releaseSlot(doc.UserID, start, dur)
 		v.scheduleArrival(w)
 		return err
 	}
+	w.Clinic.releaseSlot(v.Doctor.UserID, v.Start, dur)
 	v.Start, v.Doctor = start, doc
 	w.Clinic.release(v.P, v.ID)
 	w.Clinic.reserve(v.P, v.ID, start.Add(-2*time.Hour), start.Add(6*time.Hour))
