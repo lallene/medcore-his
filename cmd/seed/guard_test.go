@@ -221,3 +221,27 @@ func TestDatabaseHostsParsesDSNWithoutLeaking(t *testing.T) {
 		t.Fatal("Neon host detection")
 	}
 }
+
+// --demo-complete is a regular demo mode: listed in the usage and behind the common guard
+// (refused in production before any connection, without the pre-V1 opt-in).
+func TestDemoCompleteModeIsGuarded(t *testing.T) {
+	if _, ok := demoSeedModes["--demo-complete"]; !ok {
+		t.Fatal("--demo-complete must be a declared demo mode")
+	}
+	if os.Getenv("SEED_COMPLETE_CHILD") == "1" {
+		os.Args = []string{"seed", "--demo-complete"}
+		main()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDemoCompleteModeIsGuarded$")
+	cmd.Env = append(os.Environ(), "SEED_COMPLETE_CHILD=1", "APP_ENV=production", EnvAllowPreV1DemoSeed+"=",
+		"DATABASE_URL=postgres://nobody@127.0.0.1:1/medcore_full_demo?sslmode=disable", "JWT_SECRET=test-only-not-a-secret",
+		EnvAllowDemoSeed+"=1", EnvDemoSeedPassword+"=demo-only-passphrase-42")
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "interdit en environnement production") {
+		t.Fatalf("--demo-complete must be refused in production before connecting:\n%s", out)
+	}
+	if strings.Contains(string(out), "demo-only-passphrase-42") {
+		t.Fatal("password leaked")
+	}
+}

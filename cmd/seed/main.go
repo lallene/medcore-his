@@ -29,11 +29,12 @@ var demoSeedModes = map[string]string{
 	"--demo-scheduling": "types de rendez-vous et plannings DEMO",
 	"--pharmacy-only":   "catalogue pharmacie DEMO",
 	"--demo-legacy":     "ancien générateur (300 patients aléatoires, bons assurance)",
+	"--demo-complete":   "référence volumétrique : 365 jours d'activité, >= 1500 patients, tous les workflows (base dédiée vide)",
 }
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "Usage: seed <mode>   (données FICTIVES uniquement — jamais en production)")
-	for _, mode := range []string{"--demo-full", "--demo-pharmacy", "--demo-scheduling", "--pharmacy-only", "--demo-legacy"} {
+	for _, mode := range []string{"--demo-full", "--demo-complete", "--demo-pharmacy", "--demo-scheduling", "--pharmacy-only", "--demo-legacy"} {
 		fmt.Fprintf(os.Stderr, "  %-18s %s\n", mode, demoSeedModes[mode])
 	}
 	fmt.Fprintf(os.Stderr, "Variables obligatoires : %s=1, %s (>= %d caractères).\n", EnvAllowDemoSeed, EnvDemoSeedPassword, minDemoPasswordLen)
@@ -69,6 +70,10 @@ func main() {
 	case "--demo-full":
 		seedFullDemo(db)
 		log.Println("Seed DEMO complet exécuté avec succès")
+	case "--demo-complete":
+		if !runCompleteDemo(db, cfg.BusinessTimezone) {
+			os.Exit(1)
+		}
 	case "--demo-scheduling":
 		seedAdmin(db)
 		var adminID uint
