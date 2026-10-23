@@ -37,6 +37,8 @@ func usage() {
 		fmt.Fprintf(os.Stderr, "  %-18s %s\n", mode, demoSeedModes[mode])
 	}
 	fmt.Fprintf(os.Stderr, "Variables obligatoires : %s=1, %s (>= %d caractères).\n", EnvAllowDemoSeed, EnvDemoSeedPassword, minDemoPasswordLen)
+	fmt.Fprintf(os.Stderr, "EXCEPTION TEMPORAIRE PRÉ-V1 : %s=1 autorise en plus APP_ENV=production sur la seule base %q,\n", EnvAllowPreV1DemoSeed, preV1DemoDatabase)
+	fmt.Fprintln(os.Stderr, "  uniquement avec les variables obligatoires ci-dessus ; Neon reste interdit. À retirer à la V1.")
 }
 
 func main() {
@@ -50,13 +52,15 @@ func main() {
 		os.Exit(2)
 	}
 	cfg := config.Load()
-	if err := validateSeedEnvironment(cfg.AppEnv); err != nil {
+	// Early refusal before connecting; with the pre-V1 opt-in, the complete decision
+	// (exact database name, opt-ins, password) is made by checkDemoGuard once connected.
+	if err := validateSeedEnvironment(cfg.AppEnv); err != nil && !optInSet(os.Getenv(EnvAllowPreV1DemoSeed)) {
 		log.Fatal(err)
 	}
 	logger.Init(cfg.AppEnv)
 
 	db := database.Connect(cfg.DatabaseURL, cfg.BusinessTimezone)
-	requireDemoSeed(db, cfg.AppEnv)
+	requireDemoSeed(db, cfg.AppEnv, cfg.DatabaseURL)
 
 	switch mode {
 	case "--demo-pharmacy":
