@@ -71,6 +71,14 @@ type KPIs struct {
 	AverageFirstResponseMinutes float64 `json:"averageFirstResponseMinutes"`
 	MTTRMinutes                 float64 `json:"mttrMinutes"`
 }
+
+// DailyTicketFlow : tickets créés et résolus par jour civil.
+type DailyTicketFlow struct {
+	Date     string `json:"date"`
+	Created  int64  `json:"created"`
+	Resolved int64  `json:"resolved"`
+}
+
 type AgentOption struct {
 	UserID      uint   `json:"userId"`
 	Name        string `json:"name"`

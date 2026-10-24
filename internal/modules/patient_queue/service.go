@@ -3,6 +3,7 @@ package patient_queue
 import (
 	"errors"
 	"fmt"
+	"github.com/lallene/medcore-his/backend/internal/core/period"
 	"strconv"
 	"strings"
 	"time"
@@ -331,6 +332,30 @@ func (s *Service) ListAppointmentsToday(a Access, page, limit int) (*Appointment
 		return nil, coreerrors.Internal(err.Error())
 	}
 	return &AppointmentListResponse{Items: s.enrichAppointments(rows), Total: total, Page: page, Limit: limit}, nil
+}
+
+// AppointmentStats compte les rendez-vous planifiés sur la période civile
+// [from,to) (scheduled_at), par statut, dans le périmètre de service RBAC.
+func (s *Service) AppointmentStats(a Access, f period.Filter) (*AppointmentStats, error) {
+	q := f.Apply(s.db.Model(&Appointment{}), "scheduled_at", "service_id")
+	q, err := s.applyServiceScope(q, a, "service_id")
+	if err != nil {
+		return nil, err
+	}
+	var stats AppointmentStats
+	err = q.Select(`
+		COUNT(*) AS total,
+		COUNT(*) FILTER (WHERE status = 'SCHEDULED') AS scheduled,
+		COUNT(*) FILTER (WHERE status IN ('ARRIVED', 'CHECKED_IN')) AS arrived,
+		COUNT(*) FILTER (WHERE status = 'IN_PROGRESS') AS in_progress,
+		COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed,
+		COUNT(*) FILTER (WHERE status = 'NO_SHOW') AS no_show,
+		COUNT(*) FILTER (WHERE status = 'CANCELLED') AS cancelled`).
+		Scan(&stats).Error
+	if err != nil {
+		return nil, coreerrors.Internal(err.Error())
+	}
+	return &stats, nil
 }
 
 func (s *Service) enrichAppointment(a Appointment) AppointmentDTO {
@@ -1413,20 +1438,36 @@ func (s *Service) SetPriority(id uint, r PriorityRequest, a Access) (*Ticket, er
 }
 
 func (s *Service) KPIs(a Access) (*KPIs, error) {
+	return s.KPIsForPeriod(a, period.Filter{})
+}
+
+// KPIsForPeriod : sans période, comportement historique (jour courant UTC).
+// Avec période civile [from,to) : arrivés, terminés, attente moyenne et retards
+// suivent la période ; les files actuelles (accueil, triage, médecin, en cours)
+// restent un instantané. Le service demandé s'ajoute au périmètre RBAC (ET).
+func (s *Service) KPIsForPeriod(a Access, f period.Filter) (*KPIs, error) {
 	if !s.has(a, "queue.reception.read") && !s.has(a, "queue.read.service") && !s.has(a, "queue.read.all") && !s.has(a, "*") {
 		return nil, coreerrors.Forbidden("Lecture KPI refusée")
 	}
 	start := time.Now().UTC().Truncate(24 * time.Hour)
+	serviceOnly := period.Filter{ServiceID: f.ServiceID}
+	dates := period.Filter{From: f.From, To: f.To}
 	scoped := func() (*gorm.DB, error) {
-		q := s.db.Model(&Ticket{})
+		q := serviceOnly.Apply(s.db.Model(&Ticket{}), "", "service_id")
 		return s.applyServiceScope(q, a, "service_id")
+	}
+	since := func(q *gorm.DB, col string) *gorm.DB {
+		if f.HasPeriod() {
+			return dates.Apply(q, col, "")
+		}
+		return q.Where(col+" >= ?", start)
 	}
 	k := &KPIs{}
 	q, err := scoped()
 	if err != nil {
 		return nil, err
 	}
-	q.Where("checked_in_at >= ?", start).Count(&k.ArrivedToday)
+	since(q, "checked_in_at").Count(&k.ArrivedToday)
 	if q, err = scoped(); err != nil {
 		return nil, err
 	}
@@ -1446,26 +1487,55 @@ func (s *Service) KPIs(a Access) (*KPIs, error) {
 	if q, err = scoped(); err != nil {
 		return nil, err
 	}
-	q.Where("status=? AND updated_at >= ?", StatusCompleted, start).Count(&k.CompletedToday)
+	since(q.Where("status=?", StatusCompleted), "updated_at").Count(&k.CompletedToday)
+
 	scopeSQL, scopeArgs, err := s.serviceScopeSQL(a, "service_id")
 	if err != nil {
 		return nil, err
 	}
+	periodSQL := func(col, serviceCol string) (string, []any) {
+		sql, args := "", []any{}
+		if f.ServiceID != nil {
+			sql += " AND " + serviceCol + " = ?"
+			args = append(args, *f.ServiceID)
+		}
+		if f.HasPeriod() {
+			if f.From != "" {
+				sql += " AND " + col + " >= ?::date"
+				args = append(args, f.From)
+			}
+			if f.To != "" {
+				sql += " AND " + col + " < ?::date"
+				args = append(args, f.To)
+			}
+			return sql, args
+		}
+		return sql + " AND " + col + " >= ?", append(args, start)
+	}
+
+	avgFilterSQL, avgFilterArgs := periodSQL("arrived_at", "service_id")
+	statusSQL, statusArgs := "status=?", []any{StatusActive}
+	if f.HasPeriod() {
+		// Période historique : tous les tickets arrivés (hors annulés), pas seulement actifs.
+		statusSQL, statusArgs = "status<>?", []any{StatusCancelled}
+	}
 	avgSQL := `
 		SELECT AVG(EXTRACT(EPOCH FROM (COALESCE(triage_completed_at, NOW()) - arrived_at))/60.0)
-		FROM patient_queue_tickets WHERE status=? AND arrived_at >= ?` + scopeSQL
-	avgArgs := append([]any{StatusActive, start}, scopeArgs...)
+		FROM patient_queue_tickets WHERE ` + statusSQL + avgFilterSQL + scopeSQL
+	avgArgs := append(append(statusArgs, avgFilterArgs...), scopeArgs...)
 	var avg *float64
 	s.db.Raw(avgSQL, avgArgs...).Scan(&avg)
 	if avg != nil {
 		k.AvgWaitMinutes = *avg
 	}
+
+	lateFilterSQL, lateFilterArgs := periodSQL("t.checked_in_at", "t.service_id")
 	lateSQL := `
 		SELECT COUNT(*) FROM patient_queue_tickets t
 		JOIN patient_queue_appointments a ON a.id = t.appointment_id
-		WHERE t.arrived_at > a.scheduled_at + interval '15 minutes' AND t.checked_in_at >= ?` +
+		WHERE t.arrived_at > a.scheduled_at + interval '15 minutes'` + lateFilterSQL +
 		strings.Replace(scopeSQL, "service_id", "t.service_id", 1)
-	lateArgs := append([]any{start}, scopeArgs...)
+	lateArgs := append(lateFilterArgs, scopeArgs...)
 	s.db.Raw(lateSQL, lateArgs...).Scan(&k.LateAppointments)
 	return k, nil
 }

@@ -1,6 +1,7 @@
 package patient_queue
 
 import (
+	"github.com/lallene/medcore-his/backend/internal/core/period"
 	"strconv"
 	"time"
 
@@ -276,4 +277,24 @@ func exceptionFilter(c *gin.Context) ExceptionFilter {
 		}
 	}
 	return f
+}
+
+// PlannedHoursByStaff : heures planifiées par membre du personnel sur [from,to).
+func (h *Handler) PlannedHoursByStaff(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	f, err := period.Parse(c)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	x, e := h.service.PlannedHoursByStaff(a, f)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
 }

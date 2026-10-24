@@ -3,6 +3,7 @@ package ticketing
 import (
 	"errors"
 	"fmt"
+	"github.com/lallene/medcore-his/backend/internal/core/period"
 	"strconv"
 	"strings"
 	"time"
@@ -474,11 +475,23 @@ func (s *Service) Workflow(id uint, r WorkflowRequest, a Access) (*Detail, error
 	return s.Detail(id, a)
 }
 func (s *Service) KPIs(a Access) (*KPIs, error) {
+	return s.KPIsForPeriod(a, period.Filter{})
+}
+
+// KPIsForPeriod : sans période, comportement historique. Avec période civile
+// [from,to) : nouveaux, résolus, rouverts et délais moyens suivent la période ;
+// ouverts, P1/P2 et SLA dépassés restent un instantané. Le service demandé
+// s'ajoute au périmètre RBAC support (ET).
+func (s *Service) KPIsForPeriod(a Access, f period.Filter) (*KPIs, error) {
 	if err := s.requireSupportScope(a); err != nil {
 		return nil, err
 	}
+	if f.HasPeriod() {
+		return s.periodKPIs(a, f)
+	}
 	q := s.db.Model(&Ticket{})
 	q = s.filterSupportTickets(q, a, "")
+	q = period.Filter{ServiceID: f.ServiceID}.Apply(q, "", "service_id")
 	k := &KPIs{}
 	q.Session(&gorm.Session{}).Where("status NOT IN ?", []string{"CLOSED", "CANCELLED"}).Count(&k.Open)
 	q.Session(&gorm.Session{}).Where("created_at::date=CURRENT_DATE").Count(&k.NewToday)
@@ -490,6 +503,108 @@ func (s *Service) KPIs(a Access) (*KPIs, error) {
 	q.Select("COALESCE(AVG(EXTRACT(EPOCH FROM (first_response_at-created_at))/60),0)").Where("first_response_at IS NOT NULL").Scan(&k.AverageFirstResponseMinutes)
 	q.Select("COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at-created_at))/60),0)").Where("resolved_at IS NOT NULL").Scan(&k.MTTRMinutes)
 	return k, nil
+}
+
+func (s *Service) periodKPIs(a Access, f period.Filter) (*KPIs, error) {
+	serviceOnly := period.Filter{ServiceID: f.ServiceID}
+	dates := period.Filter{From: f.From, To: f.To}
+	base := func() *gorm.DB {
+		q := s.filterSupportTickets(s.db.Model(&Ticket{}), a, "")
+		return serviceOnly.Apply(q, "", "service_id")
+	}
+	k := &KPIs{}
+	closed := []string{"CLOSED", "CANCELLED"}
+	if err := base().Where("status NOT IN ?", closed).Count(&k.Open).Error; err != nil {
+		return nil, err
+	}
+	if err := base().Where("priority IN ? AND status NOT IN ?", []string{"P1", "P2"}, closed).Count(&k.P1P2).Error; err != nil {
+		return nil, err
+	}
+	if err := base().Where("(first_response_at IS NULL AND response_due_at<?) OR (resolved_at IS NULL AND resolution_due_at<?)", s.now(), s.now()).Count(&k.SLABreached).Error; err != nil {
+		return nil, err
+	}
+	if err := dates.Apply(base(), "created_at", "").Count(&k.NewToday).Error; err != nil {
+		return nil, err
+	}
+	if err := dates.Apply(base().Where("resolved_at IS NOT NULL"), "resolved_at", "").Count(&k.Resolved).Error; err != nil {
+		return nil, err
+	}
+	rq := s.db.Table("ticketing_history h").Joins("JOIN ticketing_tickets t ON t.id = h.ticket_id").Where("h.event_type = ?", "REOPENED")
+	rq = serviceOnly.Apply(s.filterSupportTickets(rq, a, "t"), "", "t.service_id")
+	if err := dates.Apply(rq, "h.created_at", "").Count(&k.Reopened).Error; err != nil {
+		return nil, err
+	}
+	if err := dates.Apply(base(), "created_at", "").Where("first_response_at IS NOT NULL").
+		Select("COALESCE(AVG(EXTRACT(EPOCH FROM (first_response_at-created_at))/60),0)").
+		Scan(&k.AverageFirstResponseMinutes).Error; err != nil {
+		return nil, err
+	}
+	if err := dates.Apply(base(), "created_at", "").Where("resolved_at IS NOT NULL").
+		Select("COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at-created_at))/60),0)").
+		Scan(&k.MTTRMinutes).Error; err != nil {
+		return nil, err
+	}
+	return k, nil
+}
+
+// maxDailyFlowDays borne la série journalière (une année civile + marge).
+const maxDailyFlowDays = 366
+
+// DailyFlow : tickets créés (created_at) et résolus (resolved_at) par jour civil
+// de [from,to) ; même périmètre RBAC que les KPI support, service en ET.
+func (s *Service) DailyFlow(a Access, f period.Filter) ([]DailyTicketFlow, error) {
+	if err := s.requireSupportScope(a); err != nil {
+		return nil, err
+	}
+	if f.From == "" || f.To == "" {
+		return nil, coreerrors.BadRequest("from et to sont obligatoires")
+	}
+	var days int
+	if err := s.db.Raw("SELECT (?::date - ?::date)", f.To, f.From).Scan(&days).Error; err != nil {
+		return nil, coreerrors.Internal(err.Error())
+	}
+	if days > maxDailyFlowDays {
+		return nil, coreerrors.BadRequest("période trop longue (366 jours maximum)")
+	}
+
+	var dayList []string
+	if err := s.db.Raw(`SELECT d::date::text FROM generate_series(?::date, ?::date - 1, interval '1 day') AS d ORDER BY d`, f.From, f.To).
+		Scan(&dayList).Error; err != nil {
+		return nil, coreerrors.Internal(err.Error())
+	}
+
+	type dayCount struct {
+		Day string
+		N   int64
+	}
+	countBy := func(dateColumn string) (map[string]int64, error) {
+		q := s.filterSupportTickets(s.db.Table("ticketing_tickets"), a, "")
+		q = period.Filter{ServiceID: f.ServiceID}.Apply(q, "", "service_id")
+		q = period.Filter{From: f.From, To: f.To}.Apply(q.Where(dateColumn+" IS NOT NULL"), dateColumn, "")
+		var rows []dayCount
+		if err := q.Select(dateColumn + "::date::text AS day, COUNT(*) AS n").Group("day").Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		out := make(map[string]int64, len(rows))
+		for _, r := range rows {
+			out[r.Day] = r.N
+		}
+		return out, nil
+	}
+	created, err := countBy("created_at")
+	if err != nil {
+		return nil, coreerrors.Internal(err.Error())
+	}
+	resolved, err := countBy("resolved_at")
+	if err != nil {
+		return nil, coreerrors.Internal(err.Error())
+	}
+
+	flow := make([]DailyTicketFlow, len(dayList))
+	for i, day := range dayList {
+		flow[i] = DailyTicketFlow{Date: day, Created: created[day], Resolved: resolved[day]}
+	}
+	return flow, nil
 }
 
 // requireSupportScope : ticket.read.all OK ; ticket.read.service exige un ServiceID ;

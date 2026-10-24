@@ -2,6 +2,7 @@ package patient_queue
 
 import (
 	"errors"
+	"github.com/lallene/medcore-his/backend/internal/core/period"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -108,6 +109,65 @@ func (h *Handler) ListAppointmentsToday(c *gin.Context) {
 	p, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	l, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	x, e := h.service.ListAppointmentsToday(a, p, l)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+func (h *Handler) AppointmentStats(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	f, err := period.Parse(c)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	x, e := h.service.AppointmentStats(a, f)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+// AppointmentDaily : rendez-vous par jour civil et par statut sur [from,to).
+func (h *Handler) AppointmentDaily(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	f, err := period.Parse(c)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	x, e := h.service.AppointmentDaily(a, f)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+// QueueDailyFlow : arrivées et sorties de la file par jour civil sur [from,to).
+func (h *Handler) QueueDailyFlow(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	f, err := period.Parse(c)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	x, e := h.service.QueueDailyFlow(a, f)
 	if e != nil {
 		fail(c, e)
 		return
@@ -380,7 +440,12 @@ func (h *Handler) KPIs(c *gin.Context) {
 		return
 	}
 	h.enrich(&a)
-	x, e := h.service.KPIs(a)
+	f, err := period.Parse(c)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	x, e := h.service.KPIsForPeriod(a, f)
 	if e != nil {
 		fail(c, e)
 		return

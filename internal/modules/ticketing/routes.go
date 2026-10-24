@@ -21,6 +21,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	t := r.Group("/ticketing")
 	t.GET("/categories", rbac.Permission("ticket.create"), h.Categories)
 	t.GET("/kpis", rbac.Permission("ticket.read.service"), h.KPIs)
+	t.GET("/kpis/daily", rbac.Permission("ticket.read.service"), h.DailyFlow)
 	t.GET("/notifications", rbac.Permission("ticket.read.own"), h.Notifications)
 	t.GET("/agents", rbac.Permission("ticket.assign"), h.Agents)
 }

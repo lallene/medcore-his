@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/lallene/medcore-his/backend/internal/core/period"
 	"io"
 	"net/http"
 	"os"
@@ -223,7 +224,32 @@ func (h *Handler) KPIs(c *gin.Context) {
 		return
 	}
 	h.enrich(&a)
-	x, e := h.service.KPIs(a)
+	f, err := period.Parse(c)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	x, e := h.service.KPIsForPeriod(a, f)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	c.JSON(200, x)
+}
+
+// DailyFlow : tickets créés/résolus par jour civil de [from,to).
+func (h *Handler) DailyFlow(c *gin.Context) {
+	a, ok := access(c)
+	if !ok {
+		return
+	}
+	h.enrich(&a)
+	f, err := period.Parse(c)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	x, e := h.service.DailyFlow(a, f)
 	if e != nil {
 		fail(c, e)
 		return

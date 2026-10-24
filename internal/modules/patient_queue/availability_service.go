@@ -24,31 +24,31 @@ type AvailabilityQuery struct {
 
 // AvailabilitySlot is an ephemeral candidate — never persisted, never a reservation.
 type AvailabilitySlot struct {
-	PractitionerID    uint       `json:"practitionerId"`
-	ServiceID         uint       `json:"serviceId"`
-	StartAt           time.Time  `json:"startAt"`
-	EndAt             time.Time  `json:"endAt"`
-	DurationMinutes   int        `json:"durationMinutes"`
-	AppointmentTypeID *uint      `json:"appointmentTypeId,omitempty"`
+	PractitionerID    uint      `json:"practitionerId"`
+	ServiceID         uint      `json:"serviceId"`
+	StartAt           time.Time `json:"startAt"`
+	EndAt             time.Time `json:"endAt"`
+	DurationMinutes   int       `json:"durationMinutes"`
+	AppointmentTypeID *uint     `json:"appointmentTypeId,omitempty"`
 }
 
 // AvailabilityResult is a read-only snapshot (not a booking guarantee).
 type AvailabilityResult struct {
-	Query             AvailabilityQueryMeta `json:"query"`
-	Timezone          string                `json:"timezone"`
-	Slots             []AvailabilitySlot    `json:"slots"`
-	Count             int                   `json:"count"`
-	SnapshotNote      string                `json:"snapshotNote"`
+	Query        AvailabilityQueryMeta `json:"query"`
+	Timezone     string                `json:"timezone"`
+	Slots        []AvailabilitySlot    `json:"slots"`
+	Count        int                   `json:"count"`
+	SnapshotNote string                `json:"snapshotNote"`
 }
 
 type AvailabilityQueryMeta struct {
-	ServiceID         uint       `json:"serviceId"`
-	PractitionerID    *uint      `json:"practitionerId,omitempty"`
-	AppointmentTypeID *uint      `json:"appointmentTypeId,omitempty"`
-	DurationMinutes   int        `json:"durationMinutes"`
-	SlotStepMinutes   int        `json:"slotStepMinutes"`
-	From              time.Time  `json:"from"`
-	To                time.Time  `json:"to"`
+	ServiceID         uint      `json:"serviceId"`
+	PractitionerID    *uint     `json:"practitionerId,omitempty"`
+	AppointmentTypeID *uint     `json:"appointmentTypeId,omitempty"`
+	DurationMinutes   int       `json:"durationMinutes"`
+	SlotStepMinutes   int       `json:"slotStepMinutes"`
+	From              time.Time `json:"from"`
+	To                time.Time `json:"to"`
 }
 
 const availabilitySnapshotNote = "Availability is a read-only snapshot; slots are not reserved. LOT 23D performs authoritative booking."
@@ -367,6 +367,42 @@ func (s *Service) computePractitionerFreeIntervals(
 ) []scheduling.Interval {
 	_ = practitionerID
 	_ = serviceID
+	base := workingIntervals(from, to, loc, schedules, exceptions)
+
+	// 4. Subtract blocking appointments
+	var blockers []scheduling.Interval
+	for _, ap := range appts {
+		if !AppointmentBlocksAvailability(ap.Status) {
+			continue
+		}
+		start := ap.ScheduledAt.UTC()
+		end := ResolveAppointmentEnd(Appointment{
+			ScheduledAt: start, ScheduledEndAt: ap.ScheduledEndAt, AppointmentTypeID: ap.AppointmentTypeID,
+		}, typeDur)
+		iv := scheduling.Interval{Start: start, End: end}
+		if !iv.Valid() {
+			continue
+		}
+		if clipped, ok := scheduling.Clip(iv, queryBound); ok {
+			blockers = append(blockers, clipped)
+		}
+	}
+	base = scheduling.Subtract(base, blockers)
+
+	// 5. Clip to query range
+	var clipped []scheduling.Interval
+	for _, iv := range base {
+		if c, ok := scheduling.Clip(iv, queryBound); ok {
+			clipped = append(clipped, c)
+		}
+	}
+	return scheduling.Merge(clipped)
+}
+
+// workingIntervals projette les créneaux récurrents sur les dates de [from,to),
+// ajoute les disponibilités exceptionnelles puis retire les exceptions négatives
+// (le négatif l'emporte). Partagé par les disponibilités et les heures planifiées.
+func workingIntervals(from, to time.Time, loc *time.Location, schedules []StaffWorkingSchedule, exceptions []ScheduleException) []scheduling.Interval {
 	// 1. Project recurring working windows onto concrete dates
 	var base []scheduling.Interval
 	for d := dateOnlyInLoc(from, loc); !d.After(dateOnlyInLoc(to.Add(-time.Nanosecond), loc)); d = d.AddDate(0, 0, 1) {
@@ -404,36 +440,7 @@ func (s *Service) computePractitionerFreeIntervals(
 	base = scheduling.Merge(append(base, positive...))
 
 	// 3. Subtract negative (negative wins over positive via subtract after union)
-	base = scheduling.Subtract(base, negative)
-
-	// 4. Subtract blocking appointments
-	var blockers []scheduling.Interval
-	for _, ap := range appts {
-		if !AppointmentBlocksAvailability(ap.Status) {
-			continue
-		}
-		start := ap.ScheduledAt.UTC()
-		end := ResolveAppointmentEnd(Appointment{
-			ScheduledAt: start, ScheduledEndAt: ap.ScheduledEndAt, AppointmentTypeID: ap.AppointmentTypeID,
-		}, typeDur)
-		iv := scheduling.Interval{Start: start, End: end}
-		if !iv.Valid() {
-			continue
-		}
-		if clipped, ok := scheduling.Clip(iv, queryBound); ok {
-			blockers = append(blockers, clipped)
-		}
-	}
-	base = scheduling.Subtract(base, blockers)
-
-	// 5. Clip to query range
-	var clipped []scheduling.Interval
-	for _, iv := range base {
-		if c, ok := scheduling.Clip(iv, queryBound); ok {
-			clipped = append(clipped, c)
-		}
-	}
-	return scheduling.Merge(clipped)
+	return scheduling.Subtract(base, negative)
 }
 
 func dateOnlyInLoc(t time.Time, loc *time.Location) time.Time {

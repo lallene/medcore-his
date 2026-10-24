@@ -193,6 +193,17 @@ type KPIs struct {
 	LateAppointments int64   `json:"lateAppointments"`
 }
 
+// AppointmentStats : rendez-vous planifiés sur la période civile [from,to).
+type AppointmentStats struct {
+	Total      int64 `json:"total"`
+	Scheduled  int64 `json:"scheduled"`
+	Arrived    int64 `json:"arrived"`
+	InProgress int64 `json:"inProgress"`
+	Completed  int64 `json:"completed"`
+	NoShow     int64 `json:"noShow"`
+	Cancelled  int64 `json:"cancelled"`
+}
+
 type DetailResponse struct {
 	Ticket    TicketDTO         `json:"ticket"`
 	History   []History         `json:"history"`

@@ -1,7 +1,7 @@
 package dashboard
 
 type Service interface {
-	GetDashboard() (*DashboardResponse, error)
+	GetDashboard(filter DashboardFilter) (*DashboardResponse, error)
 }
 
 type service struct {
@@ -12,14 +12,14 @@ func NewService(repository Repository) Service {
 	return &service{repository: repository}
 }
 
-func (s *service) GetDashboard() (*DashboardResponse, error) {
-	stats, err := s.repository.GetStats()
+func (s *service) GetDashboard(filter DashboardFilter) (*DashboardResponse, error) {
+	stats, err := s.repository.GetStats(filter)
 
 	if err != nil {
 		return nil, err
 	}
 
-	activities, err := s.repository.GetRecentActivities(10)
+	activities, err := s.repository.GetRecentActivities(10, filter)
 	if err != nil {
 		activities = []ActivityItem{}
 	}

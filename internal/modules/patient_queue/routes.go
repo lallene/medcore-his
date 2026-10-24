@@ -13,6 +13,8 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 		"schedule.manage.service", "schedule.manage.all",
 	), h.CreateAppointment)
 	g.GET("/appointments/today", rbac.Permission("queue.reception.read"), h.ListAppointmentsToday)
+	g.GET("/appointments/stats", rbac.Permission("queue.reception.read"), h.AppointmentStats)
+	g.GET("/appointments/daily", rbac.Permission("queue.reception.read"), h.AppointmentDaily)
 	g.POST("/appointments/:id/check-in", rbac.Permission("queue.checkin"), h.CheckInAppointment)
 	g.POST("/appointments/:id/no-show", rbac.AnyPermission("appointment.no_show.service", "appointment.no_show.all"), h.MarkNoShow)
 	g.POST("/check-in/walk-in", rbac.Permission("queue.checkin"), h.CheckInWalkIn)
@@ -28,6 +30,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g.POST("/tickets/:id/cancel", rbac.Permission("queue.cancel"), h.Cancel)
 	g.POST("/tickets/:id/priority", rbac.Permission("queue.priority.update"), h.SetPriority)
 	g.GET("/kpis", rbac.AnyPermission("queue.reception.read", "queue.read.service", "queue.read.all"), h.KPIs)
+	g.GET("/kpis/daily", rbac.AnyPermission("queue.reception.read", "queue.read.service", "queue.read.all"), h.QueueDailyFlow)
 	g.GET("/finance/:patientId", rbac.Permission("queue.checkin"), h.EvaluateFinance)
 
 	// LOT 23B — working schedules & exceptions (no /availability)
@@ -35,6 +38,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	sg.GET("/mine", rbac.AnyPermission("schedule.read.own", "schedule.read.all", "schedule.manage.own"), h.ListMySchedules)
 	sg.GET("", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.ListSchedules)
 	sg.POST("", rbac.AnyPermission("schedule.manage.own", "schedule.manage.service", "schedule.manage.all"), h.CreateSchedule)
+	sg.GET("/planned-hours/by-staff", rbac.AnyPermission("schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.PlannedHoursByStaff)
 	sg.GET("/:id", rbac.AnyPermission("schedule.read.own", "schedule.read.service", "schedule.read.all", "schedule.manage.service", "schedule.manage.all"), h.GetSchedule)
 	sg.PATCH("/:id", rbac.AnyPermission("schedule.manage.own", "schedule.manage.service", "schedule.manage.all"), h.UpdateSchedule)
 	sg.DELETE("/:id", rbac.AnyPermission("schedule.manage.own", "schedule.manage.service", "schedule.manage.all"), h.DeleteSchedule)
