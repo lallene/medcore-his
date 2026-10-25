@@ -178,6 +178,14 @@ func init() {
 	add("grc.risk.create", "Créer un risque", "GRC", "GLOBAL")
 	add("grc.risk.update", "Modifier un risque", "GRC", "GLOBAL")
 	add("grc.risk.approve", "Approuver ou accepter un risque", "GRC", "GLOBAL")
+	add("grc.framework.read", "Lire les référentiels de conformité", "GRC", "GLOBAL")
+	add("grc.framework.manage", "Gérer les référentiels de conformité", "GRC", "GLOBAL")
+	add("grc.requirement.read", "Lire les exigences de conformité", "GRC", "GLOBAL")
+	add("grc.requirement.manage", "Gérer les exigences de conformité", "GRC", "GLOBAL")
+	add("grc.control.read", "Lire les contrôles GRC", "GRC", "GLOBAL")
+	add("grc.control.manage", "Gérer les contrôles GRC", "GRC", "GLOBAL")
+	add("grc.control.implementation.read", "Lire les implémentations de contrôles", "GRC", "GLOBAL")
+	add("grc.control.implementation.manage", "Gérer les implémentations de contrôles", "GRC", "GLOBAL")
 
 	// RBAC admin LOT 21
 	add("rbac.read", "Lire le centre d'accès", "RBAC", "GLOBAL")

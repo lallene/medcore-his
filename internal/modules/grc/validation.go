@@ -74,3 +74,45 @@ func isValidRiskTreatment(value string) bool {
 func isValidRiskStatus(value string) bool {
 	return validRiskStatuses[value]
 }
+
+var validFrameworkStatuses = map[string]bool{
+	FrameworkStatusDraft:    true,
+	FrameworkStatusActive:   true,
+	FrameworkStatusArchived: true,
+}
+
+var validRequirementStatuses = map[string]bool{
+	RequirementStatusActive:   true,
+	RequirementStatusInactive: true,
+}
+
+var validControlStatuses = map[string]bool{
+	ControlStatusDraft:    true,
+	ControlStatusActive:   true,
+	ControlStatusInactive: true,
+	ControlStatusRetired:  true,
+}
+
+var validControlImplementationStatuses = map[string]bool{
+	ControlImplementationStatusPlanned:        true,
+	ControlImplementationStatusImplemented:    true,
+	ControlImplementationStatusPartial:        true,
+	ControlImplementationStatusNotImplemented: true,
+	ControlImplementationStatusNotApplicable:  true,
+}
+
+func isValidFrameworkStatus(value string) bool {
+	return validFrameworkStatuses[value]
+}
+
+func isValidRequirementStatus(value string) bool {
+	return validRequirementStatuses[value]
+}
+
+func isValidControlStatus(value string) bool {
+	return validControlStatuses[value]
+}
+
+func isValidControlImplementationStatus(value string) bool {
+	return validControlImplementationStatuses[value]
+}
