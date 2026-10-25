@@ -52,4 +52,18 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	controlRisks := g.Group("/control-risks")
 	controlRisks.POST("", rbac.Permission("grc.control.manage"), h.LinkControlRisk)
 	controlRisks.DELETE("/:controlId/:riskId", rbac.Permission("grc.control.manage"), h.UnlinkControlRisk)
+
+	// Evidence is metadata only: no upload, download or delete route.
+	evidence := g.Group("/evidence")
+	evidence.GET("", rbac.Permission("grc.evidence.read"), h.ListEvidence)
+	evidence.GET("/:id", rbac.Permission("grc.evidence.read"), h.GetEvidence)
+	evidence.POST("", rbac.Permission("grc.evidence.manage"), h.CreateEvidence)
+	evidence.PUT("/:id", rbac.Permission("grc.evidence.manage"), h.UpdateEvidence)
+
+	// Status changes (completion, reopening, cancellation) go through PUT.
+	actions := g.Group("/actions")
+	actions.GET("", rbac.Permission("grc.action.read"), h.ListRemediationActions)
+	actions.GET("/:id", rbac.Permission("grc.action.read"), h.GetRemediationAction)
+	actions.POST("", rbac.Permission("grc.action.create"), h.CreateRemediationAction)
+	actions.PUT("/:id", rbac.Permission("grc.action.update"), h.UpdateRemediationAction)
 }

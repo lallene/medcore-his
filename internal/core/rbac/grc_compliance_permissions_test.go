@@ -115,6 +115,9 @@ func TestGRCCatalogHasNoBroadOrRelationPermissions(t *testing.T) {
 	for _, tt := range grcCompliancePermissions {
 		want[tt.key] = true
 	}
+	for _, p := range grcEvidenceActionPermissions {
+		want[p.key] = true
+	}
 
 	got := 0
 	for _, meta := range AllPermissionMetas() {

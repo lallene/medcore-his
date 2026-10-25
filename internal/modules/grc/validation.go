@@ -1,6 +1,13 @@
 package grc
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
+)
 
 var validAssetTypes = map[string]bool{
 	AssetTypeApplication:     true,
@@ -115,4 +122,179 @@ func isValidControlStatus(value string) bool {
 
 func isValidControlImplementationStatus(value string) bool {
 	return validControlImplementationStatuses[value]
+}
+
+const evidenceExternalReferenceMaxLength = 500
+
+var validEvidenceTypes = map[string]bool{
+	EvidenceTypeDocument:      true,
+	EvidenceTypeConfiguration: true,
+	EvidenceTypeLog:           true,
+	EvidenceTypeScreenshot:    true,
+	EvidenceTypeReport:        true,
+	EvidenceTypeTestResult:    true,
+	EvidenceTypeCertificate:   true,
+	EvidenceTypeOther:         true,
+}
+
+var validEvidenceStatuses = map[string]bool{
+	EvidenceStatusDraft:   true,
+	EvidenceStatusValid:   true,
+	EvidenceStatusRevoked: true,
+}
+
+var validRemediationActionPriorities = map[string]bool{
+	RemediationActionPriorityLow:      true,
+	RemediationActionPriorityMedium:   true,
+	RemediationActionPriorityHigh:     true,
+	RemediationActionPriorityCritical: true,
+}
+
+var validRemediationActionStatuses = map[string]bool{
+	RemediationActionStatusOpen:       true,
+	RemediationActionStatusInProgress: true,
+	RemediationActionStatusBlocked:    true,
+	RemediationActionStatusDone:       true,
+	RemediationActionStatusCancelled:  true,
+}
+
+func isValidEvidenceType(value string) bool {
+	return validEvidenceTypes[value]
+}
+
+func isValidEvidenceStatus(value string) bool {
+	return validEvidenceStatuses[value]
+}
+
+func isValidRemediationActionPriority(value string) bool {
+	return validRemediationActionPriorities[value]
+}
+
+func isValidRemediationActionStatus(value string) bool {
+	return validRemediationActionStatuses[value]
+}
+
+// normalizeEvidenceRequest trims and upper-cases text fields; timestamps are
+// left untouched.
+func normalizeEvidenceRequest(r *EvidenceRequest) {
+	r.Reference = normalizeCode(r.Reference)
+	r.Title = normalizeText(r.Title)
+	r.Description = normalizeText(r.Description)
+	r.Type = normalizeEnum(r.Type)
+	r.Status = normalizeEnum(r.Status)
+	r.ExternalReference = normalizeText(r.ExternalReference)
+}
+
+func normalizeRemediationActionRequest(r *RemediationActionRequest) {
+	r.Reference = normalizeCode(r.Reference)
+	r.Title = normalizeText(r.Title)
+	r.Description = normalizeText(r.Description)
+	r.Priority = normalizeEnum(r.Priority)
+	r.Status = normalizeEnum(r.Status)
+}
+
+func isPositiveOptionalID(id *uint) bool {
+	return id == nil || *id > 0
+}
+
+// validateEvidenceRequest checks a normalized request without any database
+// access: relation existence and activity are checked by the service.
+func validateEvidenceRequest(r EvidenceRequest) error {
+	if r.Reference == "" || r.Title == "" {
+		return coreerrors.BadRequest("Référence et titre de la preuve obligatoires")
+	}
+	if r.ControlImplementationID == 0 {
+		return coreerrors.BadRequest("Implémentation de contrôle de la preuve obligatoire")
+	}
+	if !isValidEvidenceType(r.Type) {
+		return coreerrors.BadRequest("Type de preuve invalide")
+	}
+	if !isValidEvidenceStatus(r.Status) {
+		return coreerrors.BadRequest("Statut de la preuve invalide")
+	}
+	if !isPositiveOptionalID(r.OwnerProfileID) || !isPositiveOptionalID(r.OwningServiceID) {
+		return coreerrors.BadRequest("Identifiant de relation de la preuve invalide")
+	}
+	if r.ValidFrom != nil && r.ExpiresAt != nil && r.ExpiresAt.Before(*r.ValidFrom) {
+		return coreerrors.BadRequest("La date d'expiration de la preuve précède sa date de validité")
+	}
+
+	return validateEvidenceExternalReference(r.ExternalReference)
+}
+
+// validateEvidenceExternalReference accepts opaque references (for example
+// DOC-SEC-2026-0042) and URIs without credentials, query or fragment. The value
+// itself is never included in errors or logs.
+func validateEvidenceExternalReference(value string) error {
+	if value == "" {
+		return nil
+	}
+	if utf8.RuneCountInString(value) > evidenceExternalReferenceMaxLength {
+		return coreerrors.BadRequest("Référence externe de la preuve trop longue")
+	}
+	if strings.ContainsAny(value, "\r\n") {
+		return coreerrors.BadRequest("La référence externe de la preuve ne doit pas contenir de saut de ligne")
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		if strings.Contains(value, "://") {
+			return coreerrors.BadRequest("Référence externe de la preuve invalide")
+		}
+		return nil
+	}
+	if parsed.Scheme == "" {
+		return nil
+	}
+	if parsed.User != nil {
+		return coreerrors.BadRequest("La référence externe de la preuve ne doit pas contenir d'identifiants")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return coreerrors.BadRequest("La référence externe de la preuve ne doit pas contenir de paramètres ni de fragment")
+	}
+
+	return nil
+}
+
+// validateRemediationActionRequest checks a normalized request without any
+// database access. A DONE action may omit CompletedAt: the service fills it
+// before saving, as required by grc_remediation_action_completion.
+func validateRemediationActionRequest(r RemediationActionRequest) error {
+	if r.Reference == "" || r.Title == "" {
+		return coreerrors.BadRequest("Référence et titre de l'action obligatoires")
+	}
+	if !isValidRemediationActionPriority(r.Priority) {
+		return coreerrors.BadRequest("Priorité de l'action invalide")
+	}
+	if !isValidRemediationActionStatus(r.Status) {
+		return coreerrors.BadRequest("Statut de l'action invalide")
+	}
+	if r.ControlImplementationID == nil && r.RiskID == nil {
+		return coreerrors.BadRequest("L'action doit cibler une implémentation de contrôle ou un risque")
+	}
+	for _, id := range []*uint{r.ControlImplementationID, r.RiskID, r.AssigneeProfileID, r.OwningServiceID} {
+		if !isPositiveOptionalID(id) {
+			return coreerrors.BadRequest("Identifiant de relation de l'action invalide")
+		}
+	}
+	if r.Status != RemediationActionStatusDone && r.CompletedAt != nil {
+		return coreerrors.BadRequest("Seule une action terminée peut avoir une date de réalisation")
+	}
+
+	return nil
+}
+
+// EvidenceExpired reports whether a valid evidence has passed its expiry.
+// An evidence expiring exactly at now is not expired yet.
+func EvidenceExpired(status string, expiresAt *time.Time, now time.Time) bool {
+	return status == EvidenceStatusValid && expiresAt != nil && expiresAt.Before(now)
+}
+
+// RemediationActionOverdue reports whether a non-terminal action has passed
+// its due date. A due date exactly at now is not overdue yet.
+func RemediationActionOverdue(status string, dueAt *time.Time, now time.Time) bool {
+	return dueAt != nil &&
+		dueAt.Before(now) &&
+		status != RemediationActionStatusDone &&
+		status != RemediationActionStatusCancelled
 }

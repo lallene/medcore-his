@@ -189,3 +189,75 @@ type ControlRiskRequest struct {
 	ControlID uint `json:"controlId"`
 	RiskID    uint `json:"riskId"`
 }
+
+type EvidenceRequest struct {
+	Reference               string     `json:"reference"`
+	Title                   string     `json:"title"`
+	Description             string     `json:"description"`
+	ControlImplementationID uint       `json:"controlImplementationId"`
+	Type                    string     `json:"type"`
+	Status                  string     `json:"status"`
+	ExternalReference       string     `json:"externalReference"`
+	CollectedAt             *time.Time `json:"collectedAt"`
+	ValidFrom               *time.Time `json:"validFrom"`
+	ExpiresAt               *time.Time `json:"expiresAt"`
+	OwnerProfileID          *uint      `json:"ownerProfileId"`
+	OwningServiceID         *uint      `json:"owningServiceId"`
+}
+
+type EvidenceFilter struct {
+	Search                  string
+	ControlImplementationID *uint
+	OwnerProfileID          *uint
+	OwningServiceID         *uint
+	Type                    string
+	Status                  string
+	Expired                 *bool
+	ExpiresBefore           *time.Time
+	Page                    int
+	Limit                   int
+}
+
+type EvidencePage struct {
+	Items      []Evidence `json:"items"`
+	Page       int        `json:"page"`
+	Limit      int        `json:"limit"`
+	Total      int64      `json:"total"`
+	TotalPages int        `json:"totalPages"`
+}
+
+type RemediationActionRequest struct {
+	Reference               string     `json:"reference"`
+	Title                   string     `json:"title"`
+	Description             string     `json:"description"`
+	ControlImplementationID *uint      `json:"controlImplementationId"`
+	RiskID                  *uint      `json:"riskId"`
+	AssigneeProfileID       *uint      `json:"assigneeProfileId"`
+	OwningServiceID         *uint      `json:"owningServiceId"`
+	Priority                string     `json:"priority"`
+	Status                  string     `json:"status"`
+	DueAt                   *time.Time `json:"dueAt"`
+	CompletedAt             *time.Time `json:"completedAt"`
+}
+
+type RemediationActionFilter struct {
+	Search                  string
+	ControlImplementationID *uint
+	RiskID                  *uint
+	AssigneeProfileID       *uint
+	OwningServiceID         *uint
+	Priority                string
+	Status                  string
+	Overdue                 *bool
+	DueBefore               *time.Time
+	Page                    int
+	Limit                   int
+}
+
+type RemediationActionPage struct {
+	Items      []RemediationAction `json:"items"`
+	Page       int                 `json:"page"`
+	Limit      int                 `json:"limit"`
+	Total      int64               `json:"total"`
+	TotalPages int                 `json:"totalPages"`
+}

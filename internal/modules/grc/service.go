@@ -3,6 +3,7 @@ package grc
 import (
 	"errors"
 	"strings"
+	"time"
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
@@ -11,11 +12,21 @@ import (
 )
 
 type GRCService struct {
-	db *gorm.DB
+	db  *gorm.DB
+	now func() time.Time
 }
 
 func NewService(db *gorm.DB) *GRCService {
-	return &GRCService{db: db}
+	return &GRCService{db: db, now: time.Now}
+}
+
+// currentTime falls back to time.Now when the service was built without
+// NewService.
+func (s *GRCService) currentTime() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 func (s *GRCService) SaveAsset(id, actor uint, r AssetRequest) (*Asset, error) {

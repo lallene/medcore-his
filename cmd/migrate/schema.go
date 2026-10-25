@@ -60,6 +60,8 @@ func schemaModels() []any {
 		&grc.RequirementControl{},
 		&grc.ControlRisk{},
 		&grc.ControlImplementation{},
+		&grc.Evidence{},
+		&grc.RemediationAction{},
 		&access.PermissionOverride{},
 		&access.MatrixOverride{},
 		&access.AccessAuditEvent{},

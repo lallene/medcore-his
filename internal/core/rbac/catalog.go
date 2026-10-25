@@ -186,6 +186,11 @@ func init() {
 	add("grc.control.manage", "Gérer les contrôles GRC", "GRC", "GLOBAL")
 	add("grc.control.implementation.read", "Lire les implémentations de contrôles", "GRC", "GLOBAL")
 	add("grc.control.implementation.manage", "Gérer les implémentations de contrôles", "GRC", "GLOBAL")
+	add("grc.evidence.read", "Lire les preuves GRC", "GRC", "GLOBAL")
+	add("grc.evidence.manage", "Gérer les preuves GRC", "GRC", "GLOBAL")
+	add("grc.action.read", "Lire les actions de remédiation GRC", "GRC", "GLOBAL")
+	add("grc.action.create", "Créer une action de remédiation", "GRC", "GLOBAL")
+	add("grc.action.update", "Modifier une action de remédiation", "GRC", "GLOBAL")
 
 	// RBAC admin LOT 21
 	add("rbac.read", "Lire le centre d'accès", "RBAC", "GLOBAL")
