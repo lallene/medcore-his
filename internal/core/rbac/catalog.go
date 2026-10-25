@@ -170,6 +170,15 @@ func init() {
 	add("ticket.audit.read", "Lire l'historique ticket", "Ticketing", "SERVICE")
 	add("ticket.category.manage", "Gérer les catégories ticket", "Ticketing", "GLOBAL")
 	add("ticket.sla.manage", "Gérer les SLA ticket", "Ticketing", "GLOBAL")
+	// GRC
+	add("grc.dashboard.read", "Voir le tableau de bord GRC", "GRC", "GLOBAL")
+	add("grc.asset.read", "Lire les actifs GRC", "GRC", "GLOBAL")
+	add("grc.asset.manage", "Gérer les actifs GRC", "GRC", "GLOBAL")
+	add("grc.risk.read", "Lire le registre des risques", "GRC", "GLOBAL")
+	add("grc.risk.create", "Créer un risque", "GRC", "GLOBAL")
+	add("grc.risk.update", "Modifier un risque", "GRC", "GLOBAL")
+	add("grc.risk.approve", "Approuver ou accepter un risque", "GRC", "GLOBAL")
+
 	// RBAC admin LOT 21
 	add("rbac.read", "Lire le centre d'accès", "RBAC", "GLOBAL")
 	add("rbac.user.manage", "Gérer les accès utilisateurs", "RBAC", "GLOBAL")

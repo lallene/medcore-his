@@ -11,6 +11,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
 	"github.com/lallene/medcore-his/backend/internal/modules/dashboard"
+	"github.com/lallene/medcore-his/backend/internal/modules/grc"
 	"github.com/lallene/medcore-his/backend/internal/modules/help"
 	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
 	"github.com/lallene/medcore-his/backend/internal/modules/imaging"
@@ -49,6 +50,7 @@ func main() {
 
 	app.RegisterModule(auth.Module{})
 	app.RegisterModule(organization.Module{})
+	app.RegisterModule(grc.Module{})
 	app.RegisterModule(staff.Module{})
 	app.RegisterModule(access.Module{})
 	app.RegisterModule(billing.Module{})

@@ -79,6 +79,7 @@ var SensitivePermissions = map[string]bool{
 	"ticket.read.all":                true,
 	"organization.manage":            true,
 	"appointment_type.manage":        true,
+	"grc.risk.approve":               true,
 }
 
 // IsSensitive reports whether a permission is high-risk.

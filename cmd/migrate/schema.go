@@ -13,6 +13,7 @@ import (
 	"github.com/lallene/medcore-his/backend/internal/modules/billing"
 	"github.com/lallene/medcore-his/backend/internal/modules/cash"
 	"github.com/lallene/medcore-his/backend/internal/modules/consultations"
+	"github.com/lallene/medcore-his/backend/internal/modules/grc"
 	"github.com/lallene/medcore-his/backend/internal/modules/help"
 	"github.com/lallene/medcore-his/backend/internal/modules/hospitalizations"
 	"github.com/lallene/medcore-his/backend/internal/modules/imaging"
@@ -51,6 +52,8 @@ func schemaModels() []any {
 		&staff.Specialty{},
 		&staff.Capability{},
 		&staff.AuditEvent{},
+		&grc.Asset{},
+		&grc.Risk{},
 		&access.PermissionOverride{},
 		&access.MatrixOverride{},
 		&access.AccessAuditEvent{},
