@@ -59,6 +59,8 @@ type Evidence struct {
 	UpdatedAt               time.Time              `gorm:"not null" json:"updatedAt"`
 
 	Expired bool `gorm:"-" json:"expired"`
+	// Validity is derived by EvidenceValidity at read time; never stored.
+	Validity string `gorm:"-" json:"validity"`
 }
 
 func (Evidence) TableName() string { return "grc_evidence" }
@@ -70,8 +72,10 @@ type RemediationAction struct {
 	Description             string                 `gorm:"type:text" json:"description"`
 	ControlImplementationID *uint                  `gorm:"index" json:"controlImplementationId"`
 	ControlImplementation   *ControlImplementation `gorm:"foreignKey:ControlImplementationID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"controlImplementation,omitempty"`
-	RiskID                  *uint                  `gorm:"index;check:grc_remediation_action_target_present,control_implementation_id IS NOT NULL OR risk_id IS NOT NULL" json:"riskId"`
+	RiskID                  *uint                  `gorm:"index;check:grc_remediation_action_target_present_v2,control_implementation_id IS NOT NULL OR risk_id IS NOT NULL OR finding_id IS NOT NULL" json:"riskId"`
 	Risk                    *Risk                  `gorm:"foreignKey:RiskID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"risk,omitempty"`
+	FindingID               *uint                  `gorm:"index" json:"findingId"`
+	Finding                 *Finding               `gorm:"foreignKey:FindingID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"finding,omitempty"`
 	AssigneeProfileID       *uint                  `gorm:"index" json:"assigneeProfileId"`
 	AssigneeProfile         *staff.Profile         `gorm:"foreignKey:AssigneeProfileID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"assigneeProfile,omitempty"`
 	OwningServiceID         *uint                  `gorm:"index" json:"owningServiceId"`
@@ -86,6 +90,8 @@ type RemediationAction struct {
 	UpdatedAt               time.Time              `gorm:"not null" json:"updatedAt"`
 
 	Overdue bool `gorm:"-" json:"overdue"`
+	// DueState is derived by RemediationActionDueState at read time; never stored.
+	DueState string `gorm:"-" json:"dueState"`
 }
 
 func (RemediationAction) TableName() string { return "grc_remediation_actions" }

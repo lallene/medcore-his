@@ -58,6 +58,10 @@ type Requirement struct {
 	UpdatedBy           uint         `gorm:"not null;index" json:"updatedBy"`
 	CreatedAt           time.Time    `gorm:"not null" json:"createdAt"`
 	UpdatedAt           time.Time    `gorm:"not null" json:"updatedAt"`
+
+	// Number of controls linked through grc_requirement_controls; computed,
+	// never persisted.
+	MappedControls int64 `gorm:"-" json:"mappedControls"`
 }
 
 func (Requirement) TableName() string { return "grc_requirements" }
@@ -77,6 +81,12 @@ type Control struct {
 	UpdatedBy       uint                  `gorm:"not null;index" json:"updatedBy"`
 	CreatedAt       time.Time             `gorm:"not null" json:"createdAt"`
 	UpdatedAt       time.Time             `gorm:"not null" json:"updatedAt"`
+
+	// Relation counts (grc_requirement_controls, grc_control_risks,
+	// grc_control_implementations); computed, never persisted.
+	RequirementCount    int64 `gorm:"-" json:"requirementCount"`
+	RiskCount           int64 `gorm:"-" json:"riskCount"`
+	ImplementationCount int64 `gorm:"-" json:"implementationCount"`
 }
 
 func (Control) TableName() string { return "grc_controls" }

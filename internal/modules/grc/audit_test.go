@@ -23,11 +23,16 @@ func withCaptureBus(t *testing.T) *captureBus {
 	t.Helper()
 
 	previous := events.DefaultBus
+	previousHook := afterGRCAudit
 	bus := &captureBus{}
 	events.DefaultBus = bus
+	afterGRCAudit = func(event audit.AuditEvent) {
+		bus.events = append(bus.events, event)
+	}
 
 	t.Cleanup(func() {
 		events.DefaultBus = previous
+		afterGRCAudit = previousHook
 	})
 
 	return bus

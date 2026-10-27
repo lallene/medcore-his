@@ -30,30 +30,8 @@ func (s *GRCService) currentTime() time.Time {
 }
 
 func (s *GRCService) SaveAsset(id, actor uint, r AssetRequest) (*Asset, error) {
-	r.Code = normalizeCode(r.Code)
-	r.Name = normalizeText(r.Name)
-	r.Type = normalizeEnum(r.Type)
-	r.Description = normalizeText(r.Description)
-	r.Criticality = normalizeEnum(r.Criticality)
-	r.Status = normalizeEnum(r.Status)
-
-	if r.Code == "" || r.Name == "" {
-		return nil, coreerrors.BadRequest("Code et nom de l'actif obligatoires")
-	}
-	if !isValidAssetType(r.Type) {
-		return nil, coreerrors.BadRequest("Type d'actif invalide")
-	}
-	if !isValidCriticality(r.Criticality) {
-		return nil, coreerrors.BadRequest("Criticité de l'actif invalide")
-	}
-	if !isValidAssetStatus(r.Status) {
-		return nil, coreerrors.BadRequest("Statut de l'actif invalide")
-	}
-
-	if err := s.validateOwningService(r.OwningServiceID); err != nil {
-		return nil, err
-	}
-	if err := s.validateOwnerProfile(r.OwnerProfileID); err != nil {
+	normalizeAssetRequest(&r)
+	if err := validateAssetRequest(r); err != nil {
 		return nil, err
 	}
 
@@ -75,6 +53,19 @@ func (s *GRCService) SaveAsset(id, actor uint, r AssetRequest) (*Asset, error) {
 		asset.CreatedBy = actor
 	}
 
+	// Relations are validated when assigned only, so an asset stays editable
+	// (for example to retire it) after its owner or service was deactivated.
+	if id == 0 || optionalIDChanged(asset.OwningServiceID, r.OwningServiceID) {
+		if err := s.validateOwningService(r.OwningServiceID); err != nil {
+			return nil, err
+		}
+	}
+	if id == 0 || optionalIDChanged(asset.OwnerProfileID, r.OwnerProfileID) {
+		if err := s.validateOwnerProfile(r.OwnerProfileID); err != nil {
+			return nil, err
+		}
+	}
+
 	asset.Code = r.Code
 	asset.Name = r.Name
 	asset.Type = r.Type
@@ -85,21 +76,14 @@ func (s *GRCService) SaveAsset(id, actor uint, r AssetRequest) (*Asset, error) {
 	asset.Status = r.Status
 	asset.UpdatedBy = actor
 
-	if err := s.db.Select("*").Save(&asset).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Select("*").Save(&asset).Error
+	}, auditModuleGRCAsset, action, func() uint { return asset.ID }, actor, oldAuditValue, func() string { return assetAuditValue(asset) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Code actif déjà utilisé")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCAsset,
-		action,
-		asset.ID,
-		actor,
-		oldAuditValue,
-		assetAuditValue(asset),
-	)
 
 	return s.FindAsset(asset.ID)
 }
@@ -172,12 +156,7 @@ func isDuplicateError(err error) bool {
 }
 
 func (s *GRCService) ListAssets(f AssetFilter) (*AssetPage, error) {
-	if f.Page < 1 {
-		f.Page = 1
-	}
-	if f.Limit < 1 || f.Limit > 100 {
-		f.Limit = 20
-	}
+	f.Page, f.Limit = normalizePageFilter(f.Page, f.Limit)
 
 	f.Type = normalizeEnum(f.Type)
 	f.Criticality = normalizeEnum(f.Criticality)
@@ -243,39 +222,13 @@ func (s *GRCService) ListAssets(f AssetFilter) (*AssetPage, error) {
 		Page:       f.Page,
 		Limit:      f.Limit,
 		Total:      total,
-		TotalPages: int((total + int64(f.Limit) - 1) / int64(f.Limit)),
+		TotalPages: totalPages(total, f.Limit),
 	}, nil
 }
 
 func (s *GRCService) SaveRisk(id, actor uint, r RiskRequest) (*Risk, error) {
-	r.Reference = normalizeCode(r.Reference)
-	r.Title = normalizeText(r.Title)
-	r.Description = normalizeText(r.Description)
-	r.Threat = normalizeText(r.Threat)
-	r.Vulnerability = normalizeText(r.Vulnerability)
-	r.Treatment = normalizeEnum(r.Treatment)
-	r.Status = normalizeEnum(r.Status)
-
-	if r.Reference == "" || r.Title == "" {
-		return nil, coreerrors.BadRequest("Référence et titre du risque obligatoires")
-	}
-	if !isValidRiskTreatment(r.Treatment) {
-		return nil, coreerrors.BadRequest("Traitement du risque invalide")
-	}
-	if !isValidRiskStatus(r.Status) {
-		return nil, coreerrors.BadRequest("Statut du risque invalide")
-	}
-
-	if err := s.validateRiskAsset(r.AssetID); err != nil {
-		return nil, err
-	}
-	if err := s.validateOwningService(r.OwningServiceID); err != nil {
-		return nil, err
-	}
-	if err := s.validateRiskProfile(r.OwnerProfileID, "Le propriétaire du risque est inactif"); err != nil {
-		return nil, err
-	}
-	if err := s.validateRiskProfile(r.ApproverProfileID, "L'approbateur du risque est inactif"); err != nil {
+	normalizeRiskRequest(&r)
+	if err := validateRiskRequest(r); err != nil {
 		return nil, err
 	}
 
@@ -295,6 +248,30 @@ func (s *GRCService) SaveRisk(id, actor uint, r RiskRequest) (*Risk, error) {
 		oldAuditValue = riskAuditValue(risk)
 	} else {
 		risk.CreatedBy = actor
+	}
+
+	// Relations are validated when assigned only, so a risk stays editable
+	// after its asset was retired or its owner, approver or service was
+	// deactivated.
+	if id == 0 || optionalIDChanged(risk.AssetID, r.AssetID) {
+		if err := s.validateRiskAsset(r.AssetID); err != nil {
+			return nil, err
+		}
+	}
+	if id == 0 || optionalIDChanged(risk.OwningServiceID, r.OwningServiceID) {
+		if err := s.validateOwningService(r.OwningServiceID); err != nil {
+			return nil, err
+		}
+	}
+	if id == 0 || optionalIDChanged(risk.OwnerProfileID, r.OwnerProfileID) {
+		if err := s.validateRiskProfile(r.OwnerProfileID, "Le propriétaire du risque est inactif"); err != nil {
+			return nil, err
+		}
+	}
+	if id == 0 || optionalIDChanged(risk.ApproverProfileID, r.ApproverProfileID) {
+		if err := s.validateRiskProfile(r.ApproverProfileID, "L'approbateur du risque est inactif"); err != nil {
+			return nil, err
+		}
 	}
 
 	risk.Reference = r.Reference
@@ -319,21 +296,14 @@ func (s *GRCService) SaveRisk(id, actor uint, r RiskRequest) (*Risk, error) {
 		return nil, coreerrors.BadRequest(err.Error())
 	}
 
-	if err := s.db.Select("*").Save(&risk).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Select("*").Save(&risk).Error
+	}, auditModuleGRCRisk, action, func() uint { return risk.ID }, actor, oldAuditValue, func() string { return riskAuditValue(risk) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Référence risque déjà utilisée")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCRisk,
-		action,
-		risk.ID,
-		actor,
-		oldAuditValue,
-		riskAuditValue(risk),
-	)
 
 	return s.FindRisk(risk.ID)
 }
@@ -353,6 +323,9 @@ func (s *GRCService) FindRisk(id uint) (*Risk, error) {
 		return nil, coreerrors.NotFound("GRC_RISK")
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := fillRiskLevels(&risk); err != nil {
 		return nil, err
 	}
 
@@ -400,15 +373,12 @@ func (s *GRCService) validateRiskProfile(id *uint, inactiveMessage string) error
 }
 
 func (s *GRCService) ListRisks(filter RiskFilter) (RiskPage, error) {
-	if filter.Page < 1 {
-		filter.Page = 1
-	}
-	if filter.Limit < 1 || filter.Limit > 100 {
-		filter.Limit = 20
-	}
+	filter.Page, filter.Limit = normalizePageFilter(filter.Page, filter.Limit)
 
 	filter.Status = normalizeEnum(filter.Status)
 	filter.Treatment = normalizeEnum(filter.Treatment)
+	filter.InherentLevel = normalizeEnum(filter.InherentLevel)
+	filter.ResidualLevel = normalizeEnum(filter.ResidualLevel)
 
 	if filter.Status != "" && !isValidRiskStatus(filter.Status) {
 		return RiskPage{}, coreerrors.BadRequest("Statut du risque invalide")
@@ -422,11 +392,11 @@ func (s *GRCService) ListRisks(filter RiskFilter) (RiskPage, error) {
 	if search := normalizeText(filter.Search); search != "" {
 		pattern := "%" + strings.ToLower(search) + "%"
 		query = query.Where(
-			`LOWER(reference) LIKE ? OR
+			`(LOWER(reference) LIKE ? OR
 			 LOWER(title) LIKE ? OR
 			 LOWER(description) LIKE ? OR
 			 LOWER(threat) LIKE ? OR
-			 LOWER(vulnerability) LIKE ?`,
+			 LOWER(vulnerability) LIKE ?)`,
 			pattern,
 			pattern,
 			pattern,
@@ -453,13 +423,26 @@ func (s *GRCService) ListRisks(filter RiskFilter) (RiskPage, error) {
 	if filter.ApproverProfileID != nil {
 		query = query.Where("approver_profile_id = ?", *filter.ApproverProfileID)
 	}
+	if filter.ControlID != nil {
+		query = query.Where("EXISTS (SELECT 1 FROM grc_control_risks crf WHERE crf.risk_id = grc_risks.id AND crf.control_id = ?)", *filter.ControlID)
+	}
+	for column, level := range map[string]string{"inherent_score": filter.InherentLevel, "residual_score": filter.ResidualLevel} {
+		if level == "" {
+			continue
+		}
+		scores, err := riskLevelScores(level)
+		if err != nil {
+			return RiskPage{}, err
+		}
+		query = query.Where(column+" IN ?", scores)
+	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return RiskPage{}, err
 	}
 
-	var risks []Risk
+	risks := []Risk{}
 	if err := query.
 		Preload("Asset").
 		Preload("OwningService").
@@ -473,9 +456,10 @@ func (s *GRCService) ListRisks(filter RiskFilter) (RiskPage, error) {
 		return RiskPage{}, err
 	}
 
-	totalPages := 0
-	if total > 0 {
-		totalPages = int((total + int64(filter.Limit) - 1) / int64(filter.Limit))
+	for i := range risks {
+		if err := fillRiskLevels(&risks[i]); err != nil {
+			return RiskPage{}, err
+		}
 	}
 
 	return RiskPage{
@@ -483,6 +467,6 @@ func (s *GRCService) ListRisks(filter RiskFilter) (RiskPage, error) {
 		Page:       filter.Page,
 		Limit:      filter.Limit,
 		Total:      total,
-		TotalPages: totalPages,
+		TotalPages: totalPages(total, filter.Limit),
 	}, nil
 }

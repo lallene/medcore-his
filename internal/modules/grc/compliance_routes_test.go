@@ -247,10 +247,16 @@ func TestGRCComplianceStaticRoutesAreNotCapturedByDynamicRoutes(t *testing.T) {
 		}
 	}
 
-	// Malformed pagination keeps the GRC-01A defaults.
-	w := grcRequest(r, http.MethodGet, "/api/grc/frameworks?page=abc&limit=zz")
+	// GRC-05: malformed pagination is rejected (strict GRC convention);
+	// out-of-range bounds still use the GRC defaults.
+	for _, path := range []string{"/api/grc/frameworks?page=abc&limit=zz", "/api/grc/requirements?limit=zz"} {
+		if w := grcRequest(r, http.MethodGet, path); w.Code != http.StatusBadRequest {
+			t.Fatalf("malformed pagination %s: status=%d body=%s", path, w.Code, w.Body.String())
+		}
+	}
+	w := grcRequest(r, http.MethodGet, "/api/grc/frameworks?page=0&limit=500")
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"limit":20`) {
-		t.Fatalf("malformed pagination: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("out-of-range pagination: status=%d body=%s", w.Code, w.Body.String())
 	}
 
 	// Static segments remain ids for the GRC-01A dynamic routes.

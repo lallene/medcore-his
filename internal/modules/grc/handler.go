@@ -78,7 +78,10 @@ func parsePage(c *gin.Context) (int, int) {
 }
 
 func (h *Handler) ListAssets(c *gin.Context) {
-	page, limit := parsePage(c)
+	page, limit, ok := parseStrictPage(c)
+	if !ok {
+		return
+	}
 
 	filter := AssetFilter{
 		Search:      strings.TrimSpace(c.Query("search")),
@@ -89,7 +92,6 @@ func (h *Handler) ListAssets(c *gin.Context) {
 		Limit:       limit,
 	}
 
-	var ok bool
 	filter.ServiceID, ok = parseOptionalUintQuery(c, "serviceId")
 	if !ok {
 		return
@@ -167,17 +169,21 @@ func (h *Handler) UpdateAsset(c *gin.Context) {
 }
 
 func (h *Handler) ListRisks(c *gin.Context) {
-	page, limit := parsePage(c)
-
-	filter := RiskFilter{
-		Search:    strings.TrimSpace(c.Query("search")),
-		Status:    strings.TrimSpace(c.Query("status")),
-		Treatment: strings.TrimSpace(c.Query("treatment")),
-		Page:      page,
-		Limit:     limit,
+	page, limit, ok := parseStrictPage(c)
+	if !ok {
+		return
 	}
 
-	var ok bool
+	filter := RiskFilter{
+		Search:        strings.TrimSpace(c.Query("search")),
+		Status:        strings.TrimSpace(c.Query("status")),
+		Treatment:     strings.TrimSpace(c.Query("treatment")),
+		InherentLevel: strings.TrimSpace(c.Query("inherentLevel")),
+		ResidualLevel: strings.TrimSpace(c.Query("residualLevel")),
+		Page:          page,
+		Limit:         limit,
+	}
+
 	filter.AssetID, ok = parseOptionalUintQuery(c, "assetId")
 	if !ok {
 		return
@@ -191,6 +197,10 @@ func (h *Handler) ListRisks(c *gin.Context) {
 		return
 	}
 	filter.ApproverProfileID, ok = parseOptionalUintQuery(c, "approverProfileId")
+	if !ok {
+		return
+	}
+	filter.ControlID, ok = parseOptionalUintQuery(c, "controlId")
 	if !ok {
 		return
 	}

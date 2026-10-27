@@ -8,6 +8,12 @@ import (
 func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	g := r.Group("/grc")
 
+	// Read-only aggregates: no mutation, so no audit event.
+	g.GET("/dashboard", rbac.Permission("grc.dashboard.read"), h.GetDashboard)
+	// Analytical read model. It does not replace the dashboard and does not
+	// publish an audit event.
+	g.GET("/reporting", rbac.Permission("grc.reporting.read"), h.GetReporting)
+
 	assets := g.Group("/assets")
 	assets.GET("", rbac.Permission("grc.asset.read"), h.ListAssets)
 	assets.GET("/:id", rbac.Permission("grc.asset.read"), h.GetAsset)
@@ -25,6 +31,11 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	frameworks.GET("/:id", rbac.Permission("grc.framework.read"), h.GetFramework)
 	frameworks.POST("", rbac.Permission("grc.framework.manage"), h.CreateFramework)
 	frameworks.PUT("/:id", rbac.Permission("grc.framework.manage"), h.UpdateFramework)
+
+	// Read-only control mapping coverage (same definition as the dashboard);
+	// it aggregates requirements of frameworks, hence both read permissions.
+	g.GET("/compliance/coverage",
+		rbac.Permission("grc.framework.read"), rbac.Permission("grc.requirement.read"), h.GetComplianceCoverage)
 
 	requirements := g.Group("/requirements")
 	requirements.GET("", rbac.Permission("grc.requirement.read"), h.ListRequirements)
@@ -66,4 +77,47 @@ func RegisterRoutes(r *gin.RouterGroup, h *Handler) {
 	actions.GET("/:id", rbac.Permission("grc.action.read"), h.GetRemediationAction)
 	actions.POST("", rbac.Permission("grc.action.create"), h.CreateRemediationAction)
 	actions.PUT("/:id", rbac.Permission("grc.action.update"), h.UpdateRemediationAction)
+
+	// Sensitive transitions have dedicated routes and permissions; the PUT
+	// routes refuse them (separation of duties).
+	assessments := g.Group("/assessments")
+	assessments.GET("", rbac.Permission("grc.assessment.read"), h.ListAssessments)
+	assessments.GET("/:id", rbac.Permission("grc.assessment.read"), h.GetAssessment)
+	assessments.POST("", rbac.Permission("grc.assessment.create"), h.CreateAssessment)
+	assessments.PUT("/:id", rbac.Permission("grc.assessment.update"), h.UpdateAssessment)
+	assessments.POST("/:id/complete", rbac.Permission("grc.assessment.complete"), h.CompleteAssessment)
+	assessments.GET("/:id/evidence", rbac.Permission("grc.assessment.read"), h.ListAssessmentEvidence)
+	assessments.POST("/:id/evidence", rbac.Permission("grc.assessment.update"), h.LinkAssessmentEvidence)
+	assessments.DELETE("/:id/evidence/:evidenceId", rbac.Permission("grc.assessment.update"), h.UnlinkAssessmentEvidence)
+
+	audits := g.Group("/audits")
+	audits.GET("", rbac.Permission("grc.audit.read"), h.ListAuditEngagements)
+	audits.GET("/:id", rbac.Permission("grc.audit.read"), h.GetAuditEngagement)
+	audits.POST("", rbac.Permission("grc.audit.create"), h.CreateAuditEngagement)
+	audits.PUT("/:id", rbac.Permission("grc.audit.update"), h.UpdateAuditEngagement)
+	audits.POST("/:id/complete", rbac.Permission("grc.audit.complete"), h.CompleteAuditEngagement)
+
+	findings := g.Group("/findings")
+	findings.GET("", rbac.Permission("grc.finding.read"), h.ListFindings)
+	findings.GET("/:id", rbac.Permission("grc.finding.read"), h.GetFinding)
+	findings.POST("", rbac.Permission("grc.finding.create"), h.CreateFinding)
+	findings.PUT("/:id", rbac.Permission("grc.finding.update"), h.UpdateFinding)
+	findings.POST("/:id/close", rbac.Permission("grc.finding.close"), h.CloseFinding)
+	findings.POST("/:id/accept", rbac.Permission("grc.finding.accept"), h.AcceptFinding)
+
+	incidents := g.Group("/incidents")
+	incidents.GET("", rbac.Permission("grc.incident.read"), h.ListSecurityIncidents)
+	incidents.GET("/:id", rbac.Permission("grc.incident.read"), h.GetSecurityIncident)
+	incidents.POST("", rbac.Permission("grc.incident.create"), h.CreateSecurityIncident)
+	incidents.PUT("/:id", rbac.Permission("grc.incident.update"), h.UpdateSecurityIncident)
+	incidents.POST("/:id/close", rbac.Permission("grc.incident.close"), h.CloseSecurityIncident)
+
+	policies := g.Group("/policies")
+	policies.GET("", rbac.Permission("grc.policy.read"), h.ListGovernancePolicies)
+	policies.GET("/:id", rbac.Permission("grc.policy.read"), h.GetGovernancePolicy)
+	policies.POST("", rbac.Permission("grc.policy.create"), h.CreateGovernancePolicy)
+	policies.PUT("/:id", rbac.Permission("grc.policy.update"), h.UpdateGovernancePolicy)
+	policies.POST("/:id/approve", rbac.Permission("grc.policy.approve"), h.ApproveGovernancePolicy)
+	policies.POST("/:id/publish", rbac.Permission("grc.policy.publish"), h.PublishGovernancePolicy)
+	policies.POST("/:id/retire", rbac.Permission("grc.policy.retire"), h.RetireGovernancePolicy)
 }

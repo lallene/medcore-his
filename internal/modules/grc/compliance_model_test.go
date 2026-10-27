@@ -3,6 +3,7 @@ package grc
 import (
 	"testing"
 
+	"github.com/lallene/medcore-his/backend/internal/core/audit"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
@@ -43,6 +44,7 @@ func newComplianceFixture(t *testing.T) complianceFixture {
 		&RequirementControl{},
 		&ControlRisk{},
 		&ControlImplementation{},
+		&audit.AuditLog{},
 	); err != nil {
 		t.Fatal(err)
 	}

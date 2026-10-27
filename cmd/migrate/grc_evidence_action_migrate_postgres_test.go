@@ -136,7 +136,10 @@ func requirePGViolation(t *testing.T, err error, code, constraint string) {
 	if !errors.As(err, &pgErr) {
 		t.Fatalf("expected PostgreSQL error %s (%s), got %v", code, constraint, err)
 	}
-	if pgErr.Code != code || (constraint != "" && pgErr.ConstraintName != constraint) {
+	// PostgreSQL 18 reports ON DELETE RESTRICT as 23001. A requested 23503
+	// still means "the foreign key rejected the statement".
+	if pgErr.Code != code && !(code == "23503" && pgErr.Code == "23001") ||
+		(constraint != "" && pgErr.ConstraintName != constraint) {
 		t.Fatalf("PostgreSQL error %s/%s, want %s/%s", pgErr.Code, pgErr.ConstraintName, code, constraint)
 	}
 }
@@ -218,6 +221,7 @@ func TestGRC01C_MigrationsCreateEvidenceActionSchema(t *testing.T) {
 		{"description", text, true, 0},
 		{"control_implementation_id", bigint, true, 0},
 		{"risk_id", bigint, true, 0},
+		{"finding_id", bigint, true, 0},
 		{"assignee_profile_id", bigint, true, 0},
 		{"owning_service_id", bigint, true, 0},
 		{"priority", varchar, false, 20},
@@ -259,6 +263,7 @@ func TestGRC01C_MigrationsCreateEvidenceActionSchema(t *testing.T) {
 		"grc_remediation_actions": {
 			"control_implementation_id": "grc_control_implementations",
 			"risk_id":                   "grc_risks",
+			"finding_id":                "grc_findings",
 			"assignee_profile_id":       "staff_profiles",
 			"owning_service_id":         "organization_services",
 		},
@@ -291,8 +296,9 @@ func TestGRC01C_MigrationsCreateEvidenceActionSchema(t *testing.T) {
 		"grc_remediation_actions": {
 			"grc_remediation_action_priority_valid": {"LOW", "MEDIUM", "HIGH", "CRITICAL"},
 			"grc_remediation_action_status_valid":   {"OPEN", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"},
-			"grc_remediation_action_target_present": {"control_implementation_id IS NOT NULL", "risk_id IS NOT NULL"},
-			"grc_remediation_action_completion":     {"DONE", "completed_at IS NOT NULL"},
+			// GRC-01D.03 superseded the 01C target CHECK by the v2 one.
+			"grc_remediation_action_target_present_v2": {"control_implementation_id IS NOT NULL", "risk_id IS NOT NULL", "finding_id IS NOT NULL"},
+			"grc_remediation_action_completion":        {"DONE", "completed_at IS NOT NULL"},
 		},
 	} {
 		checks := pgCheckConstraints(t, db, table)
@@ -370,7 +376,7 @@ func TestGRC01C_MigrationsCreateEvidenceActionSchema(t *testing.T) {
 	}
 	requirePGViolation(t, insertAction("ACT-PRIO", implementationID, nil, "URGENT", "OPEN", nil), "23514", "grc_remediation_action_priority_valid")
 	requirePGViolation(t, insertAction("ACT-STATUS", implementationID, nil, "LOW", "CLOSED", nil), "23514", "grc_remediation_action_status_valid")
-	requirePGViolation(t, insertAction("ACT-NONE", nil, nil, "LOW", "OPEN", nil), "23514", "grc_remediation_action_target_present")
+	requirePGViolation(t, insertAction("ACT-NONE", nil, nil, "LOW", "OPEN", nil), "23514", "grc_remediation_action_target_present_v2")
 	requirePGViolation(t, insertAction("ACT-DONE-NULL", implementationID, nil, "LOW", "DONE", nil), "23514", "grc_remediation_action_completion")
 	requirePGViolation(t, insertAction("ACT-OPEN-DATE", implementationID, nil, "LOW", "OPEN", "2026-10-25T10:00:00Z"), "23514", "grc_remediation_action_completion")
 	requirePGViolation(t, insertAction("ACT-BOTH", implementationID, nil, "LOW", "OPEN", nil), "23505", "")

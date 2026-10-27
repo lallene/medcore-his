@@ -1,6 +1,7 @@
 package ticketing
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -102,5 +103,26 @@ func TestPostgresInternalCommentsAndRollback(t *testing.T) {
 	db.Model(&Comment{}).Count(&n)
 	if n != 0 {
 		t.Fatal("forbidden comment was persisted")
+	}
+}
+
+// GRC15-B08: a requester without tickets got "items":null and the tickets page crashed.
+func TestPostgresEmptyTicketListIsAnEmptyArray(t *testing.T) {
+	db := ticketingPostgres(t)
+	for _, ddl := range []string{"CREATE TABLE users (id bigint PRIMARY KEY, name text)", "CREATE TABLE organization_services (id bigint PRIMARY KEY, name text)"} {
+		if e := db.Exec(ddl).Error; e != nil {
+			t.Fatal(e)
+		}
+	}
+	page, e := NewService(db).List(Filter{}, Access{UserID: 42, Permissions: map[string]bool{"ticket.read.own": true}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	body, e := json.Marshal(page)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if page.Items == nil || page.Total != 0 || !strings.Contains(string(body), `"items":[]`) {
+		t.Fatalf("empty list = %s", body)
 	}
 }

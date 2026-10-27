@@ -69,21 +69,14 @@ func (s *GRCService) SaveFramework(id, actor uint, r FrameworkRequest) (*Framewo
 	framework.PublishedAt = r.PublishedAt
 	framework.UpdatedBy = actor
 
-	if err := s.db.Select("*").Save(&framework).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Select("*").Save(&framework).Error
+	}, auditModuleGRCFramework, action, func() uint { return framework.ID }, actor, oldAuditValue, func() string { return frameworkAuditValue(framework) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Code et version de référentiel déjà utilisés")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCFramework,
-		action,
-		framework.ID,
-		actor,
-		oldAuditValue,
-		frameworkAuditValue(framework),
-	)
 
 	return s.FindFramework(framework.ID)
 }
@@ -216,21 +209,14 @@ func (s *GRCService) SaveRequirement(id, actor uint, r RequirementRequest) (*Req
 	requirement.Status = r.Status
 	requirement.UpdatedBy = actor
 
-	if err := s.db.Select("*").Save(&requirement).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Select("*").Save(&requirement).Error
+	}, auditModuleGRCRequirement, action, func() uint { return requirement.ID }, actor, oldAuditValue, func() string { return requirementAuditValue(requirement) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Code d'exigence déjà utilisé dans ce référentiel")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCRequirement,
-		action,
-		requirement.ID,
-		actor,
-		oldAuditValue,
-		requirementAuditValue(requirement),
-	)
 
 	return s.FindRequirement(requirement.ID)
 }
@@ -305,6 +291,11 @@ func (s *GRCService) FindRequirement(id uint) (*Requirement, error) {
 	if err != nil {
 		return nil, err
 	}
+	counts, err := s.requirementMappedControls(s.db, []uint{requirement.ID})
+	if err != nil {
+		return nil, err
+	}
+	requirement.MappedControls = counts[requirement.ID]
 
 	return &requirement, nil
 }
@@ -332,6 +323,16 @@ func (s *GRCService) ListRequirements(f RequirementFilter) (*RequirementPage, er
 	if f.Status != "" {
 		q = q.Where("status = ?", f.Status)
 	}
+	if f.Mapped != nil {
+		if *f.Mapped {
+			q = q.Where(requirementMappedSQL)
+		} else {
+			q = q.Where("NOT " + requirementMappedSQL)
+		}
+	}
+	if f.ControlID != nil {
+		q = q.Where("EXISTS (SELECT 1 FROM grc_requirement_controls rcf WHERE rcf.requirement_id = grc_requirements.id AND rcf.control_id = ?)", *f.ControlID)
+	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -350,6 +351,18 @@ func (s *GRCService) ListRequirements(f RequirementFilter) (*RequirementPage, er
 		return nil, err
 	}
 
+	ids := make([]uint, len(requirements))
+	for i := range requirements {
+		ids[i] = requirements[i].ID
+	}
+	counts, err := s.requirementMappedControls(s.db, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range requirements {
+		requirements[i].MappedControls = counts[requirements[i].ID]
+	}
+
 	return &RequirementPage{
 		Items:      requirements,
 		Page:       f.Page,
@@ -360,23 +373,8 @@ func (s *GRCService) ListRequirements(f RequirementFilter) (*RequirementPage, er
 }
 
 func (s *GRCService) SaveControl(id, actor uint, r ControlRequest) (*Control, error) {
-	r.Code = normalizeCode(r.Code)
-	r.Name = normalizeText(r.Name)
-	r.Description = normalizeText(r.Description)
-	r.Category = normalizeText(r.Category)
-	r.Status = normalizeEnum(r.Status)
-
-	if r.Code == "" || r.Name == "" {
-		return nil, coreerrors.BadRequest("Code et nom du contrôle obligatoires")
-	}
-	if !isValidControlStatus(r.Status) {
-		return nil, coreerrors.BadRequest("Statut du contrôle invalide")
-	}
-
-	if err := s.validateOwningService(r.OwningServiceID); err != nil {
-		return nil, err
-	}
-	if err := s.validateRiskProfile(r.OwnerProfileID, "Le propriétaire du contrôle est inactif"); err != nil {
+	normalizeControlRequest(&r)
+	if err := validateControlRequest(r); err != nil {
 		return nil, err
 	}
 
@@ -398,6 +396,19 @@ func (s *GRCService) SaveControl(id, actor uint, r ControlRequest) (*Control, er
 		control.CreatedBy = actor
 	}
 
+	// Relations are validated when assigned only, so a control stays editable
+	// after its owner or service was deactivated.
+	if id == 0 || optionalIDChanged(control.OwningServiceID, r.OwningServiceID) {
+		if err := s.validateOwningService(r.OwningServiceID); err != nil {
+			return nil, err
+		}
+	}
+	if id == 0 || optionalIDChanged(control.OwnerProfileID, r.OwnerProfileID) {
+		if err := s.validateRiskProfile(r.OwnerProfileID, "Le propriétaire du contrôle est inactif"); err != nil {
+			return nil, err
+		}
+	}
+
 	control.Code = r.Code
 	control.Name = r.Name
 	control.Description = r.Description
@@ -407,21 +418,14 @@ func (s *GRCService) SaveControl(id, actor uint, r ControlRequest) (*Control, er
 	control.Status = r.Status
 	control.UpdatedBy = actor
 
-	if err := s.db.Select("*").Save(&control).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Select("*").Save(&control).Error
+	}, auditModuleGRCControl, action, func() uint { return control.ID }, actor, oldAuditValue, func() string { return controlAuditValue(control) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Code contrôle déjà utilisé")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCControl,
-		action,
-		control.ID,
-		actor,
-		oldAuditValue,
-		controlAuditValue(control),
-	)
 
 	return s.FindControl(control.ID)
 }
@@ -441,8 +445,12 @@ func (s *GRCService) FindControl(id uint) (*Control, error) {
 	if err != nil {
 		return nil, err
 	}
+	single := []Control{control}
+	if err := s.fillControlCounts(single); err != nil {
+		return nil, err
+	}
 
-	return &control, nil
+	return &single[0], nil
 }
 
 func (s *GRCService) ListControls(f ControlFilter) (*ControlPage, error) {
@@ -477,6 +485,12 @@ func (s *GRCService) ListControls(f ControlFilter) (*ControlPage, error) {
 	if f.OwnerProfileID != nil {
 		q = q.Where("owner_profile_id = ?", *f.OwnerProfileID)
 	}
+	if f.RiskID != nil {
+		q = q.Where("EXISTS (SELECT 1 FROM grc_control_risks cr WHERE cr.control_id = grc_controls.id AND cr.risk_id = ?)", *f.RiskID)
+	}
+	if f.RequirementID != nil {
+		q = q.Where("EXISTS (SELECT 1 FROM grc_requirement_controls rc WHERE rc.control_id = grc_controls.id AND rc.requirement_id = ?)", *f.RequirementID)
+	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -494,6 +508,9 @@ func (s *GRCService) ListControls(f ControlFilter) (*ControlPage, error) {
 		Error; err != nil {
 		return nil, err
 	}
+	if err := s.fillControlCounts(controls); err != nil {
+		return nil, err
+	}
 
 	return &ControlPage{
 		Items:      controls,
@@ -505,14 +522,9 @@ func (s *GRCService) ListControls(f ControlFilter) (*ControlPage, error) {
 }
 
 func (s *GRCService) SaveControlImplementation(id, actor uint, r ControlImplementationRequest) (*ControlImplementation, error) {
-	r.Status = normalizeEnum(r.Status)
-	r.ImplementationDetails = normalizeText(r.ImplementationDetails)
-
-	if r.ControlID == 0 || r.AssetID == 0 {
-		return nil, coreerrors.BadRequest("Contrôle et actif de l'implémentation obligatoires")
-	}
-	if !isValidControlImplementationStatus(r.Status) {
-		return nil, coreerrors.BadRequest("Statut de l'implémentation invalide")
+	normalizeControlImplementationRequest(&r)
+	if err := validateControlImplementationRequest(r); err != nil {
+		return nil, err
 	}
 
 	var implementation ControlImplementation
@@ -546,11 +558,15 @@ func (s *GRCService) SaveControlImplementation(id, actor uint, r ControlImplemen
 		}
 	}
 
-	if err := s.validateOwningService(r.OwningServiceID); err != nil {
-		return nil, err
+	if id == 0 || optionalIDChanged(implementation.OwningServiceID, r.OwningServiceID) {
+		if err := s.validateOwningService(r.OwningServiceID); err != nil {
+			return nil, err
+		}
 	}
-	if err := s.validateRiskProfile(r.OwnerProfileID, "Le propriétaire de l'implémentation est inactif"); err != nil {
-		return nil, err
+	if id == 0 || optionalIDChanged(implementation.OwnerProfileID, r.OwnerProfileID) {
+		if err := s.validateRiskProfile(r.OwnerProfileID, "Le propriétaire de l'implémentation est inactif"); err != nil {
+			return nil, err
+		}
 	}
 
 	implementation.ControlID = r.ControlID
@@ -563,21 +579,14 @@ func (s *GRCService) SaveControlImplementation(id, actor uint, r ControlImplemen
 	implementation.LastReviewedAt = r.LastReviewedAt
 	implementation.UpdatedBy = actor
 
-	if err := s.db.Select("*").Save(&implementation).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Select("*").Save(&implementation).Error
+	}, auditModuleGRCControlImplementation, action, func() uint { return implementation.ID }, actor, oldAuditValue, func() string { return controlImplementationAuditValue(implementation) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Ce contrôle est déjà implémenté sur cet actif")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCControlImplementation,
-		action,
-		implementation.ID,
-		actor,
-		oldAuditValue,
-		controlImplementationAuditValue(implementation),
-	)
 
 	return s.FindControlImplementation(implementation.ID)
 }
@@ -707,21 +716,14 @@ func (s *GRCService) LinkRequirementControl(actor uint, r RequirementControlRequ
 		ControlID:     r.ControlID,
 		CreatedBy:     actor,
 	}
-	if err := s.db.Create(&link).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Create(&link).Error
+	}, auditModuleGRCRequirementControl, auditActionLink, func() uint { return link.ID }, actor, "", func() string { return requirementControlAuditValue(link) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Ce contrôle est déjà lié à cette exigence")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCRequirementControl,
-		auditActionLink,
-		link.ID,
-		actor,
-		"",
-		requirementControlAuditValue(link),
-	)
 
 	return &link, nil
 }
@@ -743,22 +745,18 @@ func (s *GRCService) UnlinkRequirementControl(actor, requirementID, controlID ui
 		return err
 	}
 
-	result := s.db.Delete(&RequirementControl{}, link.ID)
-	if result.Error != nil {
-		return result.Error
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&RequirementControl{}, link.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return coreerrors.NotFound("GRC_REQUIREMENT_CONTROL")
+		}
+		return writeGRCAudit(tx, auditModuleGRCRequirementControl, auditActionUnlink, link.ID, actor, requirementControlAuditValue(link), "")
+	}); err != nil {
+		return err
 	}
-	if result.RowsAffected == 0 {
-		return coreerrors.NotFound("GRC_REQUIREMENT_CONTROL")
-	}
-
-	publishGRCAudit(
-		auditModuleGRCRequirementControl,
-		auditActionUnlink,
-		link.ID,
-		actor,
-		requirementControlAuditValue(link),
-		"",
-	)
 
 	return nil
 }
@@ -786,21 +784,14 @@ func (s *GRCService) LinkControlRisk(actor uint, r ControlRiskRequest) (*Control
 		RiskID:    r.RiskID,
 		CreatedBy: actor,
 	}
-	if err := s.db.Create(&link).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Create(&link).Error
+	}, auditModuleGRCControlRisk, auditActionLink, func() uint { return link.ID }, actor, "", func() string { return controlRiskAuditValue(link) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Ce contrôle est déjà lié à ce risque")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCControlRisk,
-		auditActionLink,
-		link.ID,
-		actor,
-		"",
-		controlRiskAuditValue(link),
-	)
 
 	return &link, nil
 }
@@ -822,22 +813,18 @@ func (s *GRCService) UnlinkControlRisk(actor, controlID, riskID uint) error {
 		return err
 	}
 
-	result := s.db.Delete(&ControlRisk{}, link.ID)
-	if result.Error != nil {
-		return result.Error
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&ControlRisk{}, link.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return coreerrors.NotFound("GRC_CONTROL_RISK")
+		}
+		return writeGRCAudit(tx, auditModuleGRCControlRisk, auditActionUnlink, link.ID, actor, controlRiskAuditValue(link), "")
+	}); err != nil {
+		return err
 	}
-	if result.RowsAffected == 0 {
-		return coreerrors.NotFound("GRC_CONTROL_RISK")
-	}
-
-	publishGRCAudit(
-		auditModuleGRCControlRisk,
-		auditActionUnlink,
-		link.ID,
-		actor,
-		controlRiskAuditValue(link),
-		"",
-	)
 
 	return nil
 }

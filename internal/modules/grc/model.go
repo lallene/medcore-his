@@ -88,6 +88,10 @@ type Risk struct {
 	UpdatedBy          uint                  `gorm:"not null;index" json:"updatedBy"`
 	CreatedAt          time.Time             `gorm:"not null" json:"createdAt"`
 	UpdatedAt          time.Time             `gorm:"not null" json:"updatedAt"`
+
+	// Derived from the scores by RiskLevel; never persisted.
+	InherentLevel string `gorm:"-" json:"inherentLevel"`
+	ResidualLevel string `gorm:"-" json:"residualLevel"`
 }
 
 func (Risk) TableName() string { return "grc_risks" }

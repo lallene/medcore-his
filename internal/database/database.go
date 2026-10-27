@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,6 +36,7 @@ func ParseDatabaseURL(databaseURL string) (*pgx.ConnConfig, error) {
 //  1. RuntimeParams["timezone"] startup default (honored by direct Postgres),
 //  2. AfterConnect session set_config('TimeZone', …, false) so endpoints that
 //     discard startup parameters still enforce the business timezone.
+//
 // Does not mutate search_path. Timestamp ScanLocation matches gorm TimeZone codec.
 func Connect(databaseURL, businessTimezone string) *gorm.DB {
 	pgConfig, err := ParseDatabaseURL(databaseURL)
@@ -44,6 +46,10 @@ func Connect(databaseURL, businessTimezone string) *gorm.DB {
 	loc, err := time.LoadLocation(businessTimezone)
 	if err != nil {
 		log.Fatalf("MEDCORE_BUSINESS_TIMEZONE invalide %q: %v", businessTimezone, err)
+	}
+	pool, err := LoadPoolConfig(os.Getenv)
+	if err != nil {
+		log.Fatalf("configuration invalide: %v", err)
 	}
 
 	if pgConfig.RuntimeParams == nil {
@@ -66,12 +72,16 @@ func Connect(databaseURL, businessTimezone string) *gorm.DB {
 		return nil
 	}))
 
+	// Bounded pool (GRC15-B07): every process stays within its connection budget.
+	pool.Apply(sqlDB)
+
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
 	if err != nil {
 		// Do not wrap/log the underlying dial error (may embed host/user fragments).
 		log.Fatal("Erreur connexion PostgreSQL")
 	}
-	log.Printf("Connexion PostgreSQL OK (business_timezone=%s)", businessTimezone)
+	log.Printf("Connexion PostgreSQL OK (business_timezone=%s, max_open_conns=%d, max_idle_conns=%d)",
+		businessTimezone, pool.MaxOpenConns, pool.MaxIdleConns)
 	return db
 }
 

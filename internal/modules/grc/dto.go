@@ -59,8 +59,12 @@ type RiskFilter struct {
 	ServiceID         *uint
 	OwnerProfileID    *uint
 	ApproverProfileID *uint
-	Page              int
-	Limit             int
+	// ControlID keeps the risks linked to a control (grc_control_risks).
+	ControlID     *uint
+	InherentLevel string
+	ResidualLevel string
+	Page          int
+	Limit         int
 }
 
 type RiskPage struct {
@@ -111,8 +115,12 @@ type RequirementFilter struct {
 	FrameworkID         *uint
 	ParentRequirementID *uint
 	Status              string
-	Page                int
-	Limit               int
+	// Mapped keeps requirements with (true) or without (false) any control
+	// link; ControlID keeps the requirements linked to that control.
+	Mapped    *bool
+	ControlID *uint
+	Page      int
+	Limit     int
 }
 
 type RequirementPage struct {
@@ -139,8 +147,13 @@ type ControlFilter struct {
 	Status         string
 	ServiceID      *uint
 	OwnerProfileID *uint
-	Page           int
-	Limit          int
+	// RiskID keeps the controls linked to a risk (grc_control_risks).
+	RiskID *uint
+	// RequirementID keeps the controls mapped to a requirement
+	// (grc_requirement_controls).
+	RequirementID *uint
+	Page          int
+	Limit         int
 }
 
 type ControlPage struct {
@@ -214,8 +227,12 @@ type EvidenceFilter struct {
 	Status                  string
 	Expired                 *bool
 	ExpiresBefore           *time.Time
-	Page                    int
-	Limit                   int
+	// Validity is one of the EvidenceValidity states; ExpiringSoonDays is the
+	// window of EXPIRING_SOON (0 means the default 30 days).
+	Validity         string
+	ExpiringSoonDays int
+	Page             int
+	Limit            int
 }
 
 type EvidencePage struct {
@@ -232,6 +249,7 @@ type RemediationActionRequest struct {
 	Description             string     `json:"description"`
 	ControlImplementationID *uint      `json:"controlImplementationId"`
 	RiskID                  *uint      `json:"riskId"`
+	FindingID               *uint      `json:"findingId"`
 	AssigneeProfileID       *uint      `json:"assigneeProfileId"`
 	OwningServiceID         *uint      `json:"owningServiceId"`
 	Priority                string     `json:"priority"`
@@ -244,14 +262,19 @@ type RemediationActionFilter struct {
 	Search                  string
 	ControlImplementationID *uint
 	RiskID                  *uint
+	FindingID               *uint
 	AssigneeProfileID       *uint
 	OwningServiceID         *uint
 	Priority                string
 	Status                  string
 	Overdue                 *bool
 	DueBefore               *time.Time
-	Page                    int
-	Limit                   int
+	// DueState is one of the RemediationActionDueState states; DueSoonDays is
+	// the window of DUE_SOON (0 means the default 30 days).
+	DueState    string
+	DueSoonDays int
+	Page        int
+	Limit       int
 }
 
 type RemediationActionPage struct {

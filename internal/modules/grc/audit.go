@@ -2,10 +2,12 @@ package grc
 
 import (
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/lallene/medcore-his/backend/internal/core/audit"
-	"github.com/lallene/medcore-his/backend/internal/core/events"
+	"gorm.io/gorm"
 )
 
 const (
@@ -84,16 +86,61 @@ func riskAuditValue(risk Risk) string {
 	return string(value)
 }
 
-func publishGRCAudit(module, action string, recordID, actor uint, oldValue, newValue string) {
-	userID := actor
+var errGRCAuditRejected = errors.New("grc audit rejected")
 
-	_ = events.DefaultBus.Publish(audit.AuditEvent{
-		Module:   module,
-		Action:   action,
-		RecordID: recordID,
-		UserID:   &userID,
-		OldValue: oldValue,
-		NewValue: newValue,
-		At:       time.Now(),
+// insertGRCAuditRow is the only AuditLog write used by GRC mutations.
+// Tests replace it to force a deterministic audit failure.
+var insertGRCAuditRow = func(tx *gorm.DB, row *audit.AuditLog) error {
+	return tx.Create(row).Error
+}
+
+// afterGRCAudit records the event for tests after the row is staged in the
+// same transaction. It does not write a second row and does not use MemoryBus.
+var afterGRCAudit func(audit.AuditEvent)
+
+// writeGRCAudit inserts the audit row on the caller's transaction. The
+// business mutation and this insert commit or roll back together. A failure
+// is returned without the snapshot, so the caller does not report success.
+func writeGRCAudit(tx *gorm.DB, module, action string, recordID, actor uint, oldValue, newValue string) error {
+	if tx == nil || recordID == 0 || actor == 0 {
+		slog.Error("grc audit write rejected", "module", module, "action", action, "recordId", recordID)
+		return errGRCAuditRejected
+	}
+	userID := actor
+	now := time.Now().UTC()
+	row := &audit.AuditLog{
+		Module:     module,
+		Action:     action,
+		RecordID:   recordID,
+		UserID:     &userID,
+		OldValue:   oldValue,
+		NewValue:   newValue,
+		OccurredAt: now,
+	}
+	if err := insertGRCAuditRow(tx, row); err != nil {
+		slog.Error("grc audit write failed", "module", module, "action", action, "recordId", recordID)
+		return err
+	}
+	if afterGRCAudit != nil {
+		afterGRCAudit(audit.AuditEvent{
+			Module:   module,
+			Action:   action,
+			RecordID: recordID,
+			UserID:   &userID,
+			OldValue: oldValue,
+			NewValue: newValue,
+			At:       now,
+		})
+	}
+	return nil
+}
+
+// saveWithAudit commits one business write and its audit row together.
+func (s *GRCService) saveWithAudit(write func(tx *gorm.DB) error, module, action string, id func() uint, actor uint, oldValue string, newValue func() string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := write(tx); err != nil {
+			return err
+		}
+		return writeGRCAudit(tx, module, action, id(), actor, oldValue, newValue())
 	})
 }

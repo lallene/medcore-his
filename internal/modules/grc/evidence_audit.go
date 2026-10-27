@@ -29,6 +29,7 @@ type remediationActionAuditSnapshot struct {
 	Title                   string     `json:"title"`
 	ControlImplementationID *uint      `json:"controlImplementationId"`
 	RiskID                  *uint      `json:"riskId"`
+	FindingID               *uint      `json:"findingId"`
 	AssigneeProfileID       *uint      `json:"assigneeProfileId"`
 	OwningServiceID         *uint      `json:"owningServiceId"`
 	Priority                string     `json:"priority"`
@@ -58,6 +59,7 @@ func remediationActionAuditValue(action RemediationAction) string {
 		Title:                   action.Title,
 		ControlImplementationID: action.ControlImplementationID,
 		RiskID:                  action.RiskID,
+		FindingID:               action.FindingID,
 		AssigneeProfileID:       action.AssigneeProfileID,
 		OwningServiceID:         action.OwningServiceID,
 		Priority:                action.Priority,

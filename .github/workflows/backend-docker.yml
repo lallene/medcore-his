@@ -35,7 +35,12 @@ jobs:
           file: ./Dockerfile
           target: api
           push: true
-          tags: ghcr.io/lallene/medcore-his-api:latest
+          tags: |
+            ghcr.io/lallene/medcore-his-api:latest
+            ghcr.io/lallene/medcore-his-api:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       # Separate artifact; never replaces the API image tag.
       - name: Build and push notification-worker image
@@ -45,7 +50,12 @@ jobs:
           file: ./Dockerfile
           target: notification-worker
           push: true
-          tags: ghcr.io/lallene/medcore-his-notification-worker:latest
+          tags: |
+            ghcr.io/lallene/medcore-his-notification-worker:latest
+            ghcr.io/lallene/medcore-his-notification-worker:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       # Sole production schema owner (LOT 26I-3). Run once before API/worker rollout.
       - name: Build and push migrate image
@@ -55,4 +65,25 @@ jobs:
           file: ./Dockerfile
           target: migrate
           push: true
-          tags: ghcr.io/lallene/medcore-his-migrate:latest
+          tags: |
+            ghcr.io/lallene/medcore-his-migrate:latest
+            ghcr.io/lallene/medcore-his-migrate:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      # Same checkout as the API, migrate, and notification images.
+      # Distinct name: this must not replace medcore-his-api.
+      - name: Build and push GRC reminder worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: grc-reminder-worker
+          push: true
+          tags: |
+            ghcr.io/lallene/medcore-his-grc-reminder-worker:latest
+            ghcr.io/lallene/medcore-his-grc-reminder-worker:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

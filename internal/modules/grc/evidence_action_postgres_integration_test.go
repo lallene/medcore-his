@@ -387,7 +387,7 @@ func TestPostgresGRCRemediationActionServiceAndConstraints(t *testing.T) {
 	requirePostgresError(t, direct(func(a *RemediationAction) { a.AssigneeProfileID = &unknown }), pgForeignKeyViolation, "")
 	requirePostgresError(t, direct(func(a *RemediationAction) { a.OwningServiceID = &unknown }), pgForeignKeyViolation, "")
 	requirePostgresError(t, direct(func(a *RemediationAction) { a.ControlImplementationID = nil }),
-		pgCheckViolation, "grc_remediation_action_target_present")
+		pgCheckViolation, RemediationActionTargetConstraint)
 	requirePostgresError(t, direct(func(a *RemediationAction) { a.Priority = "URGENT" }),
 		pgCheckViolation, "grc_remediation_action_priority_valid")
 	requirePostgresError(t, direct(func(a *RemediationAction) { a.Status = "CLOSED" }),

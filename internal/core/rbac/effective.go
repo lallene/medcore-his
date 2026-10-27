@@ -82,6 +82,14 @@ var SensitivePermissions = map[string]bool{
 	"grc.risk.approve":               true,
 	"grc.evidence.manage":            true,
 	"grc.action.update":              true,
+	"grc.assessment.complete":        true,
+	"grc.audit.complete":             true,
+	"grc.finding.close":              true,
+	"grc.finding.accept":             true,
+	"grc.incident.close":             true,
+	"grc.policy.approve":             true,
+	"grc.policy.publish":             true,
+	"grc.policy.retire":              true,
 }
 
 // IsSensitive reports whether a permission is high-risk.

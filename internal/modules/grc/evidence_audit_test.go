@@ -22,7 +22,7 @@ var (
 		"collectedAt", "validFrom", "expiresAt", "ownerProfileId", "owningServiceId",
 	}
 	remediationActionAuditAllowlist = []string{
-		"reference", "title", "controlImplementationId", "riskId", "assigneeProfileId",
+		"reference", "title", "controlImplementationId", "riskId", "findingId", "assigneeProfileId",
 		"owningServiceId", "priority", "status", "dueAt", "completedAt",
 	}
 	evidenceAuditForbiddenKeys = []string{
@@ -77,7 +77,7 @@ func TestEvidenceAndActionAuditSnapshotsAreAllowlisted(t *testing.T) {
 		},
 		{
 			remediationActionAuditSnapshot{},
-			[]string{"Reference", "Title", "ControlImplementationID", "RiskID", "AssigneeProfileID",
+			[]string{"Reference", "Title", "ControlImplementationID", "RiskID", "FindingID", "AssigneeProfileID",
 				"OwningServiceID", "Priority", "Status", "DueAt", "CompletedAt"},
 			remediationActionAuditAllowlist,
 		},

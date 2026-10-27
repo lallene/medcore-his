@@ -3,6 +3,7 @@ package grc
 import (
 	"testing"
 
+	"github.com/lallene/medcore-his/backend/internal/core/audit"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
@@ -36,6 +37,7 @@ func newAssetFixture(t *testing.T) assetFixture {
 		&staff.Profile{},
 		&Asset{},
 		&Risk{},
+		&audit.AuditLog{},
 	); err != nil {
 		t.Fatal(err)
 	}

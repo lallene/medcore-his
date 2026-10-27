@@ -19,7 +19,10 @@ func parseUintParam(c *gin.Context, name string) (uint, bool) {
 }
 
 func (h *Handler) ListFrameworks(c *gin.Context) {
-	page, limit := parsePage(c)
+	page, limit, ok := parseStrictPage(c)
+	if !ok {
+		return
+	}
 
 	filter := FrameworkFilter{
 		Search: strings.TrimSpace(c.Query("search")),
@@ -97,7 +100,10 @@ func (h *Handler) UpdateFramework(c *gin.Context) {
 }
 
 func (h *Handler) ListRequirements(c *gin.Context) {
-	page, limit := parsePage(c)
+	page, limit, ok := parseStrictPage(c)
+	if !ok {
+		return
+	}
 
 	filter := RequirementFilter{
 		Search: strings.TrimSpace(c.Query("search")),
@@ -106,7 +112,12 @@ func (h *Handler) ListRequirements(c *gin.Context) {
 		Limit:  limit,
 	}
 
-	var ok bool
+	if filter.Mapped, ok = parseOptionalBoolQuery(c, "mapped"); !ok {
+		return
+	}
+	if filter.ControlID, ok = parseOptionalUintQuery(c, "controlId"); !ok {
+		return
+	}
 	filter.FrameworkID, ok = parseOptionalUintQuery(c, "frameworkId")
 	if !ok {
 		return
@@ -184,7 +195,10 @@ func (h *Handler) UpdateRequirement(c *gin.Context) {
 }
 
 func (h *Handler) ListControls(c *gin.Context) {
-	page, limit := parsePage(c)
+	page, limit, ok := parseStrictPage(c)
+	if !ok {
+		return
+	}
 
 	filter := ControlFilter{
 		Search:   strings.TrimSpace(c.Query("search")),
@@ -194,12 +208,19 @@ func (h *Handler) ListControls(c *gin.Context) {
 		Limit:    limit,
 	}
 
-	var ok bool
 	filter.ServiceID, ok = parseOptionalUintQuery(c, "serviceId")
 	if !ok {
 		return
 	}
 	filter.OwnerProfileID, ok = parseOptionalUintQuery(c, "ownerProfileId")
+	if !ok {
+		return
+	}
+	filter.RiskID, ok = parseOptionalUintQuery(c, "riskId")
+	if !ok {
+		return
+	}
+	filter.RequirementID, ok = parseOptionalUintQuery(c, "requirementId")
 	if !ok {
 		return
 	}
@@ -272,7 +293,10 @@ func (h *Handler) UpdateControl(c *gin.Context) {
 }
 
 func (h *Handler) ListControlImplementations(c *gin.Context) {
-	page, limit := parsePage(c)
+	page, limit, ok := parseStrictPage(c)
+	if !ok {
+		return
+	}
 
 	filter := ControlImplementationFilter{
 		Status: strings.TrimSpace(c.Query("status")),
@@ -280,7 +304,6 @@ func (h *Handler) ListControlImplementations(c *gin.Context) {
 		Limit:  limit,
 	}
 
-	var ok bool
 	filter.ControlID, ok = parseOptionalUintQuery(c, "controlId")
 	if !ok {
 		return

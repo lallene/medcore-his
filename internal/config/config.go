@@ -44,6 +44,8 @@ type Config struct {
 	// PerformedActProducersEnabled enables fail-closed automatic PerformedAct
 	// creation from consultation/lab/imaging transitions (LOT27D).
 	PerformedActProducersEnabled bool
+	// HTTP holds the API server timeouts and request ceilings (GRC15-B07).
+	HTTP HTTPConfig
 }
 
 func Load() Config {
@@ -59,6 +61,10 @@ func Load() Config {
 	if err != nil {
 		log.Fatalf("configuration invalide: %v", err)
 	}
+	httpConfig, err := LoadHTTPConfig(os.Getenv)
+	if err != nil {
+		log.Fatalf("configuration invalide: %v", err)
+	}
 
 	cfg := Config{
 		AppEnv:                       getEnv("APP_ENV", "development"),
@@ -70,6 +76,7 @@ func Load() Config {
 		BusinessTimezone:             NormalizeTimezoneEnv(os.Getenv("MEDCORE_BUSINESS_TIMEZONE"), DefaultBusinessTimezone),
 		NotificationEmailEnabled:     emailEnabled,
 		PerformedActProducersEnabled: producersEnabled,
+		HTTP:                         httpConfig,
 	}
 
 	if err := cfg.Validate(); err != nil {

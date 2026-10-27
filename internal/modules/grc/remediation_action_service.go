@@ -6,6 +6,7 @@ import (
 
 	coreerrors "github.com/lallene/medcore-his/backend/internal/core/errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // remediationActionOverdueSQL mirrors RemediationActionOverdue and
@@ -68,6 +69,13 @@ func (s *GRCService) SaveRemediationAction(id, actor uint, r RemediationActionRe
 			return nil, err
 		}
 	}
+	previousFindingID := action.FindingID
+	findingChanged := id == 0 || optionalIDChanged(action.FindingID, r.FindingID)
+	if r.FindingID != nil && (findingChanged || implementationChanged || riskChanged) {
+		if err := s.validateRemediationActionFinding(r, findingChanged); err != nil {
+			return nil, err
+		}
+	}
 
 	if id == 0 || optionalIDChanged(action.AssigneeProfileID, r.AssigneeProfileID) {
 		if err := s.validateRiskProfile(r.AssigneeProfileID, "L'assigné de l'action est inactif"); err != nil {
@@ -102,6 +110,7 @@ func (s *GRCService) SaveRemediationAction(id, actor uint, r RemediationActionRe
 	action.Description = r.Description
 	action.ControlImplementationID = r.ControlImplementationID
 	action.RiskID = r.RiskID
+	action.FindingID = r.FindingID
 	action.AssigneeProfileID = r.AssigneeProfileID
 	action.OwningServiceID = r.OwningServiceID
 	action.Priority = r.Priority
@@ -110,23 +119,60 @@ func (s *GRCService) SaveRemediationAction(id, actor uint, r RemediationActionRe
 	action.CompletedAt = r.CompletedAt
 	action.UpdatedBy = actor
 
-	if err := s.db.Select("*").Save(&action).Error; err != nil {
+	// The finding row is locked in the same transaction as the action write so
+	// a close cannot commit while this action is being created or reopened.
+	assigningFinding := id == 0 || optionalIDChanged(previousFindingID, action.FindingID)
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if action.FindingID != nil {
+			var locked Finding
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").First(&locked, *action.FindingID).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return coreerrors.NotFound("GRC_FINDING")
+			}
+			if err != nil {
+				return err
+			}
+			if assigningFinding && (locked.Status == FindingStatusClosed || locked.Status == FindingStatusAccepted) {
+				return coreerrors.Conflict("Un constat clôturé ou accepté ne peut plus recevoir d'action")
+			}
+		}
+		if err := tx.Select("*").Save(&action).Error; err != nil {
+			return err
+		}
+		return writeGRCAudit(tx, auditModuleGRCRemediationAction, auditAction, action.ID, actor, oldAuditValue, remediationActionAuditValue(action))
+	}); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Référence d'action déjà utilisée")
 		}
 		return nil, err
 	}
 
-	publishGRCAudit(
-		auditModuleGRCRemediationAction,
-		auditAction,
-		action.ID,
-		actor,
-		oldAuditValue,
-		remediationActionAuditValue(action),
-	)
-
 	return s.FindRemediationAction(action.ID)
+}
+
+// validateRemediationActionFinding applies the GRC-01D.03 rules when the
+// finding target or another target is assigned or changed: the finding must
+// exist and accept new actions, and the action's control implementation and
+// risk must match the finding's own ones when both are set.
+func (s *GRCService) validateRemediationActionFinding(r RemediationActionRequest, findingChanged bool) error {
+	var finding Finding
+	if err := s.db.First(&finding, *r.FindingID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return coreerrors.NotFound("GRC_FINDING")
+		}
+		return err
+	}
+	if findingChanged && (finding.Status == FindingStatusClosed || finding.Status == FindingStatusAccepted) {
+		return coreerrors.Conflict("Un constat clôturé ou accepté ne peut plus recevoir d'action")
+	}
+	if r.ControlImplementationID != nil && finding.ControlImplementationID != nil &&
+		*r.ControlImplementationID != *finding.ControlImplementationID {
+		return coreerrors.Conflict("L'action doit porter sur l'implémentation de contrôle du constat")
+	}
+	if r.RiskID != nil && finding.RiskID != nil && *r.RiskID != *finding.RiskID {
+		return coreerrors.Conflict("L'action doit porter sur le risque du constat")
+	}
+	return nil
 }
 
 func (s *GRCService) loadRemediationActionImplementation(id uint) (*ControlImplementation, error) {
@@ -162,17 +208,29 @@ func preloadRemediationActionRelations(q *gorm.DB) *gorm.DB {
 		Preload("ControlImplementation.Control").
 		Preload("ControlImplementation.Asset").
 		Preload("Risk").
+		Preload("Finding").
 		Preload("AssigneeProfile").
 		Preload("OwningService")
 }
 
 func (s *GRCService) FindRemediationAction(id uint) (*RemediationAction, error) {
+	return s.FindRemediationActionWithWindow(id, DashboardDefaultWindowDays)
+}
+
+// FindRemediationActionWithWindow derives the due state with the given
+// DUE_SOON window, in days.
+func (s *GRCService) FindRemediationActionWithWindow(id uint, soonDays int) (*RemediationAction, error) {
+	now := s.currentTime()
+	soonLimit, err := actionSoonLimit(now, soonDays)
+	if err != nil {
+		return nil, err
+	}
 	if id == 0 {
 		return nil, coreerrors.BadRequest("Identifiant d'action invalide")
 	}
 
 	var action RemediationAction
-	err := preloadRemediationActionRelations(s.db).First(&action, id).Error
+	err = preloadRemediationActionRelations(s.db).First(&action, id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, coreerrors.NotFound("GRC_REMEDIATION_ACTION")
 	}
@@ -180,7 +238,7 @@ func (s *GRCService) FindRemediationAction(id uint) (*RemediationAction, error) 
 		return nil, err
 	}
 
-	action.Overdue = RemediationActionOverdue(action.Status, action.DueAt, s.currentTime())
+	fillRemediationActionComputed(&action, now, soonLimit)
 	return &action, nil
 }
 
@@ -195,15 +253,23 @@ func (s *GRCService) ListRemediationActions(f RemediationActionFilter) (*Remedia
 	if f.Status != "" && !isValidRemediationActionStatus(f.Status) {
 		return nil, coreerrors.BadRequest("Statut de l'action invalide")
 	}
-	for _, id := range []*uint{f.ControlImplementationID, f.RiskID, f.AssigneeProfileID, f.OwningServiceID} {
+	for _, id := range []*uint{f.ControlImplementationID, f.RiskID, f.FindingID, f.AssigneeProfileID, f.OwningServiceID} {
 		if !isPositiveOptionalID(id) {
 			return nil, coreerrors.BadRequest("Identifiant de filtre invalide")
 		}
 	}
 
-	// One instant for the whole operation: the Overdue filter and the
-	// computed Overdue field must agree.
+	// One instant for the whole operation: the Overdue/DueState filters and
+	// the computed fields must agree.
 	now := s.currentTime()
+	if f.DueSoonDays == 0 {
+		f.DueSoonDays = DashboardDefaultWindowDays
+	}
+	soonLimit, err := actionSoonLimit(now, f.DueSoonDays)
+	if err != nil {
+		return nil, err
+	}
+	f.DueState = normalizeEnum(f.DueState)
 
 	q := s.db.Model(&RemediationAction{})
 
@@ -216,6 +282,9 @@ func (s *GRCService) ListRemediationActions(f RemediationActionFilter) (*Remedia
 	}
 	if f.RiskID != nil {
 		q = q.Where("risk_id = ?", *f.RiskID)
+	}
+	if f.FindingID != nil {
+		q = q.Where("finding_id = ?", *f.FindingID)
 	}
 	if f.AssigneeProfileID != nil {
 		q = q.Where("assignee_profile_id = ?", *f.AssigneeProfileID)
@@ -239,6 +308,13 @@ func (s *GRCService) ListRemediationActions(f RemediationActionFilter) (*Remedia
 			q = q.Where(remediationActionNotOverdueSQL, now, RemediationActionStatusDone, RemediationActionStatusCancelled)
 		}
 	}
+	if f.DueState != "" {
+		condition, args, err := remediationActionDueCondition(f.DueState, now, soonLimit)
+		if err != nil {
+			return nil, err
+		}
+		q = q.Where(condition, args...)
+	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -256,7 +332,7 @@ func (s *GRCService) ListRemediationActions(f RemediationActionFilter) (*Remedia
 	}
 
 	for i := range items {
-		items[i].Overdue = RemediationActionOverdue(items[i].Status, items[i].DueAt, now)
+		fillRemediationActionComputed(&items[i], now, soonLimit)
 	}
 
 	return &RemediationActionPage{

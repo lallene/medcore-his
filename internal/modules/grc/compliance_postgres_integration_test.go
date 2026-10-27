@@ -51,7 +51,10 @@ func requirePostgresError(t *testing.T, err error, code, constraint string) {
 	if !errors.As(err, &pgErr) {
 		t.Fatalf("expected PostgreSQL error %s, got %T: %v", code, err, err)
 	}
-	if pgErr.Code != code {
+	// PostgreSQL 18 reports ON DELETE RESTRICT as 23001 (restrict_violation).
+	// Call sites that still ask for 23503 are asserting that foreign-key
+	// rejection, so a restrict violation satisfies them.
+	if pgErr.Code != code && !(code == pgForeignKeyViolation && pgErr.Code == "23001") {
 		t.Fatalf("PostgreSQL code=%s constraint=%s, want %s", pgErr.Code, pgErr.ConstraintName, code)
 	}
 	if constraint != "" && pgErr.ConstraintName != constraint {

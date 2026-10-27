@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lallene/medcore-his/backend/internal/core/audit"
 	"github.com/lallene/medcore-his/backend/internal/modules/auth"
 	"github.com/lallene/medcore-his/backend/internal/modules/organization"
 	"github.com/lallene/medcore-his/backend/internal/modules/staff"
@@ -58,6 +59,7 @@ func grcPostgres(t *testing.T) *gorm.DB {
 		&staff.Profile{},
 		&Asset{},
 		&Risk{},
+		&audit.AuditLog{},
 	); err != nil {
 		t.Fatal(err)
 	}

@@ -79,21 +79,14 @@ func (s *GRCService) SaveEvidence(id, actor uint, r EvidenceRequest) (*Evidence,
 	evidence.OwningServiceID = r.OwningServiceID
 	evidence.UpdatedBy = actor
 
-	if err := s.db.Select("*").Save(&evidence).Error; err != nil {
+	if err := s.saveWithAudit(func(tx *gorm.DB) error {
+		return tx.Select("*").Save(&evidence).Error
+	}, auditModuleGRCEvidence, action, func() uint { return evidence.ID }, actor, oldAuditValue, func() string { return evidenceAuditValue(evidence) }); err != nil {
 		if isDuplicateError(err) {
 			return nil, coreerrors.Conflict("Référence de preuve déjà utilisée")
 		}
 		return nil, err
 	}
-
-	publishGRCAudit(
-		auditModuleGRCEvidence,
-		action,
-		evidence.ID,
-		actor,
-		oldAuditValue,
-		evidenceAuditValue(evidence),
-	)
 
 	return s.FindEvidence(evidence.ID)
 }
@@ -118,12 +111,23 @@ func preloadEvidenceRelations(q *gorm.DB) *gorm.DB {
 }
 
 func (s *GRCService) FindEvidence(id uint) (*Evidence, error) {
+	return s.FindEvidenceWithWindow(id, DashboardDefaultWindowDays)
+}
+
+// FindEvidenceWithWindow derives the validity with the given EXPIRING_SOON
+// window, in days.
+func (s *GRCService) FindEvidenceWithWindow(id uint, soonDays int) (*Evidence, error) {
+	now := s.currentTime()
+	soonLimit, err := evidenceSoonLimit(now, soonDays)
+	if err != nil {
+		return nil, err
+	}
 	if id == 0 {
 		return nil, coreerrors.BadRequest("Identifiant de preuve invalide")
 	}
 
 	var evidence Evidence
-	err := preloadEvidenceRelations(s.db).First(&evidence, id).Error
+	err = preloadEvidenceRelations(s.db).First(&evidence, id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, coreerrors.NotFound("GRC_EVIDENCE")
 	}
@@ -131,7 +135,7 @@ func (s *GRCService) FindEvidence(id uint) (*Evidence, error) {
 		return nil, err
 	}
 
-	evidence.Expired = EvidenceExpired(evidence.Status, evidence.ExpiresAt, s.currentTime())
+	fillEvidenceComputed(&evidence, now, soonLimit)
 	return &evidence, nil
 }
 
@@ -152,9 +156,17 @@ func (s *GRCService) ListEvidence(f EvidenceFilter) (*EvidencePage, error) {
 		}
 	}
 
-	// One instant for the whole operation: the Expired filter and the
-	// computed Expired field must agree.
+	// One instant for the whole operation: the Expired/Validity filters and
+	// the computed fields must agree.
 	now := s.currentTime()
+	if f.ExpiringSoonDays == 0 {
+		f.ExpiringSoonDays = DashboardDefaultWindowDays
+	}
+	soonLimit, err := evidenceSoonLimit(now, f.ExpiringSoonDays)
+	if err != nil {
+		return nil, err
+	}
+	f.Validity = normalizeEnum(f.Validity)
 
 	q := s.db.Model(&Evidence{})
 
@@ -187,6 +199,13 @@ func (s *GRCService) ListEvidence(f EvidenceFilter) (*EvidencePage, error) {
 			q = q.Where("NOT "+evidenceExpiredSQL, EvidenceStatusValid, now)
 		}
 	}
+	if f.Validity != "" {
+		condition, args, err := evidenceValidityCondition(f.Validity, now, soonLimit)
+		if err != nil {
+			return nil, err
+		}
+		q = q.Where(condition, args...)
+	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -204,7 +223,7 @@ func (s *GRCService) ListEvidence(f EvidenceFilter) (*EvidencePage, error) {
 	}
 
 	for i := range items {
-		items[i].Expired = EvidenceExpired(items[i].Status, items[i].ExpiresAt, now)
+		fillEvidenceComputed(&items[i], now, soonLimit)
 	}
 
 	return &EvidencePage{

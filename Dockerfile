@@ -4,12 +4,15 @@
 #   api                   — HTTP API (binary: medcore-api)
 #   notification-worker   — appointment notification worker
 #                           (binary: medcore-notification-worker)
+#   grc-reminder-worker   — GRC reminder worker
+#                           (binary: medcore-grc-reminder-worker)
 #   migrate               — schema owner only (binary: medcore-migrate)
 #
 # The final stage is `api`, so `docker build` without --target continues to
 # produce the API image (backward compatible with this repository's history).
 #
-# Production rollout: run migrate successfully once, then start API and worker.
+# Production rollout: run migrate once, then API and the notification worker.
+# Start the GRC reminder worker only after that schema exists. See docs/GRC_PRODUCTION.md.
 # Do not bake secrets or runtime env into the image. Configure at container start.
 
 FROM golang:1.26-alpine AS builder
@@ -30,7 +33,8 @@ COPY . .
 
 RUN go build -o medcore-api ./cmd/api \
 	&& go build -o medcore-notification-worker ./cmd/notification-worker \
-	&& go build -o medcore-migrate ./cmd/migrate
+	&& go build -o medcore-migrate ./cmd/migrate \
+	&& go build -o medcore-grc-reminder-worker ./cmd/grc-reminder-worker
 
 # ---- Schema migration (LOT 26I-3 sole schema owner) ------------------------
 FROM alpine:latest AS migrate
@@ -73,6 +77,20 @@ HEALTHCHECK --interval=10s --timeout=2s --start-period=20s --retries=3 \
 
 # SIGINT/SIGTERM handled by cmd/notification-worker.
 CMD ["./medcore-notification-worker"]
+
+# ---- GRC reminder worker runtime -------------------------------------------
+# Kept before the API stage: `docker build` without --target must stay the API.
+# This process has no HTTP port. Stop it to disable GRC reminders.
+FROM alpine:latest AS grc-reminder-worker
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /app/medcore-grc-reminder-worker .
+
+# SIGINT/SIGTERM cancel the scan loop in cmd/grc-reminder-worker.
+CMD ["./medcore-grc-reminder-worker"]
 
 # ---- API runtime (final / default stage) -----------------------------------
 FROM alpine:latest AS api

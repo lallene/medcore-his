@@ -69,11 +69,20 @@ func (h *Handler) ListEvidence(c *gin.Context) {
 	}
 
 	filter := EvidenceFilter{
-		Search: strings.TrimSpace(c.Query("search")),
-		Type:   strings.TrimSpace(c.Query("type")),
-		Status: strings.TrimSpace(c.Query("status")),
-		Page:   page,
-		Limit:  limit,
+		Search:   strings.TrimSpace(c.Query("search")),
+		Type:     strings.TrimSpace(c.Query("type")),
+		Status:   strings.TrimSpace(c.Query("status")),
+		Validity: strings.TrimSpace(c.Query("validity")),
+		Page:     page,
+		Limit:    limit,
+	}
+	if filter.ExpiringSoonDays, ok = parseDashboardWindow(c, "expiringSoonDays"); !ok {
+		return
+	}
+	// An explicit 0 is out of bounds (0 only means "default" internally).
+	if err := validateDashboardWindow(filter.ExpiringSoonDays, "expiringSoonDays"); err != nil {
+		fail(c, err)
+		return
 	}
 
 	if filter.ControlImplementationID, ok = parseOptionalUintQuery(c, "controlImplementationId"); !ok {
@@ -105,8 +114,12 @@ func (h *Handler) GetEvidence(c *gin.Context) {
 	if !ok {
 		return
 	}
+	soonDays, ok := parseDashboardWindow(c, "expiringSoonDays")
+	if !ok {
+		return
+	}
 
-	item, err := h.service.FindEvidence(id)
+	item, err := h.service.FindEvidenceWithWindow(id, soonDays)
 	if err != nil {
 		fail(c, err)
 		return
@@ -169,14 +182,26 @@ func (h *Handler) ListRemediationActions(c *gin.Context) {
 		Search:   strings.TrimSpace(c.Query("search")),
 		Priority: strings.TrimSpace(c.Query("priority")),
 		Status:   strings.TrimSpace(c.Query("status")),
+		DueState: strings.TrimSpace(c.Query("dueState")),
 		Page:     page,
 		Limit:    limit,
+	}
+	if filter.DueSoonDays, ok = parseDashboardWindow(c, "dueSoonDays"); !ok {
+		return
+	}
+	// An explicit 0 is out of bounds (0 only means "default" internally).
+	if err := validateDashboardWindow(filter.DueSoonDays, "dueSoonDays"); err != nil {
+		fail(c, err)
+		return
 	}
 
 	if filter.ControlImplementationID, ok = parseOptionalUintQuery(c, "controlImplementationId"); !ok {
 		return
 	}
 	if filter.RiskID, ok = parseOptionalUintQuery(c, "riskId"); !ok {
+		return
+	}
+	if filter.FindingID, ok = parseOptionalUintQuery(c, "findingId"); !ok {
 		return
 	}
 	if filter.AssigneeProfileID, ok = parseOptionalUintQuery(c, "assigneeProfileId"); !ok {
@@ -206,7 +231,12 @@ func (h *Handler) GetRemediationAction(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.FindRemediationAction(id)
+	soonDays, ok := parseDashboardWindow(c, "dueSoonDays")
+	if !ok {
+		return
+	}
+
+	item, err := h.service.FindRemediationActionWithWindow(id, soonDays)
 	if err != nil {
 		fail(c, err)
 		return

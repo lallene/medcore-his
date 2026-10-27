@@ -1,6 +1,10 @@
 package events
 
-import "sync"
+import (
+	"fmt"
+	"log/slog"
+	"sync"
+)
 
 type MemoryBus struct {
 	mu       sync.RWMutex
@@ -30,6 +34,11 @@ func (b *MemoryBus) Publish(event Event) error {
 	for _, h := range handlers {
 
 		go func(handler Handler) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("event handler panic", "event", event.Name(), "panic", fmt.Sprint(rec))
+				}
+			}()
 			_ = handler.Handle(event)
 		}(h)
 

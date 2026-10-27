@@ -218,7 +218,8 @@ func (s *Service) List(f Filter, a Access) (*Page, error) {
 	if e := q.Session(&gorm.Session{}).Count(&total).Error; e != nil {
 		return nil, e
 	}
-	var rows []TicketView
+	// Empty slice, not nil: an empty list is "items":[] for API clients.
+	rows := []TicketView{}
 	if e := q.Order("t.created_at DESC").Offset((f.Page - 1) * f.Limit).Limit(f.Limit).Scan(&rows).Error; e != nil {
 		return nil, e
 	}

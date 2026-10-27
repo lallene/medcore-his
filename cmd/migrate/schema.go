@@ -62,6 +62,15 @@ func schemaModels() []any {
 		&grc.ControlImplementation{},
 		&grc.Evidence{},
 		&grc.RemediationAction{},
+		&grc.AuditEngagement{},
+		&grc.Assessment{},
+		&grc.AssessmentEvidence{},
+		&grc.Finding{},
+		&grc.SecurityIncident{},
+		&grc.GovernancePolicy{},
+		&grc.GovernancePolicyFramework{},
+		&grc.GovernancePolicyControl{},
+		&grc.GRCReminderIntent{},
 		&access.PermissionOverride{},
 		&access.MatrixOverride{},
 		&access.AccessAuditEvent{},
@@ -188,6 +197,10 @@ func schemaModels() []any {
 func applyMigrations(db *gorm.DB) error {
 	if err := db.AutoMigrate(schemaModels()...); err != nil {
 		return fmt.Errorf("AutoMigrate: %w", err)
+	}
+	// GRC-01D.03: the v2 target CHECK (finding target) supersedes the 01C one.
+	if err := grc.EnsureRemediationActionTargetConstraint(db); err != nil {
+		return fmt.Errorf("EnsureRemediationActionTargetConstraint: %w", err)
 	}
 	// LOT29D-B: sessionless billing receipts — cash_session_id must be nullable.
 	if err := cash.EnsureReceiptSessionNullable(db); err != nil {

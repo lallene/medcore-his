@@ -47,6 +47,49 @@ func normalizeText(value string) string {
 	return strings.TrimSpace(value)
 }
 
+// Lengths mirror the grc_assets columns, so PostgreSQL never truncates or
+// rejects a value the service accepted.
+const (
+	assetCodeMaxLength = 60
+	assetNameMaxLength = 180
+)
+
+func normalizeAssetRequest(r *AssetRequest) {
+	r.Code = normalizeCode(r.Code)
+	r.Name = normalizeText(r.Name)
+	r.Type = normalizeEnum(r.Type)
+	r.Description = normalizeText(r.Description)
+	r.Criticality = normalizeEnum(r.Criticality)
+	r.Status = normalizeEnum(r.Status)
+}
+
+// validateAssetRequest checks a normalized request without any database
+// access: relation existence and activity are checked by the service.
+func validateAssetRequest(r AssetRequest) error {
+	if r.Code == "" || r.Name == "" {
+		return coreerrors.BadRequest("Code et nom de l'actif obligatoires")
+	}
+	if utf8.RuneCountInString(r.Code) > assetCodeMaxLength {
+		return coreerrors.BadRequest("Code de l'actif trop long")
+	}
+	if utf8.RuneCountInString(r.Name) > assetNameMaxLength {
+		return coreerrors.BadRequest("Nom de l'actif trop long")
+	}
+	if !isValidAssetType(r.Type) {
+		return coreerrors.BadRequest("Type d'actif invalide")
+	}
+	if !isValidCriticality(r.Criticality) {
+		return coreerrors.BadRequest("Criticité de l'actif invalide")
+	}
+	if !isValidAssetStatus(r.Status) {
+		return coreerrors.BadRequest("Statut de l'actif invalide")
+	}
+	if !isPositiveOptionalID(r.OwningServiceID) || !isPositiveOptionalID(r.OwnerProfileID) {
+		return coreerrors.BadRequest("Identifiant de relation de l'actif invalide")
+	}
+	return nil
+}
+
 func isValidAssetType(value string) bool {
 	return validAssetTypes[value]
 }
@@ -126,6 +169,14 @@ func isValidControlImplementationStatus(value string) bool {
 
 const evidenceExternalReferenceMaxLength = 500
 
+// Lengths mirror the grc_evidence and grc_remediation_actions columns.
+const (
+	evidenceReferenceMaxLength          = 60
+	evidenceTitleMaxLength              = 220
+	remediationActionReferenceMaxLength = 60
+	remediationActionTitleMaxLength     = 220
+)
+
 var validEvidenceTypes = map[string]bool{
 	EvidenceTypeDocument:      true,
 	EvidenceTypeConfiguration: true,
@@ -203,6 +254,12 @@ func validateEvidenceRequest(r EvidenceRequest) error {
 	if r.Reference == "" || r.Title == "" {
 		return coreerrors.BadRequest("Référence et titre de la preuve obligatoires")
 	}
+	if utf8.RuneCountInString(r.Reference) > evidenceReferenceMaxLength {
+		return coreerrors.BadRequest("Référence de la preuve trop longue")
+	}
+	if utf8.RuneCountInString(r.Title) > evidenceTitleMaxLength {
+		return coreerrors.BadRequest("Titre de la preuve trop long")
+	}
 	if r.ControlImplementationID == 0 {
 		return coreerrors.BadRequest("Implémentation de contrôle de la preuve obligatoire")
 	}
@@ -263,16 +320,23 @@ func validateRemediationActionRequest(r RemediationActionRequest) error {
 	if r.Reference == "" || r.Title == "" {
 		return coreerrors.BadRequest("Référence et titre de l'action obligatoires")
 	}
+	if utf8.RuneCountInString(r.Reference) > remediationActionReferenceMaxLength {
+		return coreerrors.BadRequest("Référence de l'action trop longue")
+	}
+	if utf8.RuneCountInString(r.Title) > remediationActionTitleMaxLength {
+		return coreerrors.BadRequest("Titre de l'action trop long")
+	}
 	if !isValidRemediationActionPriority(r.Priority) {
 		return coreerrors.BadRequest("Priorité de l'action invalide")
 	}
 	if !isValidRemediationActionStatus(r.Status) {
 		return coreerrors.BadRequest("Statut de l'action invalide")
 	}
-	if r.ControlImplementationID == nil && r.RiskID == nil {
-		return coreerrors.BadRequest("L'action doit cibler une implémentation de contrôle ou un risque")
+	// Same rule as grc_remediation_action_target_present_v2.
+	if r.ControlImplementationID == nil && r.RiskID == nil && r.FindingID == nil {
+		return coreerrors.BadRequest("L'action doit cibler une implémentation de contrôle, un risque ou un constat")
 	}
-	for _, id := range []*uint{r.ControlImplementationID, r.RiskID, r.AssigneeProfileID, r.OwningServiceID} {
+	for _, id := range []*uint{r.ControlImplementationID, r.RiskID, r.FindingID, r.AssigneeProfileID, r.OwningServiceID} {
 		if !isPositiveOptionalID(id) {
 			return coreerrors.BadRequest("Identifiant de relation de l'action invalide")
 		}
